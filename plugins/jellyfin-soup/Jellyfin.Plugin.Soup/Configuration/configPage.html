@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Soup Auth</title>
+</head>
+<body>
+<div id="SoupAuthConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="sectionTitleContainer flex align-items-center justify-content-space-between" style="display:flex; align-items:center; justify-content:space-between; gap:1em; flex-wrap:wrap;">
+                <h1 class="sectionTitle" style="margin:0;">Soup settings</h1>
+                <a is="emby-linkbutton" class="raised emby-button" href="#/configurationpage?name=SoupInvites" id="SoupInvitesLink">
+                    <span>Invites</span>
+                </a>
+            </div>
+            <p class="fieldDescription">
+                Soup microservice and Tailscale mint credentials. Day-to-day invites are on the
+                <strong>Invites</strong> page (top right, or Dashboard drawer → Soup Invites).
+            </p>
+
+            <form id="SoupAuthConfigForm">
+                <div class="inputContainer">
+                    <label class="inputLabel" for="SoupBaseUrl">Soup base URL</label>
+                    <input id="SoupBaseUrl" type="text" is="emby-input" />
+                    <div class="fieldDescription">Example: http://host.docker.internal:8787</div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="PluginId">Plugin credential id</label>
+                    <input id="PluginId" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="PluginSecret">Plugin credential secret</label>
+                    <input id="PluginSecret" type="password" is="emby-input" autocomplete="new-password" />
+                    <div class="fieldDescription">Leave blank to keep the current secret.</div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="ServerId">Soup server id</label>
+                    <input id="ServerId" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="ServerName">Server display name</label>
+                    <input id="ServerName" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="Audience">Assertion audience (JWT aud)</label>
+                    <input id="Audience" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="AssertionIssuer">Assertion issuer</label>
+                    <input id="AssertionIssuer" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="JellyfinBaseUrl">Jellyfin base URL (optional)</label>
+                    <input id="JellyfinBaseUrl" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="MagicDns">MagicDNS / Tailscale host (optional)</label>
+                    <input id="MagicDns" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="UsernamePrefix">Auto-user username prefix</label>
+                    <input id="UsernamePrefix" type="text" is="emby-input" />
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="CreateMissingUsers" type="checkbox" is="emby-checkbox" />
+                        <span>Create Jellyfin users on first exchange</span>
+                    </label>
+                </div>
+
+                <div class="sectionTitleContainer flex align-items-center" style="margin-top:1.5em;">
+                    <h2 class="sectionTitle">Tailscale auth-key mint</h2>
+                </div>
+                <p class="fieldDescription">
+                    Prefer a tailnet OAuth client with <code>auth_keys</code> scope bound to <code>tag:soup-guest</code>.
+                    On invite (when a Google email is known), the plugin mints a single-use ephemeral key and deposits it to Soup.
+                    Credentials stay on this Jellyfin host — Soup never receives them.
+                </p>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="MintTailscaleAuthKeyOnInvite" type="checkbox" is="emby-checkbox" />
+                        <span>Mint Tailscale auth key on invite and deposit to Soup</span>
+                    </label>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="TailscaleTailnet">Tailnet</label>
+                    <input id="TailscaleTailnet" type="text" is="emby-input" />
+                    <div class="fieldDescription">Use <code>-</code> with OAuth access tokens (default).</div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="TailscaleOAuthClientId">OAuth client id (preferred)</label>
+                    <input id="TailscaleOAuthClientId" type="text" is="emby-input" />
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="TailscaleOAuthClientSecret">OAuth client secret</label>
+                    <input id="TailscaleOAuthClientSecret" type="password" is="emby-input" autocomplete="new-password" />
+                    <div class="fieldDescription">Leave blank to keep the current secret.</div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="TailscaleApiToken">API token (fallback)</label>
+                    <input id="TailscaleApiToken" type="password" is="emby-input" autocomplete="new-password" />
+                    <div class="fieldDescription">Leave blank to keep. Only used when OAuth client id/secret are empty. Prefer OAuth.</div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="TailscaleGuestTags">Guest tags</label>
+                    <input id="TailscaleGuestTags" type="text" is="emby-input" />
+                    <div class="fieldDescription">Comma-separated, e.g. <code>tag:soup-guest</code></div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="TailscaleAuthKeyExpirySeconds">Auth key expiry (seconds)</label>
+                    <input id="TailscaleAuthKeyExpirySeconds" type="number" is="emby-input" />
+                    <div class="fieldDescription">Recommend 1800. Soup grant TTL is set slightly shorter.</div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        var SoupAuthConfig = {
+            pluginUniqueId: 'c8a7e6d5-4b3a-2918-07f6-e5d4c3b2a190'
+        };
+
+        document.querySelector('#SoupAuthConfigPage')
+            .addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(SoupAuthConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#SoupBaseUrl').value = config.SoupBaseUrl || '';
+                    document.querySelector('#PluginId').value = config.PluginId || '';
+                    // Never prefill secrets — empty on save means "keep existing".
+                    document.querySelector('#PluginSecret').value = '';
+                    document.querySelector('#ServerId').value = config.ServerId || '';
+                    document.querySelector('#ServerName').value = config.ServerName || '';
+                    document.querySelector('#Audience').value = config.Audience || '';
+                    document.querySelector('#AssertionIssuer').value = config.AssertionIssuer || '';
+                    document.querySelector('#JellyfinBaseUrl').value = config.JellyfinBaseUrl || '';
+                    document.querySelector('#MagicDns').value = config.MagicDns || '';
+                    document.querySelector('#UsernamePrefix').value = config.UsernamePrefix || '';
+                    document.querySelector('#CreateMissingUsers').checked = !!config.CreateMissingUsers;
+                    document.querySelector('#MintTailscaleAuthKeyOnInvite').checked =
+                        config.MintTailscaleAuthKeyOnInvite !== false;
+                    document.querySelector('#TailscaleTailnet').value = config.TailscaleTailnet || '-';
+                    document.querySelector('#TailscaleOAuthClientId').value = config.TailscaleOAuthClientId || '';
+                    document.querySelector('#TailscaleOAuthClientSecret').value = '';
+                    document.querySelector('#TailscaleApiToken').value = '';
+                    document.querySelector('#TailscaleGuestTags').value = config.TailscaleGuestTags || 'tag:soup-guest';
+                    document.querySelector('#TailscaleAuthKeyExpirySeconds').value =
+                        config.TailscaleAuthKeyExpirySeconds || 1800;
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+        document.querySelector('#SoupAuthConfigForm')
+            .addEventListener('submit', function (e) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(SoupAuthConfig.pluginUniqueId).then(function (config) {
+                    config.SoupBaseUrl = document.querySelector('#SoupBaseUrl').value;
+                    config.PluginId = document.querySelector('#PluginId').value;
+                    var pluginSecret = document.querySelector('#PluginSecret').value;
+                    if (pluginSecret) {
+                        config.PluginSecret = pluginSecret;
+                    }
+                    config.ServerId = document.querySelector('#ServerId').value;
+                    config.ServerName = document.querySelector('#ServerName').value;
+                    config.Audience = document.querySelector('#Audience').value;
+                    config.AssertionIssuer = document.querySelector('#AssertionIssuer').value;
+                    config.JellyfinBaseUrl = document.querySelector('#JellyfinBaseUrl').value;
+                    config.MagicDns = document.querySelector('#MagicDns').value;
+                    config.UsernamePrefix = document.querySelector('#UsernamePrefix').value;
+                    config.CreateMissingUsers = document.querySelector('#CreateMissingUsers').checked;
+                    config.MintTailscaleAuthKeyOnInvite =
+                        document.querySelector('#MintTailscaleAuthKeyOnInvite').checked;
+                    config.TailscaleTailnet = document.querySelector('#TailscaleTailnet').value;
+                    config.TailscaleOAuthClientId = document.querySelector('#TailscaleOAuthClientId').value;
+                    var oauthSecret = document.querySelector('#TailscaleOAuthClientSecret').value;
+                    if (oauthSecret) {
+                        config.TailscaleOAuthClientSecret = oauthSecret;
+                    }
+                    var apiToken = document.querySelector('#TailscaleApiToken').value;
+                    if (apiToken) {
+                        config.TailscaleApiToken = apiToken;
+                    }
+                    config.TailscaleGuestTags = document.querySelector('#TailscaleGuestTags').value;
+                    config.TailscaleAuthKeyExpirySeconds =
+                        parseInt(document.querySelector('#TailscaleAuthKeyExpirySeconds').value, 10) || 1800;
+                    ApiClient.updatePluginConfiguration(SoupAuthConfig.pluginUniqueId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+                e.preventDefault();
+                return false;
+            });
+    </script>
+</div>
+</body>
+</html>

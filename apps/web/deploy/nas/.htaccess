@@ -1,0 +1,5 @@
+RewriteEngine On
+RewriteBase /soup/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /soup/200.html [L]

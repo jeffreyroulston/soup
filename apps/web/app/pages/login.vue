@@ -8,7 +8,7 @@ const auth = useAuthSession()
 const router = useRouter()
 const mock = isMockMode()
 
-const phase = ref<'idle' | 'waiting' | 'direct' | 'quickConnect' | 'error'>('idle')
+const phase = ref<'idle' | 'waiting' | 'direct' | 'quickConnect' | 'server' | 'error'>('idle')
 const userCode = ref('')
 const verificationUrl = ref('')
 const errorMessage = ref('')
@@ -23,6 +23,8 @@ const directError = ref('')
 const directBusy = ref(false)
 const quickConnectCode = ref('')
 const quickConnectBusy = ref(false)
+/** Roster id being signed in to from the server picker. */
+const selectingServer = ref<string | null>(null)
 
 onMounted(async () => {
   try {
@@ -34,6 +36,9 @@ onMounted(async () => {
   if (!auth.ready.value) await auth.hydrate()
   if (auth.jellyfin.value) {
     await router.replace('/')
+  }
+  else if (auth.choosingServer.value) {
+    phase.value = 'server'
   }
 })
 
@@ -128,6 +133,28 @@ function endQuickConnect(message = '') {
   phase.value = 'direct'
 }
 
+async function chooseServer(serverId: string) {
+  if (selectingServer.value) return
+  selectingServer.value = serverId
+  auth.serverError.value = null
+  try {
+    await auth.selectServer(serverId)
+    await router.replace('/')
+  }
+  catch (error) {
+    auth.serverError.value = error instanceof Error ? error.message : 'Could not sign in to that server'
+    if (!auth.email.value) phase.value = 'idle'
+  }
+  finally {
+    selectingServer.value = null
+  }
+}
+
+async function useAnotherAccount() {
+  await auth.logout()
+  phase.value = 'idle'
+}
+
 async function beginMock() {
   errorMessage.value = ''
   try {
@@ -174,6 +201,10 @@ function schedulePoll(intervalSec: number, run: number) {
         await router.replace('/')
         return
       }
+      if (result.status === 'chooseServer') {
+        phase.value = 'server'
+        return
+      }
       if (result.status === 'expired') {
         phase.value = 'error'
         errorMessage.value = 'Sign-in code expired. Try again.'
@@ -207,7 +238,7 @@ function schedulePoll(intervalSec: number, run: number) {
           soup
         </h1>
         <h1 v-else id="login-title" class="text-[38px] font-extrabold leading-[1.05] tracking-[-0.04em]">
-          {{ mock ? 'Browse the mock library' : phase === 'waiting' || phase === 'quickConnect' ? 'Approve this sign-in' : 'Sign in with Jellyfin' }}
+          {{ mock ? 'Browse the mock library' : phase === 'waiting' || phase === 'quickConnect' ? 'Approve this sign-in' : phase === 'server' ? 'Choose a server' : 'Sign in with Jellyfin' }}
         </h1>
 
         <template v-if="mock && phase === 'idle'">
@@ -334,6 +365,41 @@ function schedulePoll(intervalSec: number, run: number) {
           >
             Cancel
           </button>
+        </template>
+
+        <template v-else-if="phase === 'server'">
+          <p class="text-[15px] leading-relaxed text-ink-2">
+            You have access to {{ auth.servers.value.length === 1 ? 'this server' : 'these servers' }}.
+            You can switch later in Settings.
+          </p>
+          <p v-if="auth.serverError.value" role="alert" class="text-[14px] font-semibold text-accent">
+            {{ auth.serverError.value }}
+          </p>
+          <ul class="flex flex-col gap-2">
+            <li v-for="server in auth.servers.value" :key="server.id">
+              <button
+                type="button"
+                :disabled="selectingServer !== null"
+                class="flex w-full items-center gap-3 rounded-btn bg-white/10 px-4 py-3.5 text-left transition hover:bg-white/15 disabled:opacity-60"
+                @click="chooseServer(server.id)"
+              >
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class="truncate text-[17px] font-extrabold">{{ server.name }}</span>
+                  <span class="truncate text-[13px] font-semibold text-muted">{{ serverHost(server) }}</span>
+                </span>
+                <span
+                  v-if="selectingServer === server.id"
+                  class="size-4 shrink-0 animate-spin rounded-full border-2 border-ink/30 border-t-ink"
+                />
+              </button>
+            </li>
+          </ul>
+          <p class="text-center text-[14px] font-semibold text-muted">
+            Signed in as {{ auth.email.value }} ·
+            <button type="button" class="font-bold text-ink-2 underline-offset-2 hover:text-ink hover:underline" @click="useAnotherAccount">
+              Use another account
+            </button>
+          </p>
         </template>
 
         <template v-else-if="phase === 'waiting'">

@@ -6,6 +6,10 @@ export type JellyfinSessionPayload = {
   deviceId: string
   /** Signed in with a Jellyfin username and password rather than Soup Identity. */
   direct?: boolean
+  /** Soup roster id of the server, for Soup sign-ins. */
+  soupServerId?: string
+  /** Display name from the Soup roster. */
+  serverName?: string
 }
 
 export type AuthSessionResponse = {

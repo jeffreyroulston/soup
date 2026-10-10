@@ -10,6 +10,7 @@ Nuxt 4 SPA, built as static files so one central deployment serves everyone. Sig
 | `soup.jellyfin.session` | sessionStorage | This tab's Jellyfin token, so a reload skips the exchange |
 | `soup.jellyfin.direct` | localStorage | Direct Jellyfin username/password sign-in |
 | `soup.jellyfin.deviceId` | localStorage | One Jellyfin device ID per browser |
+| `soup.server.preferred` | localStorage | Roster id of the server to sign in to. With several servers and none saved, sign-in shows a picker; Settings switches between them |
 
 A Jellyfin 401 re-runs the exchange from the stored Soup tokens; a rejected refresh token signs the browser out.
 

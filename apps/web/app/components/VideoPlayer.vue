@@ -62,6 +62,8 @@ const playMethod = ref<JellyfinPlayMethod | null>(null)
 const activePlan = ref<JellyfinPlaybackPlan>(props.plan)
 
 const paused = ref(true)
+/** Played to the end; the up-next countdown keeps running though the video reports paused. */
+const ended = ref(false)
 // Seeded from the resume point and runtime so the seek bar is filled before the stream loads.
 const currentTime = ref(ticksToSeconds(props.plan.startPositionTicks))
 const duration = ref(ticksToSeconds(props.item.runTimeTicks ?? 0))
@@ -69,7 +71,8 @@ const bufferedEnd = ref(0)
 const volume = ref(1)
 const muted = ref(false)
 const rate = ref(1)
-const isFullscreen = ref(false)
+// Carried over from the previous episode, which fullscreened the page.
+const isFullscreen = ref(import.meta.client && Boolean(document.fullscreenElement))
 const panel = ref<Panel | null>(null)
 const hoverRatio = ref<number | null>(null)
 const scrubbing = ref(false)
@@ -736,8 +739,16 @@ async function onEnded() {
   const video = videoRef.value
   clearProgressTimer()
   if (video && startedReported) await safeReport('stopped', video.currentTime)
-  if (props.nextEpisode && prefs.value.autoplayNext) emit('next')
-  else emit('ended')
+  if (props.nextEpisode && prefs.value.autoplayNext) {
+    // Short credits can end before the countdown does; let it finish instead of cutting it off.
+    // "Watch credits" hid the card, so bring it back for the countdown.
+    ended.value = true
+    upNextDismissed.value = false
+    if (!upNextVisible.value) emit('next')
+  }
+  else {
+    emit('ended')
+  }
 }
 
 async function onVideoError() {
@@ -823,7 +834,7 @@ watch(upNextVisible, (visible) => {
   upNextCountdown.value = UP_NEXT_SECONDS
   if (!visible || !prefs.value.autoplayNext) return
   upNextTimer = setInterval(() => {
-    if (paused.value) return
+    if (paused.value && !ended.value) return
     upNextCountdown.value -= 1
     if (upNextCountdown.value <= 0) {
       clearUpNextTimer()
@@ -833,6 +844,7 @@ watch(upNextVisible, (visible) => {
 })
 
 watch(currentTime, (time) => {
+  if (ended.value && videoRef.value && !videoRef.value.ended) ended.value = false
   if (upNextDismissed.value && upNextAt.value != null && time < upNextAt.value - 1) upNextDismissed.value = false
 })
 
@@ -949,9 +961,10 @@ async function togglePictureInPicture() {
   catch { /* unsupported */ }
 }
 
+/** The whole page goes fullscreen, not the player, so it survives the switch to the next episode. */
 function toggleFullscreen() {
   if (document.fullscreenElement) void document.exitFullscreen()
-  else void rootRef.value?.requestFullscreen?.()
+  else void document.documentElement.requestFullscreen?.()
 }
 
 function onFullscreenChange() {

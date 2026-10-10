@@ -1,13 +1,14 @@
 import type { AuthSessionResponse, JellyfinSessionPayload } from '~/types/jellyfin'
 import { MOCK_EMAIL, MOCK_SESSION } from '~/utils/mockCatalog'
 import { isMockMode } from '~/utils/mockMode'
-import { exchangeForJellyfin } from '~/utils/soupExchange'
+import { exchangeForJellyfin, fetchServers, pickServer } from '~/utils/soupExchange'
 import {
   IdentityError,
   pollDeviceLink,
   refreshSoupSession,
   revokeSoupSession,
   startDeviceLink,
+  type RosterServer,
 } from '~/utils/soupIdentity'
 
 /** This tab's Jellyfin token from a Soup sign-in; other tabs mint their own from the Soup tokens. */
@@ -18,6 +19,8 @@ const DEVICE_KEY = 'soup.jellyfin.deviceId'
 /** Soup Identity session, shared by every tab in this browser. */
 const TOKENS_KEY = 'soup.identity.tokens'
 export const LAST_SERVER_KEY = 'soup.jellyfin.lastServer'
+/** Roster id of the Soup server this browser last signed in to. */
+const PREFERRED_SERVER_KEY = 'soup.server.preferred'
 
 type SoupTokens = {
   accessToken: string
@@ -154,6 +157,12 @@ export function useAuthSession() {
   const ready = useState('soup-auth-ready', () => false)
   const loading = useState('soup-auth-loading', () => false)
   const mockDismissed = useState('soup-mock-dismissed', () => false)
+  /** Servers on the Soup roster, from the last exchange. */
+  const servers = useState<RosterServer[]>('soup-servers', () => [])
+  /** Signed in to Soup but not to a server yet; the login page shows the server picker. */
+  const choosingServer = useState('soup-choosing-server', () => false)
+  /** Why the last server couldn't be signed in to, shown with the picker. */
+  const serverError = useState<string | null>('soup-server-error', () => null)
 
   function persistJellyfin(session: JellyfinSessionPayload | null) {
     jellyfin.value = session
@@ -213,12 +222,20 @@ export function useAuthSession() {
     persistJellyfin(payload.jellyfin)
   }
 
-  /** A new Jellyfin token from the stored Soup tokens; null when there is no usable Soup session. */
-  async function exchangeSoup(): Promise<AuthSessionResponse | null> {
+  /**
+   * A new Jellyfin token from the stored Soup tokens for `serverId`, else the preferred or only
+   * server. Null when there is no usable Soup session; `jellyfin: null` when the user has to choose.
+   */
+  async function exchangeSoup(serverId?: string): Promise<AuthSessionResponse | null> {
     const tokens = await freshTokens(identityBaseUrl)
     if (!tokens) return null
     try {
-      const session = await exchangeForJellyfin(identityBaseUrl, tokens.accessToken, webDeviceId())
+      const roster = await fetchServers(identityBaseUrl, tokens.accessToken)
+      servers.value = roster
+      const server = pickServer(roster, serverId ?? readLocal(PREFERRED_SERVER_KEY))
+      if (!server) return { email: tokens.email, jellyfin: null }
+      const session = await exchangeForJellyfin(identityBaseUrl, tokens.accessToken, webDeviceId(), server)
+      writeLocal(PREFERRED_SERVER_KEY, server.id)
       return { email: tokens.email, jellyfin: session }
     }
     catch (error) {
@@ -226,6 +243,27 @@ export function useAuthSession() {
       writeTokens(null)
       return null
     }
+  }
+
+  /** Signed in to a server, or to Soup alone with the picker up when `jellyfin` is null. */
+  async function applySoup(payload: AuthSessionResponse) {
+    choosingServer.value = !payload.jellyfin
+    serverError.value = null
+    await applySession(payload)
+  }
+
+  /**
+   * After a failed exchange with a known roster, stays signed in to Soup and offers the
+   * servers so the user can retry or pick another. False when there's nothing to offer.
+   */
+  function offerServers(error: unknown): boolean {
+    const tokens = readTokens()
+    if (!tokens || !servers.value.length) return false
+    email.value = tokens.email
+    persistJellyfin(null)
+    choosingServer.value = true
+    serverError.value = error instanceof Error ? error.message : 'Could not sign in to that server'
+    return true
   }
 
   async function applyMockSession() {
@@ -247,17 +285,19 @@ export function useAuthSession() {
       if (restoreFromStorage()) return
       const payload = await exchangeSoup()
       if (payload) {
-        await applySession(payload)
+        await applySoup(payload)
       }
       else {
         email.value = null
         persistJellyfin(null)
       }
     }
-    catch {
+    catch (error) {
       // Identity or Jellyfin unreachable. The Soup tokens stay, so the next load can retry.
-      email.value = null
-      persistJellyfin(null)
+      if (!offerServers(error)) {
+        email.value = null
+        persistJellyfin(null)
+      }
     }
     finally {
       ready.value = true
@@ -320,9 +360,43 @@ export function useAuthSession() {
       expiresAt: Math.floor(Date.now() / 1000) + (poll.expires_in || 3600),
     }
     writeTokens(tokens)
-    const session = await exchangeForJellyfin(identityBaseUrl, tokens.accessToken, webDeviceId())
-    await applySession({ email: tokens.email, jellyfin: session })
-    return { status: 'approved' as const, email: tokens.email, jellyfin: session }
+    let payload: AuthSessionResponse | null
+    try {
+      payload = await exchangeSoup()
+    }
+    catch (error) {
+      if (offerServers(error)) return { status: 'chooseServer' as const }
+      throw error
+    }
+    if (!payload) throw new Error('Soup rejected the sign-in. Try again.')
+    await applySoup(payload)
+    if (!payload.jellyfin) return { status: 'chooseServer' as const }
+    return { status: 'approved' as const, email: tokens.email, jellyfin: payload.jellyfin }
+  }
+
+  /** Signs in to another server on the roster and remembers it for this browser. */
+  async function selectServer(serverId: string) {
+    const payload = await exchangeSoup(serverId)
+    if (!payload) {
+      email.value = null
+      persistJellyfin(null)
+      choosingServer.value = false
+      throw new Error('Your Soup session expired. Sign in again.')
+    }
+    if (payload.jellyfin?.soupServerId !== serverId) {
+      throw new Error('That server is no longer on your roster')
+    }
+    // Cached rows, items and progress all belong to the previous server.
+    nuxtApp.$queryClient.clear()
+    await applySoup(payload)
+  }
+
+  /** The roster, fetched when this tab restored its session without an exchange. */
+  async function loadServers(): Promise<RosterServer[]> {
+    if (servers.value.length || isMockMode()) return servers.value
+    const tokens = await freshTokens(identityBaseUrl)
+    if (tokens) servers.value = await fetchServers(identityBaseUrl, tokens.accessToken)
+    return servers.value
   }
 
   /** Signs in against a Jellyfin server with a username and password, skipping Soup Identity. */
@@ -435,14 +509,18 @@ export function useAuthSession() {
       return { email: MOCK_EMAIL, jellyfin: MOCK_SESSION }
     }
     reexchanging ??= (async () => {
-      const payload = await exchangeSoup()
+      const payload = await exchangeSoup(jellyfin.value?.soupServerId)
       if (!payload) {
         email.value = null
         persistJellyfin(null)
         await navigateTo('/login')
         throw new Error('Soup session expired')
       }
-      await applySession(payload)
+      await applySoup(payload)
+      if (!payload.jellyfin) {
+        await navigateTo('/login')
+        throw new Error('Choose a server')
+      }
       return payload
     })().finally(() => {
       reexchanging = null
@@ -471,6 +549,9 @@ export function useAuthSession() {
     finally {
       email.value = null
       persistJellyfin(null)
+      servers.value = []
+      choosingServer.value = false
+      serverError.value = null
       nuxtApp.$queryClient.clear()
     }
   }
@@ -489,6 +570,11 @@ export function useAuthSession() {
     pollQuickConnect,
     reexchange,
     logout,
+    servers,
+    choosingServer,
+    serverError,
+    selectServer,
+    loadServers,
     enterMockLibrary: applyMockSession,
   }
 }

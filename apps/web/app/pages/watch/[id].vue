@@ -101,6 +101,11 @@ onBeforeUnmount(() => {
   void queryClient.invalidateQueries({ queryKey: queryKeys.all })
 })
 
+// The player fullscreens the page so the next episode stays fullscreen; leaving playback ends it.
+onBeforeRouteLeave((to) => {
+  if (!to.path.startsWith('/watch/') && document.fullscreenElement) void document.exitFullscreen()
+})
+
 function detailPath() {
   const value = item.value
   return value?.type === 'Episode' && value.seriesId ? `/item/${value.seriesId}` : `/item/${itemId.value}`

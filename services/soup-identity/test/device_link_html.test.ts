@@ -12,15 +12,16 @@ test("escapeHtml escapes markup", () => {
   assert.equal(escapeHtml(`<"&>`), "&lt;&quot;&amp;&gt;");
 });
 
-test("dev form includes Festival chrome and escaped user code", () => {
+test("dev form matches the web sign-in and escapes the user code", () => {
   const html = deviceLinkDevForm({
     userCode: `AB<>"`,
     emailPlaceholder: "a@b.c",
   });
-  assert.match(html, /Barlow Condensed/);
-  assert.match(html, /--cobalt:\s*#2541c8/);
-  assert.match(html, /brand-mark">Soup</);
-  assert.match(html, /AB&lt;&gt;&quot;/);
+  assert.match(html, /family=Manrope/);
+  assert.match(html, /--canvas:\s*#0a0a0b/);
+  assert.match(html, /brand-mark">soup</);
+  assert.match(html, /aria-label="Code AB&lt;&gt;&quot;"/);
+  assert.match(html, /value="AB&lt;&gt;&quot;"/);
   assert.match(html, /Approve device/);
   assert.match(html, /name="email"/);
   assert.doesNotMatch(html, /google_sub/);

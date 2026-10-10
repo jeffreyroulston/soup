@@ -1,4 +1,4 @@
-/** Festival-styled HTML for Soup device-link browser pages. */
+/** HTML for Soup device-link browser pages, styled like the Soup web sign-in. */
 
 export function escapeHtml(s: string): string {
   return s
@@ -21,191 +21,221 @@ type PageOptions = {
 
 const CSS = /* css */ `
 :root {
-  --paper: #f5f3eb;
-  --surface: #fffef8;
-  --cobalt: #2541c8;
-  --signal: #e8f35b;
-  --ink: #1c2027;
-  --muted: #515867;
-  --line: #aeb2b9;
-  --danger: #b42318;
-  --ok: #1b6b3a;
+  color-scheme: dark;
+  --canvas: #0a0a0b;
+  --surface: #1c1c1e;
+  --elevated: #2c2c2e;
+  --ink: #f5f5f7;
+  --ink-2: #d2d2d7;
+  --muted: #a1a1a6;
+  --accent: #fc7814;
+  --ok: #30d158;
+  --radius-btn: 12px;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
   margin: 0;
   min-height: 100%;
-  font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  font-size: 1.05rem;
-  line-height: 1.45;
+  font-family: Manrope, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(120% 80% at 100% -10%, color-mix(in srgb, var(--signal) 35%, transparent), transparent 55%),
-    radial-gradient(90% 60% at -10% 110%, color-mix(in srgb, var(--cobalt) 18%, transparent), transparent 50%),
-    var(--paper);
+    radial-gradient(80% 60% at 85% -10%, rgb(252 120 20 / 0.16), transparent 60%),
+    radial-gradient(70% 55% at 0% 110%, rgb(255 255 255 / 0.07), transparent 60%),
+    var(--canvas);
 }
 .shell {
   min-height: 100%;
   display: grid;
   place-items: center;
-  padding: 1.5rem 1rem 2.5rem;
+  padding: 4rem 1rem;
 }
 .card {
-  width: min(26rem, 100%);
-  background: var(--surface);
-  border: 2px solid var(--ink);
-  box-shadow: 6px 6px 0 var(--cobalt);
-  overflow: clip;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(460px, 100%);
+  padding: 32px;
+  background: rgb(30 30 32 / 0.82);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 28px;
+  box-shadow: 0 40px 80px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
 }
+@media (min-width: 640px) { .card { padding: 44px; } }
 .brand {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.85rem 1.1rem;
-  background: var(--cobalt);
-  color: var(--signal);
 }
 .brand-mark {
-  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
-  font-weight: 800;
-  font-size: 1.55rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -1.2px;
 }
 .brand-tag {
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.92;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
 }
-.content { padding: 1.35rem 1.2rem 1.5rem; }
+.heading { display: flex; flex-direction: column; gap: 10px; }
 .eyebrow {
-  margin: 0 0 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--muted);
 }
 h1 {
-  margin: 0 0 0.75rem;
-  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  margin: 0;
+  font-size: 38px;
   font-weight: 800;
-  font-size: clamp(1.85rem, 6vw, 2.35rem);
-  line-height: 0.95;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
 }
-.lead { margin: 0 0 1.15rem; color: var(--muted); }
+.lead { margin: 0; color: var(--ink-2); }
+.lead strong, .lead code { color: var(--ink); }
 .user-code {
-  display: block;
-  margin: 0 0 1.25rem;
-  padding: 0.85rem 0.9rem;
-  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-align: center;
-  text-transform: uppercase;
-  color: var(--cobalt);
-  background: color-mix(in srgb, var(--signal) 55%, white);
-  border: 2px dashed color-mix(in srgb, var(--cobalt) 55%, var(--ink));
+  display: flex;
+  gap: 8px;
+  margin: 0;
 }
-form { display: grid; gap: 0.85rem; }
-label {
+.user-code span {
   display: grid;
-  gap: 0.35rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  place-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 68px;
+  border-radius: var(--radius-btn);
+  background: rgb(255 255 255 / 0.1);
+  font-size: clamp(1.5rem, 7vw, 2.25rem);
+  font-weight: 800;
+}
+.user-code span.sep {
+  flex: none;
+  padding: 0 2px;
+  background: none;
+  color: var(--muted);
+}
+form { display: flex; flex-direction: column; gap: 16px; margin: 0; }
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--muted);
 }
 input {
   width: 100%;
-  padding: 0.7rem 0.75rem;
+  height: 48px;
+  padding: 0 16px;
   font: inherit;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--ink);
-  background: var(--paper);
-  border: 2px solid var(--ink);
-  border-radius: 0;
+  background: rgb(255 255 255 / 0.1);
+  border: 0;
+  border-radius: var(--radius-btn);
+  outline: none;
 }
-input:focus {
-  outline: 3px solid var(--signal);
-  outline-offset: 2px;
-}
+input::placeholder { color: rgb(161 161 166 / 0.7); }
+input:focus { background: rgb(255 255 255 / 0.15); }
+input:focus-visible { box-shadow: 0 0 0 2px var(--ink); }
 button, .btn {
   appearance: none;
   display: inline-flex;
   justify-content: center;
   align-items: center;
   width: 100%;
-  margin-top: 0.35rem;
-  padding: 0.85rem 1rem;
-  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
-  font-size: 1.25rem;
+  height: 52px;
+  margin-top: 4px;
+  padding: 0 1rem;
+  font: inherit;
+  font-size: 17px;
   font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   text-decoration: none;
-  color: var(--ink);
-  background: var(--signal);
-  border: 2px solid var(--ink);
-  box-shadow: 4px 4px 0 var(--ink);
+  color: var(--canvas);
+  background: var(--ink);
+  border: 0;
+  border-radius: var(--radius-btn);
   cursor: pointer;
+  transition: background-color 150ms;
 }
-button:hover, .btn:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
-button:active, .btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
-button:focus-visible, .btn:focus-visible, input:focus-visible {
-  outline: 3px solid var(--cobalt);
-  outline-offset: 2px;
+button:hover, .btn:hover { background: rgb(245 245 247 / 0.8); }
+:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
 }
 .note {
-  margin: 1rem 0 0;
-  font-size: 0.88rem;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--muted);
 }
-.note code, .mono {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+code, .mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.9em;
 }
 .status {
-  display: inline-block;
-  margin: 0 0 0.85rem;
-  padding: 0.2rem 0.55rem;
-  font-size: 0.72rem;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 10px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  border: 2px solid currentColor;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink-2);
 }
-.status-success { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, white); }
-.status-error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, white); }
-.status-info { color: var(--cobalt); background: color-mix(in srgb, var(--cobalt) 10%, white); }
+.status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.status-success { color: var(--ok); background: rgb(48 209 88 / 0.14); }
+.status-error { color: var(--accent); background: rgb(252 120 20 / 0.14); }
+.status-info { color: var(--ink-2); }
 pre.tokens {
-  margin: 1rem 0 0;
+  margin: 0;
   max-height: 14rem;
   overflow: auto;
-  padding: 0.75rem;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.75rem;
+  padding: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
   line-height: 1.4;
-  background: var(--paper);
-  border: 2px solid var(--ink);
+  background: rgb(255 255 255 / 0.06);
+  border-radius: var(--radius-btn);
   white-space: pre-wrap;
   word-break: break-all;
 }
 @media (prefers-reduced-motion: reduce) {
   button, .btn { transition: none; }
-  button:hover, .btn:hover, button:active, .btn:active {
-    transform: none;
-    box-shadow: 4px 4px 0 var(--ink);
-  }
 }
 `;
+
+/** One tile per character like the web sign-in; dashes become a quiet separator. */
+function userCodeTiles(code: string): string {
+  const tiles = [...code]
+    .map((char) =>
+      char === "-"
+        ? `<span class="sep" aria-hidden="true">-</span>`
+        : `<span aria-hidden="true">${escapeHtml(char)}</span>`,
+    )
+    .join("");
+  return `<div class="user-code" role="img" aria-label="Code ${escapeHtml(code)}">${tiles}</div>`;
+}
 
 export function deviceLinkPage(options: PageOptions): string {
   const kind = options.kind ?? "info";
@@ -222,26 +252,27 @@ export function deviceLinkPage(options: PageOptions): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="light" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0a0a0b" />
   <title>${escapeHtml(options.title)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
   <style>${CSS}</style>
 </head>
 <body>
   <main class="shell">
     <section class="card" aria-labelledby="page-heading">
       <header class="brand">
-        <p class="brand-mark">Soup</p>
+        <p class="brand-mark">soup</p>
         <span class="brand-tag">Identity</span>
       </header>
-      <div class="content">
-        <span class="status ${statusClass}">${escapeHtml(statusLabel)}</span>
+      <span class="status ${statusClass}">${escapeHtml(statusLabel)}</span>
+      <div class="heading">
         ${eyebrow}
         <h1 id="page-heading">${escapeHtml(options.heading)}</h1>
-        ${options.bodyHtml}
       </div>
+      ${options.bodyHtml}
     </section>
   </main>
 </body>
@@ -253,7 +284,7 @@ export function deviceLinkDevForm(opts: {
   emailPlaceholder: string;
 }): string {
   const codeBlock = opts.userCode
-    ? `<span class="user-code" aria-label="User code">${escapeHtml(opts.userCode)}</span>`
+    ? userCodeTiles(opts.userCode)
     : "";
   return deviceLinkPage({
     title: "Soup · Link device",

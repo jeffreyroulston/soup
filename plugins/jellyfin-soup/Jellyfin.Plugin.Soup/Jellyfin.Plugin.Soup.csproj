@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- Defaults to the local 10.11 Docker image; -p:JellyfinVersion=12.2.0 builds for Jellyfin 12 (net10.0). -->
+    <JellyfinVersion Condition="'$(JellyfinVersion)' == ''">10.11.5</JellyfinVersion>
     <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework Condition="$(JellyfinVersion.StartsWith('12.'))">net10.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.Soup</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.Soup</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -12,10 +15,10 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.5">
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="10.11.5">
+    <PackageReference Include="Jellyfin.Model" Version="$(JellyfinVersion)">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.14.0" />

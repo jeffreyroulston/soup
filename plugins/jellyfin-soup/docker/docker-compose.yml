@@ -22,8 +22,8 @@ services:
     volumes:
       - soup_jellyfin_config:/config
       - soup_jellyfin_cache:/cache
-      # Optional: bind local media for library testing
-      # - ../../media:/media:ro
+      # External HDD "Parity" (ntfs-3g read-only mount)
+      - /tmp/Parity-mount:/media:ro
     environment:
       # Reach Soup Identity on the host (docker compose in services/soup-identity).
       # Configure in Dashboard → Plugins → Soup Auth → Soup base URL.
@@ -34,4 +34,8 @@ services:
 
 volumes:
   soup_jellyfin_config:
+    external: true
+    name: docker_soup_jellyfin_config
   soup_jellyfin_cache:
+    external: true
+    name: docker_soup_jellyfin_cache

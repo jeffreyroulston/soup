@@ -5,7 +5,7 @@
 set -euo pipefail
 
 cd {SITE_DIRECTORY}
-git pull origin main
+git pull --ff-only origin {BRANCH}
 
 cd services/soup-identity
 # devDependencies are needed for tsc; prune after the build.
@@ -17,7 +17,7 @@ npm prune --omit=dev
 # Uses the compiled script: `npm run migrate` needs tsx, which was just pruned.
 node dist/db/migrate.js
 
-# The service runs under PM2 as the ploi user (`pm2 start dist/index.js --name soup-identity`).
-pm2 restart soup-identity --update-env
+# The service runs under the PM2 process Ploi created for this site (daemon script ~/.ploi/soup-idmbestiestudioscom.sh runs `npm start`).
+pm2 restart soup-idmbestiestudioscom --update-env
 
 echo "Soup Identity deployed"

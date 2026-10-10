@@ -17,7 +17,6 @@ npm prune --omit=dev
 # Uses the compiled script: `npm run migrate` needs tsx, which was just pruned.
 node dist/db/migrate.js
 
-# The service runs under the PM2 process Ploi created for this site (daemon script ~/.ploi/soup-idmbestiestudioscom.sh runs `npm start`).
-pm2 restart soup-idmbestiestudioscom --update-env
+# No PM2 restart here: Ploi restarts its PM2 app (soup-idmbestiestudioscom) after the deploy.
 
 echo "Soup Identity deployed"

@@ -30,7 +30,12 @@ const sortBy = ref<LibrarySort>('SortName')
 const filter = ref<Filter>('all')
 const genre = ref<string | null>(null)
 const activeLetter = ref<string | null>(null)
+/** Last letter whose section starts on screen; the highlight spans activeLetter → this. */
+const lastVisibleLetter = ref<string | null>(null)
 const indexRef = ref<HTMLElement | null>(null)
+const letterRefs: HTMLElement[] = []
+/** Highlight pill geometry, relative to the strip. */
+const highlight = ref<{ top: number, height: number, size: number } | null>(null)
 /** A–Z strip height: from its on-screen top down to 24px above the viewport bottom. */
 const indexHeight = ref<number | null>(null)
 
@@ -135,6 +140,8 @@ async function jumpTo(letter: string) {
   const el = document.getElementById(anchorId(letter))
   if (!el) return
   activeLetter.value = letter
+  lastVisibleLetter.value = letter
+  syncHighlight()
   el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
@@ -142,18 +149,67 @@ function anchorId(letter: string) {
   return `letter-${letter === '#' ? 'num' : letter}`
 }
 
+/** Content above this (px from the viewport top) is hidden behind the top bar. */
+const VISIBLE_TOP = 80
+
 let frame = 0
 function syncActiveLetter() {
   frame = 0
   syncIndexHeight()
   if (!showIndex.value) return
-  let current: string | null = null
+  const sections: { letter: string, el: HTMLElement }[] = []
   for (const letter of LETTERS) {
     if (!presentLetters.value.has(letter)) continue
     const el = document.getElementById(anchorId(letter))
-    if (el && el.getBoundingClientRect().top <= 160) current = letter
+    if (el) sections.push({ letter, el })
+  }
+  let current: string | null = null
+  let last: string | null = null
+  for (const [i, { letter, el }] of sections.entries()) {
+    // Sections can share a grid row, so a letter is in view while its last card (the one
+    // before the next letter's anchor) still shows below the top bar.
+    const end = sections[i + 1]?.el.previousElementSibling ?? null
+    const inView = !end || end.getBoundingClientRect().bottom > VISIBLE_TOP
+    if (!current && inView) current = letter
+    if (el.getBoundingClientRect().top < window.innerHeight) last = letter
   }
   activeLetter.value = current ?? [...presentLetters.value][0] ?? null
+  lastVisibleLetter.value = last
+  syncHighlight()
+}
+
+/** Indexes into LETTERS covered by the highlight, or null when there's nothing to show. */
+const highlightRange = computed(() => {
+  if (loading.value || !activeLetter.value) return null
+  const start = LETTERS.indexOf(activeLetter.value)
+  const end = lastVisibleLetter.value ? LETTERS.indexOf(lastVisibleLetter.value) : start
+  return { start, end: Math.max(start, end) }
+})
+
+function inHighlight(letter: string) {
+  const range = highlightRange.value
+  if (!range) return false
+  const i = LETTERS.indexOf(letter)
+  return i >= range.start && i <= range.end
+}
+
+function syncHighlight() {
+  const nav = indexRef.value
+  const range = highlightRange.value
+  const first = range && letterRefs[range.start]
+  const last = range && letterRefs[range.end]
+  if (!nav || !first || !last) {
+    highlight.value = null
+    return
+  }
+  const navTop = nav.getBoundingClientRect().top + nav.clientTop
+  const a = first.getBoundingClientRect()
+  const b = last.getBoundingClientRect()
+  // Same size as a single letter's circle, so one letter in view is a perfect circle.
+  const size = Math.min(a.height, 28)
+  const top = a.top - navTop + (a.height - size) / 2
+  const bottom = b.top - navTop + (b.height + size) / 2
+  highlight.value = { top, height: bottom - top, size }
 }
 
 const INDEX_BOTTOM_GAP = 24
@@ -191,6 +247,12 @@ watch(loading, async (isLoading) => {
 watch(showIndex, async () => {
   await nextTick()
   syncIndexHeight()
+  syncHighlight()
+})
+
+watch(indexHeight, async () => {
+  await nextTick()
+  syncHighlight()
 })
 
 onMounted(() => {
@@ -293,12 +355,20 @@ onBeforeUnmount(() => {
         class="glass sticky top-24 hidden h-[calc(100dvh-7.5rem)] max-h-[64rem] min-h-[24rem] w-9 shrink-0 flex-col items-center self-start rounded-full py-3 md:flex"
         :style="indexHeight ? { height: `${indexHeight}px` } : undefined"
       >
+        <!-- Pill behind the letters, stretched over every section currently in view -->
+        <span
+          v-if="highlight"
+          aria-hidden="true"
+          class="pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full bg-ink transition-[top,height] duration-200 ease-out"
+          :style="{ top: `${highlight.top}px`, height: `${highlight.height}px`, width: `${highlight.size}px` }"
+        />
         <!-- Each letter takes an equal share of the full-height strip -->
         <button
-          v-for="letter in LETTERS"
+          v-for="(letter, i) in LETTERS"
           :key="letter"
+          :ref="el => { letterRefs[i] = el as HTMLElement }"
           type="button"
-          class="group flex min-h-0 w-full flex-1 items-center justify-center disabled:cursor-default"
+          class="group relative flex min-h-0 w-full flex-1 items-center justify-center disabled:cursor-default"
           :disabled="loading || !presentLetters.has(letter)"
           :aria-current="activeLetter === letter ? 'true' : undefined"
           :aria-label="`Jump to ${letter === '#' ? 'numbers' : letter}`"
@@ -306,8 +376,8 @@ onBeforeUnmount(() => {
         >
           <span
             class="grid aspect-square h-full max-h-[28px] place-items-center rounded-full text-[13px] font-extrabold leading-none transition"
-            :class="activeLetter === letter
-              ? 'bg-ink text-canvas'
+            :class="inHighlight(letter)
+              ? presentLetters.has(letter) ? 'text-canvas' : 'text-canvas/40'
               : !loading && presentLetters.has(letter) ? 'text-ink group-hover:bg-white/15' : 'text-[#48484A]'"
           >
             {{ letter }}

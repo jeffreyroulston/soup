@@ -66,26 +66,24 @@ function numeralClass(i: number) {
 <style scoped>
 .rank-numeral {
   color: transparent;
-  background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.04) 85%);
+  font-family: var(--font-sans);
+  font-variant-numeric: lining-nums;
+  background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.08) 85%);
   background-clip: text;
   -webkit-background-clip: text;
-  -webkit-text-stroke: 2px rgb(255 255 255 / 0.55);
   filter: drop-shadow(0 10px 24px rgb(0 0 0 / 0.5));
 }
 
 .rank-slide:has(a:hover) .rank-numeral {
-  background-image: linear-gradient(to bottom, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.12) 90%);
-  -webkit-text-stroke-color: rgb(255 255 255 / 0.85);
+  background-image: linear-gradient(to bottom, rgb(255 255 255 / 1), rgb(255 255 255 / 0.16) 90%);
 }
 
 .rank-numeral-first {
   background-image: linear-gradient(to bottom, var(--color-accent), rgb(252 120 20 / 0.08) 85%);
-  -webkit-text-stroke-color: rgb(252 120 20 / 0.9);
 }
 
 .rank-slide:has(a:hover) .rank-numeral-first {
   background-image: linear-gradient(to bottom, #ffb26b, rgb(252 120 20 / 0.2) 90%);
-  -webkit-text-stroke-color: #ffb26b;
 }
 
 /* Page-coloured glyph plus a ring of hard shadows = a rounded 8px gap around the numeral. */

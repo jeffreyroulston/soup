@@ -40,6 +40,8 @@ export type JellyfinMediaStream = {
 export type JellyfinChapter = {
   name: string
   startPositionTicks: number
+  /** Set only when the library extracts chapter images and this one has been generated. */
+  imageTag?: string | null
 }
 
 export type JellyfinMediaSegmentType = 'Intro' | 'Outro' | 'Recap' | 'Preview' | 'Commercial'

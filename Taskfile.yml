@@ -372,3 +372,53 @@ tasks:
     dir: packages/soup_tailscale
     cmds:
       - flutter clean
+
+  web:deps:
+    desc: Install npm dependencies for the Soup web app
+    dir: apps/web
+    cmds:
+      - npm install
+
+  web:dev:
+    desc: Run the Soup Nuxt web app in development
+    dir: apps/web
+    cmds:
+      - npm run dev
+
+  web:dev:mock:
+    desc: Run the web app with an in-memory mock catalog (no Identity/Jellyfin)
+    dir: apps/web
+    cmds:
+      - NUXT_PUBLIC_MOCK=true npm run dev
+
+  web:build:
+    desc: Build the Soup Nuxt web app
+    dir: apps/web
+    cmds:
+      - npm run build
+
+  web:generate:
+    desc: Build the Soup web app as a static SPA for central hosting (.output/public)
+    dir: apps/web
+    cmds:
+      - npm run generate
+
+  web:generate:nas:
+    desc: Build the static SPA for the Asustor NAS (/soup/ on 192.168.68.100) using apps/web/.env.nas
+    dir: apps/web
+    cmds:
+      - npm run generate -- --dotenv .env.nas
+      - cp deploy/nas/.htaccess .output/public/.htaccess
+      - cp deploy/nas/soup.config.json .output/public/soup.config.json
+
+  web:preview:
+    desc: Serve the generated static SPA with history fallback on :3001
+    dir: apps/web
+    cmds:
+      - npx --yes serve@14 -s .output/public -l 3001
+
+  web:typecheck:
+    desc: Typecheck the Soup Nuxt web app
+    dir: apps/web
+    cmds:
+      - npm run typecheck

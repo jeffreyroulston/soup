@@ -117,7 +117,7 @@ onBeforeUnmount(() => {
           v-if="backdrop"
           :src="backdrop"
           alt=""
-          class="absolute inset-0 size-full object-cover object-center"
+          class="absolute inset-0 size-full object-cover object-top"
         >
       </div>
     </Transition>

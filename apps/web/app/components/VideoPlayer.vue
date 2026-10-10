@@ -37,7 +37,7 @@ const {
   reportProgress,
   reportStopped,
 } = usePlayback()
-const { subtitleTrackUrl, imageUrl, trickplayTileUrl } = useJellyfin()
+const { subtitleTrackUrl, imageUrl, trickplayTileUrl, chapterImageUrl } = useJellyfin()
 const { prefs } = usePlaybackPrefs()
 
 type Panel = 'settings' | 'episodes' | 'chapters'
@@ -113,6 +113,9 @@ const subtitleStreams = computed(() => streams.value.filter(s => s.type === 'Sub
 const videoStream = computed(() => streams.value.find(s => s.type === 'Video') ?? null)
 const defaultAudioIndex = computed(() => defaultAudioStream(props.item)?.index ?? null)
 const chapters = computed(() => (props.item.chapters ?? []).filter(ch => ch.startPositionTicks > 0))
+/** Chapter stills, only present when the library has chapter image extraction turned on. */
+const chapterImages = computed(() => (props.item.chapters ?? []).map((_, i) => chapterImageUrl(props.item, i)))
+const hasChapterImages = computed(() => chapterImages.value.some(Boolean))
 
 const segmentsQuery = useQuery(useJellyfinQueries().mediaSegments(props.item.id))
 /** Intros, recaps, credits… from server media segments, else from chapter names. */
@@ -1277,15 +1280,29 @@ onBeforeUnmount(() => {
                 v-for="(ch, i) in item.chapters"
                 :key="ch.startPositionTicks"
                 type="button"
-                class="flex flex-col gap-0.5 rounded-[12px] px-3 py-2.5 text-left"
+                class="flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-left"
                 :class="i === currentChapterIndex ? 'bg-white/10' : 'hover:bg-white/5'"
                 :aria-current="i === currentChapterIndex ? 'true' : undefined"
                 @click="seekToTicks(ch.startPositionTicks)"
               >
-                <span class="text-xs font-bold uppercase tracking-[0.4px] text-muted">
-                  Chapter {{ i + 1 }} · {{ formatTime(ticksToSeconds(ch.startPositionTicks)) }}
+                <span
+                  v-if="hasChapterImages"
+                  class="aspect-video w-28 shrink-0 overflow-hidden rounded-[8px] bg-white/5"
+                >
+                  <img
+                    v-if="chapterImages[i]"
+                    :src="chapterImages[i]!"
+                    alt=""
+                    loading="lazy"
+                    class="size-full object-cover"
+                  >
                 </span>
-                <span class="truncate text-[15px] font-extrabold">{{ ch.name || `Chapter ${i + 1}` }}</span>
+                <span class="flex min-w-0 flex-col gap-0.5">
+                  <span class="text-xs font-bold uppercase tracking-[0.4px] text-muted">
+                    Chapter {{ i + 1 }} · {{ formatTime(ticksToSeconds(ch.startPositionTicks)) }}
+                  </span>
+                  <span class="truncate text-[15px] font-extrabold">{{ ch.name || `Chapter ${i + 1}` }}</span>
+                </span>
               </button>
             </template>
             <button

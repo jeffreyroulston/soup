@@ -58,7 +58,17 @@ NUXT_PUBLIC_SOUP_IDENTITY_BASE_URL=https://identity.example.com task web:generat
 task web:preview   # optional local check on :3001
 ```
 
-Deploy `apps/web/.output/public` to any static host (Cloudflare Pages, Netlify, nginx, S3 + CDN). `NUXT_PUBLIC_*` values are baked in at build time.
+Deploy `apps/web/.output/public` to any static host (Cloudflare Pages, Netlify, nginx, S3 + CDN). `NUXT_PUBLIC_*` values are baked in at build time as defaults.
+
+### Runtime config (no rebuild)
+
+The app fetches `soup.config.json` from its base path on startup. Edit that file in the deployed folder to repoint a deployment:
+
+```json
+{ "soupIdentityBaseUrl": "https://identity.example.com", "jellyfinUrl": "", "appName": "Soup" }
+```
+
+Precedence for the Identity URL: Settings → Identity server (saved in that browser) → `soup.config.json` → build-time env. `task web:generate:nas` copies `deploy/nas/soup.config.json` into the build.
 
 The host must fall back to the SPA shell for unknown paths so deep links like `/item/:id` load: serve `200.html` (or `index.html`) for any path that isn't a file. nginx:
 

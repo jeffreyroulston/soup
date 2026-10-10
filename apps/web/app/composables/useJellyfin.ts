@@ -35,7 +35,7 @@ import {
   mockTrickplayTileUrl,
 } from '~/utils/mockCatalog'
 import { isMockMode } from '~/utils/mockMode'
-import { countGenres, type GenreCount } from '~/utils/media'
+import { collapseKeepWatching, countGenres, type GenreCount } from '~/utils/media'
 
 // Only fields mapItem reads; every extra field is payload and server work on each list.
 const DETAIL_FIELDS =
@@ -141,7 +141,11 @@ function mapChapters(value: unknown): JellyfinChapter[] {
       if (!raw || typeof raw !== 'object') return null
       const json = raw as Record<string, unknown>
       if (typeof json.StartPositionTicks !== 'number') return null
-      return { name: String(json.Name ?? ''), startPositionTicks: json.StartPositionTicks }
+      return {
+        name: String(json.Name ?? ''),
+        startPositionTicks: json.StartPositionTicks,
+        imageTag: typeof json.ImageTag === 'string' ? json.ImageTag : null,
+      }
     })
     .filter((chapter): chapter is JellyfinChapter => chapter !== null)
 }
@@ -345,6 +349,18 @@ function createJellyfin() {
   }
 
   /** One sprite sheet of seek-bar thumbnails (see `JellyfinTrickplay`). */
+  /** Still for chapter `index` (its position in item.chapters), or null when the library has none. */
+  function chapterImageUrl(item: JellyfinItem, index: number, maxWidth = 320): string | null {
+    if (mock) return null
+    const tag = item.chapters?.[index]?.imageTag
+    if (!tag) return null
+    return client.mediaUrl(`Items/${item.id}/Images/Chapter/${index}`, {
+      tag,
+      maxWidth: String(maxWidth),
+      quality: '80',
+    })
+  }
+
   function trickplayTileUrl(item: JellyfinItem, width: number, index: number): string | null {
     if (mock) return mockTrickplayTileUrl(index)
     const query: Record<string, string> = item.mediaSourceId ? { MediaSourceId: item.mediaSourceId } : {}
@@ -375,11 +391,15 @@ function createJellyfin() {
 
   /** Above-the-fold home rows; `getHomeExtras` loads the slower rows below them. */
   async function getHome(): Promise<JellyfinHome> {
-    if (mock) return mockGetHome()
+    if (mock) {
+      const home = mockGetHome()
+      return { ...home, ...collapseKeepWatching(home.resume, home.nextUp) }
+    }
     const { userId } = requireSession()
     const images = 'Primary,Backdrop'
     const [resume, nextUp, movies, tv] = await Promise.all([
-      get(`Users/${userId}/Items/Resume`, listQuery(images, { Limit: '12', MediaTypes: 'Video' })),
+      // Generous limit so a show's earlier part-watched episodes aren't cut off before collapsing.
+      get(`Users/${userId}/Items/Resume`, listQuery(images, { Limit: '50', MediaTypes: 'Video' })),
       get('Shows/NextUp', listQuery(images, { UserId: userId, Limit: '12' })).catch(() => null),
       get(`Users/${userId}/Items/Latest`, listQuery(images, { Limit: '25', IncludeItemTypes: 'Movie' })),
       get(`Users/${userId}/Items/Latest`, listQuery(images, {
@@ -388,11 +408,8 @@ function createJellyfin() {
         GroupItems: 'true',
       })),
     ])
-    const resumeItems = asItems(resume)
-    const resumeIds = new Set(resumeItems.map(item => item.id))
     return {
-      resume: resumeItems,
-      nextUp: asItems(nextUp).filter(item => !resumeIds.has(item.id)),
+      ...collapseKeepWatching(asItems(resume), asItems(nextUp)),
       recentlyAddedMovies: asItems(movies),
       recentlyAddedTv: asItems(tv),
     }
@@ -638,5 +655,6 @@ function createJellyfin() {
     personImageUrl,
     subtitleTrackUrl,
     trickplayTileUrl,
+    chapterImageUrl,
   }
 }

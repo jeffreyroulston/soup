@@ -165,6 +165,50 @@ export function isInProgress(item: JellyfinItem): boolean {
  * Nominal resolution class (2160/1080/720/576/480) for a video stream. Widescreen films are
  * often cropped (e.g. 1280×536 or 1920×800), so the class comes from width as well as height.
  */
+/**
+ * One Keep Watching card per show: its earliest part-watched episode, else its next
+ * unwatched one. Shows keep the slot of their most recently played episode.
+ */
+export function collapseKeepWatching(
+  resume: readonly JellyfinItem[],
+  nextUp: readonly JellyfinItem[],
+): { resume: JellyfinItem[], nextUp: JellyfinItem[] } {
+  const order = (item: JellyfinItem) => [item.parentIndexNumber ?? 0, item.indexNumber ?? 0] as const
+  const isEarlier = (a: JellyfinItem, b: JellyfinItem) => {
+    const [seasonA, episodeA] = order(a)
+    const [seasonB, episodeB] = order(b)
+    return seasonA !== seasonB ? seasonA < seasonB : episodeA < episodeB
+  }
+
+  const collapsed: JellyfinItem[] = []
+  const slotBySeries = new Map<string, number>()
+  for (const item of resume) {
+    const seriesId = item.type === 'Episode' ? item.seriesId : null
+    if (!seriesId) {
+      collapsed.push(item)
+      continue
+    }
+    const slot = slotBySeries.get(seriesId)
+    if (slot === undefined) {
+      slotBySeries.set(seriesId, collapsed.length)
+      collapsed.push(item)
+    }
+    else if (isEarlier(item, collapsed[slot]!)) {
+      collapsed[slot] = item
+    }
+  }
+
+  const seen = new Set(collapsed.map(item => item.seriesId || item.id))
+  const next: JellyfinItem[] = []
+  for (const item of nextUp) {
+    const key = item.seriesId || item.id
+    if (seen.has(key)) continue
+    seen.add(key)
+    next.push(item)
+  }
+  return { resume: collapsed, nextUp: next }
+}
+
 export function resolutionClass(stream: Pick<JellyfinMediaStream, 'width' | 'height'> | null | undefined): number | null {
   const width = stream?.width ?? 0
   const height = stream?.height ?? 0

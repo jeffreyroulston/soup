@@ -55,7 +55,7 @@ watch(() => props.count, () => {
         >
           See All
         </NuxtLink>
-        <div class="hidden gap-2 opacity-0 transition group-hover/row:opacity-100 sm:flex">
+        <div class="hidden gap-2 sm:flex">
           <button
             type="button"
             class="glass grid size-9 place-items-center rounded-full text-ink disabled:opacity-30"

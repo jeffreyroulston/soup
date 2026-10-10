@@ -49,7 +49,6 @@ function upNextDetail(item: JellyfinItem) {
 }
 
 const moviesLibrary = computed(() => libraries.value.find(lib => lib.collectionType === 'movies') ?? null)
-const showsLibrary = computed(() => libraries.value.find(lib => lib.collectionType === 'tvshows') ?? null)
 
 const spotlightBackdrop = computed(() => {
   const spot = extras.value?.spotlight
@@ -85,7 +84,7 @@ const spotlightBackdrop = computed(() => {
       </section>
 
       <div class="flex flex-col gap-12">
-        <MediaRow title="Up Next" :count="4" wide>
+        <MediaRow title="Keep Watching" :count="4" wide>
           <template #default="{ slideClass }">
             <div v-for="n in 4" :key="n" :class="slideClass">
               <MediaCardSkeleton variant="landscape" kicker />
@@ -109,7 +108,7 @@ const spotlightBackdrop = computed(() => {
       <div v-else class="h-28" />
 
       <div class="flex flex-col gap-12">
-        <MediaRow title="Up Next" :count="upNext.length" wide>
+        <MediaRow title="Keep Watching" :count="upNext.length" wide>
           <template #default="{ slideClass }">
             <div v-for="item in upNext" :key="item.id" :class="slideClass">
               <MediaCard
@@ -171,7 +170,6 @@ const spotlightBackdrop = computed(() => {
         <MediaRow
           title="Recently Added Shows"
           :count="home.recentlyAddedTv.length"
-          :see-all-to="showsLibrary ? `/library/${showsLibrary.id}` : null"
         >
           <template #default="{ slideClass }">
             <div v-for="item in home.recentlyAddedTv" :key="item.id" :class="slideClass">

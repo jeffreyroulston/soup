@@ -329,7 +329,7 @@ function selectSeason(seasonId: string) {
       <!-- Hero -->
       <section :aria-label="title" class="relative min-h-[min(88vh,720px)] w-full overflow-hidden">
         <div class="absolute inset-0 bg-surface">
-          <img v-if="backdrop" :src="backdrop" alt="" class="absolute inset-0 size-full object-cover object-center">
+          <img v-if="backdrop" :src="backdrop" alt="" class="absolute inset-0 size-full object-cover object-top">
         </div>
         <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/55 via-35% to-transparent to-65%" />
         <div class="absolute inset-0 bg-gradient-to-r from-canvas/70 via-transparent via-50% to-transparent" />

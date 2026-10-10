@@ -921,6 +921,10 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.byKey(const ValueKey('blockbuster-background-scroll-blackout')),
+      findsOneWidget,
+    );
+    expect(
       tester.widget<Text>(find.byKey(const ValueKey('fruity-hero-title'))).data,
       'Featured',
     );

@@ -164,6 +164,14 @@ void main() {
             find.byKey(const ValueKey('festival-hero-panel')),
             findsOneWidget,
           );
+          expect(
+            find.byKey(const ValueKey('festival-hero-product-gradient')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const ValueKey('festival-hero-scroll-blackout')),
+            findsOneWidget,
+          );
           Future<void> capture(String page) async {
             if (!_capture || scale != 1) return;
             // File decoding crosses real I/O and the test's fake frame clock.

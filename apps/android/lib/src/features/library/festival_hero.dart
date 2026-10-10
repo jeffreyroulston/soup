@@ -15,6 +15,7 @@ class FestivalHero extends StatelessWidget {
     required this.image,
     required this.onOpen,
     this.focusNode,
+    this.scrollFade = 0,
     super.key,
   });
 
@@ -24,14 +25,39 @@ class FestivalHero extends StatelessWidget {
   final VoidCallback onOpen;
   final FocusNode? focusNode;
 
+  /// 0 at the top of the page; approaches 1 as home content scrolls away so the
+  /// hero product softens into black.
+  final double scrollFade;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final wide = MediaQuery.sizeOf(context).width >= 840;
-    final artwork = FadingArtwork(
-      artworkKey: '${item.id}:festival-backdrop',
-      image: image,
-      placeholder: ArtworkPlaceholder(blurHash: item.backdropBlurHash),
+    final fade = scrollFade.clamp(0.0, 1.0);
+    final artwork = Stack(
+      fit: StackFit.expand,
+      children: [
+        FadingArtwork(
+          artworkKey: '${item.id}:festival-backdrop',
+          image: image,
+          placeholder: ArtworkPlaceholder(blurHash: item.backdropBlurHash),
+        ),
+        DecoratedBox(
+          key: const ValueKey('festival-hero-product-gradient'),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                Colors.black.withValues(alpha: 0.18 + fade * 0.35),
+                Colors.black.withValues(alpha: 0.72 + fade * 0.28),
+              ],
+              stops: const [0.42, 0.72, 1],
+            ),
+          ),
+        ),
+      ],
     );
     final copy = Container(
       key: const ValueKey('festival-hero-panel'),
@@ -103,6 +129,25 @@ class FestivalHero extends StatelessWidget {
         ],
       ),
     );
+    final product = wide
+        ? LayoutBuilder(
+            builder: (context, constraints) => Stack(
+              children: [
+                Positioned.fill(
+                  left: constraints.maxWidth * 0.53,
+                  child: artwork,
+                ),
+                SizedBox(width: constraints.maxWidth * 0.53, child: copy),
+              ],
+            ),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AspectRatio(aspectRatio: 2, child: artwork),
+              copy,
+            ],
+          );
     return Padding(
       padding: EdgeInsets.fromLTRB(wide ? 40 : 20, 24, wide ? 40 : 20, 32),
       child: DecoratedBox(
@@ -111,25 +156,30 @@ class FestivalHero extends StatelessWidget {
             BoxShadow(color: SoupTheme.onboardingInk, offset: Offset(6, 6)),
           ],
         ),
-        child: wide
-            ? LayoutBuilder(
-                builder: (context, constraints) => Stack(
-                  children: [
-                    Positioned.fill(
-                      left: constraints.maxWidth * 0.53,
-                      child: artwork,
+        child: Stack(
+          children: [
+            product,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  key: const ValueKey('festival-hero-scroll-blackout'),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: fade * 0.2),
+                        Colors.black.withValues(alpha: fade * 0.55),
+                        Colors.black.withValues(alpha: fade),
+                      ],
+                      stops: const [0, 0.55, 1],
                     ),
-                    SizedBox(width: constraints.maxWidth * 0.53, child: copy),
-                  ],
+                  ),
                 ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AspectRatio(aspectRatio: 2, child: artwork),
-                  copy,
-                ],
               ),
+            ),
+          ],
+        ),
       ),
     );
   }

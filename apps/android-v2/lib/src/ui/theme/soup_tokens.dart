@@ -46,5 +46,6 @@ abstract final class SoupType {
     height: height,
   );
 
-  static FontWeight _bucket(int w) => FontWeight.values[(w ~/ 100 - 1).clamp(0, 8)];
+  static FontWeight _bucket(int w) =>
+      FontWeight.values[(w ~/ 100 - 1).clamp(0, 8)];
 }

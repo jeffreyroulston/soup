@@ -6,6 +6,7 @@ import 'package:soup_core/soup_core.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
 import 'src/app.dart';
+import 'src/mock_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +15,10 @@ Future<void> main() async {
       'Manrope',
     ], await rootBundle.loadString('assets/fonts/OFL.txt'));
   });
+  if (const bool.fromEnvironment('SOUP_MOCK')) {
+    runApp(const MockApp());
+    return;
+  }
   final supportDirectory = await getApplicationSupportDirectory();
   const networkInterfaces = AndroidNetworkInterfaces();
   final tailscale = NativeTailscaleClient(

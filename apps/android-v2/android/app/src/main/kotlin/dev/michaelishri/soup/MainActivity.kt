@@ -13,6 +13,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class MainActivity : FlutterActivity() {
+    private val tvTextInput = TvTextInput(this)
+    private var textInputChannel: MethodChannel? = null
     private var networkChannel: MethodChannel? = null
 
     override fun provideFlutterEngine(context: Context): FlutterEngine {
@@ -34,6 +36,11 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        textInputChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "dev.michaelishri.soup/tv_text_input",
+        )
+        textInputChannel?.setMethodCallHandler(tvTextInput)
         networkChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "dev.michaelishri.soup/network_interfaces",
@@ -53,7 +60,10 @@ class MainActivity : FlutterActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         Log.i("SoupLifecycle", "Detaching activity; retaining Flutter engine")
+        tvTextInput.dismiss()
+        textInputChannel?.setMethodCallHandler(null)
         networkChannel?.setMethodCallHandler(null)
+        textInputChannel = null
         networkChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }

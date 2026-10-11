@@ -5,23 +5,28 @@ import 'package:soup_core/soup_core.dart';
 import 'package:soup_identity/soup_identity.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
+import 'config.dart' as config;
+import 'features/auth/direct_login_screen.dart';
 import 'features/auth/login_screen.dart';
-import 'features/home/home_screen.dart';
+import 'features/shell/authenticated_root.dart';
 import 'features/shared/status_screen.dart';
 import 'ui/theme/soup_theme.dart';
+import 'ui/widgets/design_scale.dart';
 
-/// Auth gate shared in shape with the v1 app: loading → Soup device-link →
-/// Tailscale reconnect → authenticated. Direct Jellyfin login is not offered
-/// in v2 yet; Soup Identity is the sign-in path.
+/// Auth gate shared in shape with the v1 app: loading → sign-in home →
+/// Tailscale reconnect → authenticated. The sign-in home offers Soup
+/// device-link and discovered servers side by side; picking a server or
+/// entering an address opens the direct Jellyfin form.
 class SoupApp extends StatefulWidget {
   const SoupApp({
     required this.tailscaleClient,
     this.jellyfinClientFactory = const DefaultJellyfinClientFactory(),
     this.sessionStore = const SecureSessionStore(),
     this.soupSessionStore = const SecureSoupSessionStore(),
-    this.soupIdentityFlags = SoupIdentityFlags.fromEnvironment,
+    this.soupIdentityFlags = config.soupIdentityFlags,
     this.soupIdentityClient,
     this.connectionStore,
+    this.authPathStore,
     this.discoveryService,
     super.key,
   });
@@ -33,6 +38,7 @@ class SoupApp extends StatefulWidget {
   final SoupIdentityFlags soupIdentityFlags;
   final SoupIdentityClient? soupIdentityClient;
   final ConnectionPreferencesStore? connectionStore;
+  final AuthPathPreferencesStore? authPathStore;
   final JellyfinDiscoveryService? discoveryService;
 
   @override
@@ -46,10 +52,15 @@ class _SoupAppState extends State<SoupApp> {
   GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _adoptedTransport = false;
   bool _adoptedJellyfin = false;
+  late final AuthPathPreferencesStore _authPathStore;
+  AuthPath _authPath = AuthPath.soup;
+  bool _authPathReady = false;
 
   @override
   void initState() {
     super.initState();
+    _authPathStore = widget.authPathStore ?? SharedPreferencesAuthPathStore();
+    unawaited(_loadAuthPath());
     _connectivity = ConnectivityViewModel(
       widget.tailscaleClient,
       jellyfinClientFactory: widget.jellyfinClientFactory,
@@ -72,6 +83,58 @@ class _SoupAppState extends State<SoupApp> {
       tailscaleClient: widget.tailscaleClient,
       connectTransportGrants: flags.connectTransportGrants,
     )..initialize();
+    _traceStateChanges();
+  }
+
+  Future<void> _loadAuthPath() async {
+    AuthPath? saved;
+    try {
+      saved = await _authPathStore.read();
+    } on Object {
+      saved = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _authPath = saved ?? AuthPath.soup;
+      _authPathReady = true;
+    });
+  }
+
+  Future<void> _chooseDirectLogin() async {
+    await _authPathStore.write(AuthPath.direct);
+    if (!mounted) return;
+    setState(() => _authPath = AuthPath.direct);
+  }
+
+  Future<void> _chooseSoupInvite() async {
+    await _authPathStore.write(AuthPath.soup);
+    if (!mounted) return;
+    setState(() => _authPath = AuthPath.soup);
+    if (_soupAuth.session == null &&
+        _soupAuth.phase != SoupDeviceLinkPhase.waiting &&
+        _soupAuth.phase != SoupDeviceLinkPhase.starting) {
+      unawaited(_soupAuth.startDeviceLink());
+    }
+  }
+
+  // Debug-only trace of the sign-in/transport state machine (visible in logcat).
+  void _traceStateChanges() {
+    assert(() {
+      _soupAuth.addListener(
+        () => debugPrint(
+          '[soup] auth phase=${_soupAuth.phase.name} transport=${_soupAuth.transportConnected} '
+          'err=${_soupAuth.error ?? _soupAuth.transportError ?? _soupAuth.exchangeError}',
+        ),
+      );
+      _connectivity.addListener(
+        () => debugPrint(
+          '[soup] conn phase=${_connectivity.phase.name} ts=${_connectivity.status.phase.name} '
+          'connecting=${_connectivity.connecting} session=${_connectivity.session != null} '
+          'err=${_connectivity.error ?? _connectivity.initializationError}',
+        ),
+      );
+      return true;
+    }());
   }
 
   @override
@@ -98,7 +161,11 @@ class _SoupAppState extends State<SoupApp> {
             _connectivity.phase == SetupPhase.ready && session != null;
         // Routes belong to one account and transport; drop them on change.
         final identity = authenticated
-            ? (session.serverId, session.userId, _connectivity.transportRevision)
+            ? (
+                session.serverId,
+                session.userId,
+                _connectivity.transportRevision,
+              )
             : null;
         if (identity != _navigationIdentity) {
           _navigationIdentity = identity;
@@ -109,6 +176,7 @@ class _SoupAppState extends State<SoupApp> {
           title: 'Soup',
           debugShowCheckedModeBanner: false,
           theme: SoupTheme.dark,
+          builder: (context, child) => DesignScale(child: child!),
           home: _home(session, authenticated),
         );
       },
@@ -116,7 +184,9 @@ class _SoupAppState extends State<SoupApp> {
   }
 
   Widget _home(JellyfinSession? session, bool authenticated) {
-    if (!_connectivity.initialized || !_soupAuth.initialized) {
+    if (!_connectivity.initialized ||
+        !_soupAuth.initialized ||
+        !_authPathReady) {
       final error = _connectivity.initializationError ?? _soupAuth.error;
       return StatusScreen(
         title: error == null ? 'Opening Soup' : 'Let’s try that again',
@@ -130,14 +200,26 @@ class _SoupAppState extends State<SoupApp> {
               },
       );
     }
-    if (_soupAuth.showsAuthShell) {
+    // Sign-in home: Soup QR, discovered servers and Tailscale. The Jellyfin
+    // address/credentials form takes over once a server is picked or typed.
+    final directForm =
+        _connectivity.phase == SetupPhase.credentials ||
+        (_connectivity.phase == SetupPhase.server &&
+            !_connectivity.showingServerDiscovery);
+    if (_soupAuth.showsAuthShell &&
+        !directForm &&
+        (session == null || _authPath != AuthPath.direct)) {
       if (_soupAuth.phase == SoupDeviceLinkPhase.idle &&
           _soupAuth.session == null) {
         WidgetsBinding.instance.addPostFrameCallback(
           (_) => unawaited(_soupAuth.startDeviceLink()),
         );
       }
-      return LoginScreen(viewModel: _soupAuth);
+      return LoginScreen(
+        viewModel: _soupAuth,
+        connectivity: _connectivity,
+        onDirectStep: _chooseDirectLogin,
+      );
     }
     if (_soupAuth.transportConnected && !_adoptedTransport) {
       _adoptedTransport = true;
@@ -172,17 +254,25 @@ class _SoupAppState extends State<SoupApp> {
             : 'Check your connection, then try again.',
         busy: _connectivity.connecting,
         authorizationUrl: status.authorizationUrl,
-        onRetry: _connectivity.connecting ? null : _connectivity.reconnectSession,
+        onRetry: _connectivity.connecting
+            ? null
+            : _connectivity.reconnectSession,
       );
     }
     if (authenticated && session != null) {
-      return HomeScreen(session: session, onSignOut: _signOut);
+      return AuthenticatedRoot(
+        key: ValueKey('${session.serverId}:${session.userId}'),
+        connectivity: _connectivity,
+        soupAuth: _soupAuth,
+        session: session,
+        onSignOut: _signOut,
+      );
     }
-    // Soup auth finished without a Jellyfin session (exchange skipped).
-    return const StatusScreen(
-      title: 'Opening Soup',
-      message: 'Connecting to your server…',
-      busy: true,
+    // The Jellyfin address/credentials form (and Quick Connect), or the
+    // Tailscale step when no sign-in home applies.
+    return DirectLoginScreen(
+      viewModel: _connectivity,
+      onUseSoupInvite: () => unawaited(_chooseSoupInvite()),
     );
   }
 }

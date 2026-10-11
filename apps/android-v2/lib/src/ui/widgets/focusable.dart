@@ -32,6 +32,51 @@ class Focusable extends StatefulWidget {
 class _FocusableState extends State<Focusable> {
   bool _focused = false;
 
+  /// Scroll just enough to show the focused item with TV-friendly margins
+  /// (clear of the top nav), instead of re-centring on every move.
+  void _reveal() {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    box.showOnScreen(
+      rect: Rect.fromLTRB(
+        -72,
+        -150,
+        box.size.width + 72,
+        box.size.height + 110,
+      ),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// Ink outline drawn outside the child with a canvas-coloured gap, so it
+  /// reads on white fills (primary buttons, active pills) and on artwork.
+  Widget _ring() => Positioned(
+    left: -_ringOutset,
+    top: -_ringOutset,
+    right: -_ringOutset,
+    bottom: -_ringOutset,
+    child: IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.radius + _ringOutset),
+          border: Border.all(color: SoupColors.ink, width: 3),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(widget.radius + 3),
+              border: Border.all(color: SoupColors.canvas, width: 3),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  static const _ringOutset = 6.0;
+
   @override
   Widget build(BuildContext context) {
     return Focus(
@@ -40,14 +85,7 @@ class _FocusableState extends State<Focusable> {
       onFocusChange: (value) {
         setState(() => _focused = value);
         widget.onFocusChange?.call(value);
-        if (value) {
-          Scrollable.ensureVisible(
-            context,
-            alignment: 0.5,
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-          );
-        }
+        if (value) _reveal();
       },
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent &&
@@ -66,15 +104,13 @@ class _FocusableState extends State<Focusable> {
           scale: _focused ? widget.scale : 1,
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOut,
-          child: DecoratedBox(
-            position: DecorationPosition.foreground,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(widget.radius + 3),
-              border: _focused
-                  ? Border.all(color: SoupColors.ink, width: 3)
-                  : null,
-            ),
-            child: widget.builder(context, _focused),
+          child: Stack(
+            fit: StackFit.passthrough,
+            clipBehavior: Clip.none,
+            children: [
+              widget.builder(context, _focused),
+              if (_focused) _ring(),
+            ],
           ),
         ),
       ),

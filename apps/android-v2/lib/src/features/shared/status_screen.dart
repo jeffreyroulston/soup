@@ -12,6 +12,8 @@ class StatusScreen extends StatelessWidget {
     this.busy = false,
     this.onRetry,
     this.authorizationUrl,
+    this.secondaryLabel,
+    this.onSecondary,
     super.key,
   });
 
@@ -20,6 +22,10 @@ class StatusScreen extends StatelessWidget {
   final bool busy;
   final VoidCallback? onRetry;
   final Uri? authorizationUrl;
+
+  /// Optional second action, e.g. "Sign out" when retrying can't help.
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +76,19 @@ class StatusScreen extends StatelessWidget {
               ],
               if (onRetry != null) ...[
                 const SizedBox(height: 28),
-                SoupButton(label: 'Try again', onPressed: onRetry, autofocus: true),
+                SoupButton(
+                  label: 'Try again',
+                  onPressed: onRetry,
+                  autofocus: true,
+                ),
+              ],
+              if (onSecondary != null && secondaryLabel != null) ...[
+                const SizedBox(height: 14),
+                SoupButton(
+                  label: secondaryLabel!,
+                  onPressed: onSecondary,
+                  style: SoupButtonStyle.glass,
+                ),
               ],
             ],
           ),

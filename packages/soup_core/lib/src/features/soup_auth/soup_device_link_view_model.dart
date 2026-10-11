@@ -18,6 +18,7 @@ enum SoupDeviceLinkPhase {
   ready,
   expired,
   error,
+
   /// Soup refresh is dead; Google device-link UI required.
   needsGoogleSignIn,
 }
@@ -98,8 +99,7 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
 
   /// Show Google QR / progress / exchange retry instead of legacy onboarding.
   bool get showsAuthShell {
-    if (_session == null ||
-        _phase == SoupDeviceLinkPhase.needsGoogleSignIn) {
+    if (_session == null || _phase == SoupDeviceLinkPhase.needsGoogleSignIn) {
       return true;
     }
     switch (_phase) {
@@ -294,9 +294,13 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshAndReloadRoster() async {
+  /// [fromStartup] lets cold-start hydration refresh an expired access token
+  /// while [initialize] still holds the busy flag; without it the refresh was
+  /// silently skipped and the sign-in screen waited on "Loading your servers"
+  /// forever.
+  Future<void> refreshAndReloadRoster({bool fromStartup = false}) async {
     final session = _session;
-    if (_disposed || session == null || _busy) return;
+    if (_disposed || session == null || (_busy && !fromStartup)) return;
     final generation = ++_generation;
     _busy = true;
     _phase = SoupDeviceLinkPhase.refreshing;
@@ -466,8 +470,7 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
       await _maybeConnectTransport(_roster, generation);
       if (_disposed || generation != _generation) return;
       if (performJellyfinExchange) {
-        final existing =
-            _jellyfinSession ?? await _jellyfinSessionStore.read();
+        final existing = _jellyfinSession ?? await _jellyfinSessionStore.read();
         if (existing != null) {
           _jellyfinSession = existing;
           try {
@@ -494,7 +497,7 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     } on SoupIdentityException catch (error) {
       if (error.statusCode == 401) {
         try {
-          await refreshAndReloadRoster();
+          await refreshAndReloadRoster(fromStartup: true);
         } on Object {
           await _forceGoogleSignIn();
         }

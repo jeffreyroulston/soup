@@ -1052,6 +1052,64 @@ class JellyfinApi
   Uri resolvePlaybackUri(JellyfinSession session, String value) =>
       _resolvePlaybackUri(session, value);
 
+  /// Authenticated GET returning decoded JSON (used by the v2 catalog layer).
+  Future<Object?> getJson(
+    JellyfinSession session,
+    String path, {
+    Map<String, String>? query,
+  }) => _getJson(session, path, query: query);
+
+  /// Authenticated POST/DELETE with no response body of interest. Throws a
+  /// [JellyfinApiException] carrying the status code on a non-2xx response.
+  Future<void> sendRequest(
+    JellyfinSession session,
+    String method,
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    final request = http.Request(
+      method,
+      _sessionUri(session, path, query: query),
+    )..headers.addAll(_sessionHeaders(session));
+    final response = await http.Response.fromStream(
+      await _client.send(request).timeout(const Duration(seconds: 20)),
+    );
+    if (response.statusCode == 401) {
+      throw const JellyfinApiException(
+        'Your Jellyfin session has expired. Sign in again.',
+        statusCode: 401,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw JellyfinApiException(
+        'Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  /// Authenticated GET of raw bytes (artwork, subtitles). Null on 404.
+  Future<Uint8List?> getBytes(
+    JellyfinSession session,
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    final response = await _client
+        .get(
+          _sessionUri(session, path, query: query),
+          headers: {..._sessionHeaders(session), 'Accept': '*/*'},
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 404) return null;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw JellyfinApiException(
+        'Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
+      );
+    }
+    return response.bodyBytes;
+  }
+
   Future<Object?> _getJson(
     JellyfinSession session,
     String path, {

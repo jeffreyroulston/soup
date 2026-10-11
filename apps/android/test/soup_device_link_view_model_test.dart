@@ -243,6 +243,76 @@ void main() {
     expect(jellyfinStore.session?.accessToken, 'fresh-token');
     expect(model.phase, SoupDeviceLinkPhase.ready);
   });
+  test('cold start with an expired access token refreshes instead of hanging', () async {
+    final inner = MockSoupIdentityClient();
+    final client = ExpiredFirstClient(inner);
+    final store = MemorySoupSessionStore(
+      SoupSession.fromTokens(
+        const SoupSessionTokens(
+          accessToken: 'stale-access',
+          refreshToken: 'mock-refresh',
+          expiresIn: 900,
+          tokenType: 'Bearer',
+          email: 'dev@example.com',
+        ),
+        lastServerId: 'home-jf',
+      ),
+    );
+    final model = buildModel(
+      client: client,
+      soupStore: store,
+      performJellyfinExchange: false,
+    );
+    addTearDown(model.dispose);
+
+    await model.initialize();
+
+    expect(client.rejectedStaleToken, isTrue);
+    expect(model.phase, SoupDeviceLinkPhase.ready);
+    expect(model.session?.accessToken, startsWith('mock-access-'));
+    expect(store.session?.accessToken, startsWith('mock-access-'));
+  });
+}
+
+/// Rejects the stored access token once, like a Soup session that expired
+/// while the app was closed; everything else is the mock.
+class ExpiredFirstClient implements SoupIdentityClient {
+  ExpiredFirstClient(this.inner);
+
+  final MockSoupIdentityClient inner;
+  bool rejectedStaleToken = false;
+
+  @override
+  Future<ServerRoster> listServers(String accessToken) async {
+    if (accessToken == 'stale-access') {
+      rejectedStaleToken = true;
+      throw const SoupIdentityException(
+        'Soup Identity request failed',
+        statusCode: 401,
+      );
+    }
+    return inner.listServers(accessToken);
+  }
+
+  @override
+  Future<DeviceLinkStart> startDeviceLink() => inner.startDeviceLink();
+
+  @override
+  Future<DeviceLinkPoll> pollDeviceLink(String deviceCode) =>
+      inner.pollDeviceLink(deviceCode);
+
+  @override
+  Future<SoupSessionTokens> refreshSession(String refreshToken) =>
+      inner.refreshSession(refreshToken);
+
+  @override
+  Future<AssertionResponse> mintAssertion({
+    required String accessToken,
+    required String serverId,
+  }) => inner.mintAssertion(accessToken: accessToken, serverId: serverId);
+
+  @override
+  void close() => inner.close();
 }
 
 class MemorySoupSessionStore implements SoupSessionStore {

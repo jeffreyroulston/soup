@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { renderSVG } from 'uqr'
 import { LAST_SERVER_KEY } from '~/composables/useAuthSession'
+import { discoverServers, type DiscoveredServer } from '~/utils/discoverServers'
 
 definePageMeta({ layout: false })
 
@@ -36,13 +37,21 @@ const quickConnectBusy = ref(false)
 /** Roster id being signed in to from the server picker. */
 const selectingServer = ref<string | null>(null)
 
+/** Jellyfin servers that answered from this browser, offered on the idle screen. */
+const nearby = ref<DiscoveredServer[]>([])
+const scanning = ref(false)
+let lastServer: string | null = null
+/** Same as `loginRun`, for network scans. */
+let scanRun = 0
+
 onMounted(async () => {
   try {
-    serverUrl.value = localStorage.getItem(LAST_SERVER_KEY) || config.public.jellyfinUrl || ''
+    lastServer = localStorage.getItem(LAST_SERVER_KEY)
   }
   catch {
-    serverUrl.value = config.public.jellyfinUrl || ''
+    lastServer = null
   }
+  serverUrl.value = lastServer || config.public.jellyfinUrl || ''
   if (!auth.ready.value) await auth.hydrate()
   if (auth.jellyfin.value) {
     await router.replace('/')
@@ -52,8 +61,32 @@ onMounted(async () => {
   }
   else {
     void ensureLink()
+    void scanNetwork()
   }
 })
+
+async function scanNetwork() {
+  if (mock || scanning.value) return
+  const run = ++scanRun
+  scanning.value = true
+  try {
+    const found = await discoverServers([lastServer, config.public.jellyfinUrl])
+    if (run === scanRun) nearby.value = found
+  }
+  finally {
+    if (run === scanRun) scanning.value = false
+  }
+}
+
+/** Direct sign-in against a server picked from the scan. */
+function connectTo(server: DiscoveredServer) {
+  serverUrl.value = server.url
+  showDirect()
+}
+
+function submitAddress() {
+  if (serverUrl.value.trim()) showDirect()
+}
 
 // The QR code is on the idle screen, so keep a link going whenever we land back there.
 watch(phase, (next) => {
@@ -62,6 +95,7 @@ watch(phase, (next) => {
 
 onBeforeUnmount(() => {
   loginRun++
+  scanRun++
   if (pollTimer) clearTimeout(pollTimer)
   stopLink()
 })
@@ -287,7 +321,7 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
     <main class="relative grid flex-1 place-items-center px-4 py-16">
       <section
         aria-labelledby="login-title"
-        class="glass-strong flex w-full max-w-[460px] flex-col gap-5 rounded-[28px] p-8 shadow-[0_40px_80px_rgba(0,0,0,0.5)] sm:p-11"
+        class="glass-strong flex w-full max-w-[480px] flex-col gap-5 rounded-[28px] p-8 shadow-[0_40px_80px_rgba(0,0,0,0.5)] sm:p-11"
       >
         <h1
           v-if="!mock && (phase === 'idle' || phase === 'error')"
@@ -315,28 +349,40 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
         </template>
 
         <template v-else-if="phase === 'idle'">
-          <div
-            v-if="linkError"
-            class="mx-auto flex aspect-square w-full max-w-[200px] flex-col items-center justify-center gap-3 rounded-[20px] bg-white/5 p-5 text-center"
-          >
-            <p class="text-[13px] font-semibold text-accent">
-              {{ linkError }}
-            </p>
-            <button type="button" class="text-[14px] font-bold text-ink-2 hover:text-ink hover:underline" @click="ensureLink()">
-              Retry
-            </button>
+          <div class="flex items-center gap-[18px] rounded-[20px] bg-white/5 p-3.5 max-sm:order-last">
+            <div
+              v-if="linkError"
+              class="flex size-32 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl bg-white/5 p-3 text-center"
+            >
+              <p class="text-[12px] font-semibold text-accent">
+                {{ linkError }}
+              </p>
+              <button type="button" class="text-[13px] font-bold text-ink-2 hover:text-ink hover:underline" @click="ensureLink()">
+                Retry
+              </button>
+            </div>
+            <div v-else-if="!qrSvg" class="size-32 shrink-0 animate-pulse rounded-2xl bg-white/10" />
+            <div
+              v-else
+              role="img"
+              aria-label="QR code to sign in on your phone"
+              class="size-32 shrink-0 overflow-hidden rounded-2xl bg-white p-2 [&>svg]:block [&>svg]:size-full"
+              v-html="qrSvg"
+            />
+            <div class="flex min-w-0 flex-col gap-1.5">
+              <h2 class="text-[17px] font-extrabold">
+                Scan with your phone
+              </h2>
+              <p class="text-sm leading-snug text-ink-2">
+                Point your camera at the code and sign in there. Your phone will show
+              </p>
+              <p v-if="userCode" class="text-[22px] font-extrabold tracking-[3px]">
+                {{ userCode }}
+              </p>
+              <div v-else class="h-7 w-28 animate-pulse rounded-md bg-white/10" />
+            </div>
           </div>
-          <div v-else-if="!qrSvg" class="mx-auto aspect-square w-full max-w-[200px] animate-pulse rounded-[20px] bg-white/10" />
-          <div
-            v-else
-            role="img"
-            aria-label="QR code to sign in on your phone"
-            class="mx-auto w-full max-w-[200px] overflow-hidden rounded-[20px] bg-white p-2 [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
-            v-html="qrSvg"
-          />
-          <p class="-mt-1 pb-2 text-center text-sm font-semibold text-muted">
-            Scan with your phone to sign in
-          </p>
+
           <button
             type="button"
             class="flex h-[52px] items-center justify-center gap-2.5 rounded-btn bg-ink text-[17px] font-extrabold text-canvas transition hover:bg-ink/80"
@@ -348,18 +394,94 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
               <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
               <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
             </svg>
-            Sign in with Google
+            Continue with Google
           </button>
+
           <div class="flex items-center gap-3 text-[13px] font-semibold text-muted" aria-hidden="true">
-            <span class="h-px flex-1 bg-white/10" />or<span class="h-px flex-1 bg-white/10" />
+            <span class="h-px flex-1 bg-white/10" />or connect to a Jellyfin server<span class="h-px flex-1 bg-white/10" />
           </div>
-          <button
-            type="button"
-            class="h-[52px] rounded-btn bg-white/10 text-base font-bold text-ink transition hover:bg-white/15"
-            @click="showDirect"
-          >
-            Sign in with Jellyfin
-          </button>
+
+          <section aria-labelledby="nearby-title" class="flex flex-col gap-2">
+            <div class="flex items-center justify-between px-0.5">
+              <h2 id="nearby-title" class="text-[13px] font-bold text-muted">
+                On your network
+              </h2>
+              <span v-if="scanning" class="flex items-center gap-2 text-xs font-bold text-muted" role="status">
+                <span class="relative size-2">
+                  <span class="absolute inset-0 animate-ping rounded-full bg-accent motion-reduce:animate-none" />
+                  <span class="absolute inset-0 rounded-full bg-accent" />
+                </span>
+                Scanning
+              </span>
+              <button
+                v-else
+                type="button"
+                class="text-xs font-bold text-muted transition hover:text-ink"
+                @click="scanNetwork"
+              >
+                Scan again
+              </button>
+            </div>
+            <ul v-if="nearby.length" class="flex flex-col gap-2">
+              <li v-for="server in nearby" :key="server.id">
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-3 rounded-btn bg-white/[0.08] px-3.5 py-3 text-left transition hover:bg-white/15"
+                  @click="connectTo(server)"
+                >
+                  <span class="grid size-9 shrink-0 place-items-center rounded-[10px] bg-white/[0.08]">
+                    <svg viewBox="0 0 24 24" class="size-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" /><path d="M7 7.5h.01M7 16.5h.01" />
+                    </svg>
+                  </span>
+                  <span class="flex min-w-0 flex-1 flex-col">
+                    <span class="truncate text-base font-extrabold">{{ server.name }}</span>
+                    <span class="truncate text-[13px] font-semibold text-muted">
+                      {{ server.host }}<template v-if="server.version"> · Jellyfin {{ server.version }}</template>
+                    </span>
+                  </span>
+                  <svg viewBox="0 0 24 24" class="size-[18px] shrink-0 text-muted" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 6 6 6-6 6" />
+                  </svg>
+                </button>
+              </li>
+            </ul>
+            <div v-else-if="!scanning" class="flex items-start gap-3 rounded-btn bg-white/5 p-3.5">
+              <svg viewBox="0 0 24 24" class="mt-px size-5 shrink-0 text-muted" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 20h.01M8.5 16.43a5 5 0 0 1 7 0M5 12.86a10 10 0 0 1 5.17-2.69M19 12.86a10 10 0 0 0-2-1.52M2 8.82a15 15 0 0 1 4.18-2.64M22 8.82a15 15 0 0 0-11.29-3.76M2 2l20 20" />
+              </svg>
+              <span class="flex flex-col gap-0.5">
+                <span class="text-[15px] font-extrabold">No servers found yet</span>
+                <span class="text-[13px] font-semibold leading-snug text-muted">Check you're on the same network as your Jellyfin server, or enter its address below.</span>
+              </span>
+            </div>
+            <div v-else class="h-[60px] animate-pulse rounded-btn bg-white/[0.08]" />
+          </section>
+
+          <form class="flex gap-2" @submit.prevent="submitAddress">
+            <label for="server-address" class="sr-only">Server address</label>
+            <input
+              id="server-address"
+              v-model="serverUrl"
+              type="text"
+              inputmode="url"
+              autocomplete="url"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="Or enter a server address"
+              class="h-12 min-w-0 flex-1 rounded-btn bg-white/10 px-4 text-[15px] font-semibold text-ink placeholder:text-muted/70 focus:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink"
+            >
+            <button
+              type="submit"
+              aria-label="Connect"
+              :disabled="!serverUrl.trim()"
+              class="grid size-12 shrink-0 place-items-center rounded-btn bg-white/10 text-ink transition enabled:hover:bg-white/15 disabled:opacity-50"
+            >
+              <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </button>
+          </form>
         </template>
 
         <form v-else-if="phase === 'direct'" class="flex flex-col gap-4" @submit.prevent="submitDirect">

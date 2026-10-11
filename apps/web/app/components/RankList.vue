@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import type { JellyfinItem } from '~/types/jellyfin'
 
-defineProps<{
+withDefaults(defineProps<{
   title: string
-  items: JellyfinItem[]
-}>()
+  items?: JellyfinItem[]
+  loading?: boolean
+}>(), {
+  items: () => [],
+  loading: false,
+})
+
+const SLIDE_CLASS = 'rank-slide relative min-w-0 shrink-0 grow-0 basis-[min(92%,20rem)] pl-[2rem] sm:basis-[26.5rem] sm:pl-[3rem]'
 
 function detail(item: JellyfinItem) {
   return [
@@ -26,12 +32,23 @@ function numeralClass(i: number) {
 </script>
 
 <template>
-  <MediaRow :title="title" :count="items.length" wide>
+  <MediaRow :title="title" :count="items.length" :loading="loading" wide>
+    <!-- Numerals are known up front, so they show while the cards load -->
+    <template #skeleton>
+      <div v-for="i in 4" :key="i" :class="SLIDE_CLASS">
+        <span
+          aria-hidden="true"
+          class="rank-numeral left-0 z-10"
+          :class="[numeralClass(i - 1), i === 1 ? 'rank-numeral-first' : '']"
+        >{{ i }}</span>
+        <MediaCardSkeleton variant="landscape" />
+      </div>
+    </template>
     <template #default>
       <div
         v-for="(item, i) in items"
         :key="item.id"
-        class="rank-slide relative min-w-0 shrink-0 grow-0 basis-[min(92%,20rem)] pl-[2rem] sm:basis-[26.5rem] sm:pl-[3rem]"
+        :class="SLIDE_CLASS"
       >
         <!-- Big outlined rank numeral, drawn over the card's left edge -->
         <span

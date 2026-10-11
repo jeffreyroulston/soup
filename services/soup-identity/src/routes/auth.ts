@@ -3,14 +3,15 @@ import type { Env } from "../env.js";
 import type { Db } from "../db/client.js";
 import {
   signDeviceLinkProof,
+  signOAuthState,
   verifyDeviceLinkProof,
+  verifyOAuthState,
   type SigningKeys,
 } from "../lib/crypto.js";
 import type { AppEnv } from "../middleware/auth.js";
+import { rateLimit } from "../middleware/rate_limit.js";
 import {
   approveDeviceLink,
-  decodeOAuthState,
-  encodeOAuthState,
   exchangeGoogleCode,
   googleAuthUrl,
   isValidEmail,
@@ -56,12 +57,18 @@ export function buildAuthRoutes(deps: {
     });
   }
 
-  app.post("/auth/device/link", async (c) => {
+  // Public device-link / session endpoints — per-IP limits (in-memory; single process).
+  const linkStartLimit = rateLimit({ windowMs: 60_000, max: 20 });
+  const linkPollLimit = rateLimit({ windowMs: 60_000, max: 120 });
+  const linkApproveLimit = rateLimit({ windowMs: 60_000, max: 30 });
+  const refreshLimit = rateLimit({ windowMs: 60_000, max: 60 });
+
+  app.post("/auth/device/link", linkStartLimit, async (c) => {
     const started = await startDeviceLink(deps.db, deps.env);
     return c.json(started);
   });
 
-  app.get("/auth/device/link/:deviceCode", async (c) => {
+  app.get("/auth/device/link/:deviceCode", linkPollLimit, async (c) => {
     const result = await pollDeviceLink(
       deps.db,
       deps.keys,
@@ -76,22 +83,31 @@ export function buildAuthRoutes(deps: {
     return c.json({ status: "approved", ...result.tokens });
   });
 
-  app.post("/auth/device/approve", async (c) => {
+  app.post("/auth/device/approve", linkApproveLimit, async (c) => {
     const body = await c.req.json<{
       user_code: string;
-      email: string;
-      name?: string;
+      link_token: string;
     }>();
-    if (!body.user_code || !body.email || !isValidEmail(body.email)) {
+    if (!body.user_code || !body.link_token) {
       return c.json(
-        { error: "bad_request", message: "user_code and email required" },
+        { error: "bad_request", message: "user_code and link_token required" },
         400,
+      );
+    }
+    let proof: Awaited<ReturnType<typeof verifyDeviceLinkProof>>;
+    try {
+      proof = await verifyDeviceLinkProof(deps.keys, deps.env, body.link_token);
+    } catch {
+      return c.json(
+        { error: "unauthorized", message: "Invalid or expired link_token" },
+        401,
       );
     }
     const result = await approveDeviceLink(deps.db, {
       userCode: body.user_code,
-      email: body.email,
-      name: body.name,
+      email: proof.email,
+      googleSub: proof.googleSub,
+      name: proof.name,
     });
     if (!result.ok && result.reason === "not_found") {
       return c.json({ error: "not_found", message: "Unknown user code" }, 404);
@@ -105,7 +121,7 @@ export function buildAuthRoutes(deps: {
   app.get("/auth/google/start", async (c) => {
     const userCode = c.req.query("user_code") ?? undefined;
     if (deps.env.googleConfigured) {
-      const state = encodeOAuthState(userCode);
+      const state = await signOAuthState(deps.keys, deps.env, userCode);
       return c.redirect(googleAuthUrl(deps.env, state), 302);
     }
     if (!deps.env.ALLOW_DEV_LOGIN) {
@@ -147,6 +163,19 @@ export function buildAuthRoutes(deps: {
         400,
       );
     }
+    let oauthState: { user_code: string | null };
+    try {
+      oauthState = await verifyOAuthState(deps.keys, deps.env, state);
+    } catch {
+      return c.html(
+        deviceLinkError({
+          heading: "Invalid sign-in state",
+          messageHtml:
+            "This Google callback could not be verified. Open the link from the Soup app and try again.",
+        }),
+        400,
+      );
+    }
     if (!deps.env.googleConfigured) {
       return c.html(
         deviceLinkError({
@@ -164,7 +193,7 @@ export function buildAuthRoutes(deps: {
         name: profile.name,
         pictureUrl: profile.picture,
       });
-      const { user_code } = decodeOAuthState(state);
+      const { user_code } = oauthState;
       if (user_code) {
         const approved = await approveDeviceLink(deps.db, {
           userCode: user_code,
@@ -273,7 +302,7 @@ export function buildAuthRoutes(deps: {
     );
   });
 
-  app.post("/auth/dev/complete", async (c) => {
+  app.post("/auth/dev/complete", linkApproveLimit, async (c) => {
     if (!deps.env.ALLOW_DEV_LOGIN) {
       return c.json({ error: "forbidden", message: "Dev login disabled" }, 403);
     }
@@ -333,7 +362,7 @@ export function buildAuthRoutes(deps: {
     );
   });
 
-  app.post("/v1/sessions/refresh", async (c) => {
+  app.post("/v1/sessions/refresh", refreshLimit, async (c) => {
     const body = await c.req.json<{ refresh_token: string }>();
     if (!body.refresh_token) {
       return c.json({ error: "bad_request", message: "refresh_token required" }, 400);

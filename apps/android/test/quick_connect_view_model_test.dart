@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/session/connection_preferences_store.dart';
-import 'package:soup/src/features/connectivity/connectivity_view_model.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/session/connection_preferences_store.dart';
+import 'package:soup_core/src/features/connectivity/connectivity_view_model.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 import 'support/connectivity_fakes.dart';
 import 'support/quick_connect_fixture.dart';

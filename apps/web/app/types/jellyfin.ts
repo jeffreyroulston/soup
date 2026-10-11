@@ -89,6 +89,8 @@ export type JellyfinItem = {
   premiereDate?: string | null
   endDate?: string | null
   childCount?: number | null
+  /** Everything under a folder item (a series' seasons and episodes); only requested where needed. */
+  recursiveItemCount?: number | null
   path?: string | null
   mediaSourceId?: string | null
   mediaStreams?: JellyfinMediaStream[]
@@ -104,7 +106,16 @@ export type JellyfinItem = {
   overview?: string | null
   productionYear?: number | null
   communityRating?: number | null
+  criticRating?: number | null
   officialRating?: string | null
+  /** Series airing status from Jellyfin (Continuing, Ended, …). */
+  status?: string | null
+  originalTitle?: string | null
+  productionLocations?: string[]
+  tags?: string[]
+  networks?: string[]
+  /** External catalogue ids, e.g. Imdb / Tmdb / Tvdb. */
+  providerIds?: Record<string, string>
   runTimeTicks?: number | null
   primaryImageTag?: string | null
   backdropImageTag?: string | null
@@ -123,17 +134,46 @@ export type JellyfinCollection = {
   items: JellyfinItem[]
 }
 
+/** A titled home row, e.g. one genre or one "Because you watched". */
+export type JellyfinShelf = {
+  title: string
+  items: JellyfinItem[]
+  /** Where "See All" goes, if anywhere. */
+  seeAllTo?: string | null
+}
+
 export type JellyfinHome = {
   resume: JellyfinItem[]
   nextUp: JellyfinItem[]
-  recentlyAddedMovies: JellyfinItem[]
-  recentlyAddedTv: JellyfinItem[]
+  /** Recently Added for each video library (titled with the library's name), in the server's order. */
+  recentlyAdded: JellyfinShelf[]
+}
+
+/** A Soup-curated pack matched against this library (hard-coded ids, not a Jellyfin BoxSet). */
+export type SoupCuratedCollection = {
+  id: string
+  title: string
+  description: string
+  itemCount: number
+  countLabel: string
+  theme: { bg: string, accent: string, mid: string, label: string }
+  to: string
+  items: JellyfinItem[]
+}
+
+/** The home collection card: Soup packs matched to the library, or a BoxSet fallback. */
+export type HomeCollection = {
+  /** Every hard-coded Soup collection with enough library hits; the home page shows one. */
+  curated: SoupCuratedCollection[]
+  /** Jellyfin BoxSet spotlight when no curated packs match. */
+  spotlight: JellyfinCollection | null
 }
 
 /** Home rows below the fold, loaded after the first paint. */
 export type JellyfinHomeExtras = {
   topRated: JellyfinItem[]
-  spotlight: JellyfinCollection | null
+  /** Highly rated titles the user hasn't watched, minus anything already in `topRated`. */
+  unwatchedTopRated: JellyfinItem[]
 }
 
 export type JellyfinSearchResults = {

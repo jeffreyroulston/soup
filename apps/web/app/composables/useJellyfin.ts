@@ -2,6 +2,7 @@ import type {
   JellyfinChapter,
   JellyfinCollection,
   JellyfinHome,
+  HomeCollection,
   JellyfinHomeExtras,
   JellyfinItem,
   JellyfinMediaSegment,
@@ -9,12 +10,16 @@ import type {
   JellyfinPerson,
   JellyfinRemoteTrailer,
   JellyfinSearchResults,
+  JellyfinShelf,
   JellyfinTrickplay,
 } from '~/types/jellyfin'
 import {
   mockGetEpisodes,
+  mockGetBecauseYouWatched,
   mockGetExtras,
+  mockGetGenreShelves,
   mockGetHome,
+  mockGetHomeCollection,
   mockGetHomeExtras,
   mockGetItem,
   mockGetLibraries,
@@ -35,14 +40,24 @@ import {
   mockTrickplayTileUrl,
 } from '~/utils/mockCatalog'
 import { isMockMode } from '~/utils/mockMode'
-import { collapseKeepWatching, countGenres, type GenreCount } from '~/utils/media'
+import { collapseKeepWatching, countGenres, dailyShuffle, type GenreCount } from '~/utils/media'
+import {
+  getCuratedPack,
+  matchCuratedCollections,
+  matchCuratedPack,
+  toCuratedCard,
+} from '~/utils/curatedCollections'
+import type { SoupCuratedCollection } from '~/types/jellyfin'
 
 // Only fields mapItem reads; every extra field is payload and server work on each list.
 const DETAIL_FIELDS =
-  'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,MediaSources,MediaStreams,Genres,Studios,People,Path,Chapters,SortName,ChildCount,Trickplay,RemoteTrailers,LocalTrailerCount,SpecialFeatureCount'
+  'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,CriticRating,MediaSources,MediaStreams,Genres,Studios,Networks,People,Path,Chapters,SortName,ChildCount,Trickplay,RemoteTrailers,LocalTrailerCount,SpecialFeatureCount,OriginalTitle,ProductionLocations,Tags,ProviderIds,Status'
 
 const LIST_FIELDS =
   'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,Genres,SortName,ChildCount,MediaStreams'
+
+/** Lean fields for matching Soup curated packs against the whole library. */
+const CURATED_MATCH_FIELDS = 'ProviderIds,ProductionYear,SortName'
 
 /** The library grid only shows poster, title, year and watched state; filtering needs genres. */
 const LIBRARY_GRID_FIELDS = 'ProductionYear,Genres,SortName'
@@ -62,6 +77,13 @@ const TEXT_SUBTITLE_CODECS = new Set([
 export type LibrarySort = 'SortName' | 'DateCreated' | 'ProductionYear' | 'CommunityRating'
 
 type ImageKind = 'Primary' | 'Backdrop'
+
+/** Libraries whose recent additions are worth a home row (not collections, playlists, music…). */
+const NON_VIDEO_LIBRARIES = new Set(['boxsets', 'playlists', 'music', 'books', 'photos', 'livetv'])
+
+function isVideoLibrary(library: JellyfinItem): boolean {
+  return !NON_VIDEO_LIBRARIES.has(library.collectionType ?? '')
+}
 
 /** Query for item lists: the shared field set plus one image of each requested kind. */
 function listQuery(imageTypes: string, extra: Record<string, string> = {}): Record<string, string> {
@@ -95,6 +117,15 @@ function asStrings(value: unknown): string[] {
         ? String((entry as { Name?: unknown }).Name ?? '')
         : ''))
     .filter(Boolean)
+}
+
+function mapProviderIds(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const out: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === 'string' && raw.trim()) out[key] = raw.trim()
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 function mapPerson(raw: unknown): JellyfinPerson | null {
@@ -229,7 +260,14 @@ function mapItem(raw: unknown): JellyfinItem | null {
     overview: (json.Overview as string | undefined) ?? null,
     productionYear: typeof json.ProductionYear === 'number' ? json.ProductionYear : null,
     communityRating: typeof json.CommunityRating === 'number' ? json.CommunityRating : null,
+    criticRating: typeof json.CriticRating === 'number' ? json.CriticRating : null,
     officialRating: (json.OfficialRating as string | undefined) ?? null,
+    status: (json.Status as string | undefined) ?? null,
+    originalTitle: (json.OriginalTitle as string | undefined) ?? null,
+    productionLocations: asStrings(json.ProductionLocations),
+    tags: asStrings(json.Tags),
+    networks: asStrings(json.Networks),
+    providerIds: mapProviderIds(json.ProviderIds),
     runTimeTicks: typeof json.RunTimeTicks === 'number' ? json.RunTimeTicks : null,
     primaryImageTag: imageTags.Primary ?? null,
     backdropImageTag:
@@ -250,6 +288,7 @@ function mapItem(raw: unknown): JellyfinItem | null {
     premiereDate: (json.PremiereDate as string | undefined) ?? null,
     endDate: (json.EndDate as string | undefined) ?? null,
     childCount: typeof json.ChildCount === 'number' ? json.ChildCount : null,
+    recursiveItemCount: typeof json.RecursiveItemCount === 'number' ? json.RecursiveItemCount : null,
     path: (json.Path as string | undefined) ?? null,
     genres: asStrings(json.Genres),
     studios: asStrings(json.Studios),
@@ -397,38 +436,181 @@ function createJellyfin() {
     }
     const { userId } = requireSession()
     const images = 'Primary,Backdrop'
-    const [resume, nextUp, movies, tv] = await Promise.all([
+    const [resume, nextUp, recentlyAdded] = await Promise.all([
       // Generous limit so a show's earlier part-watched episodes aren't cut off before collapsing.
       get(`Users/${userId}/Items/Resume`, listQuery(images, { Limit: '50', MediaTypes: 'Video' })),
       get('Shows/NextUp', listQuery(images, { UserId: userId, Limit: '12' })).catch(() => null),
-      get(`Users/${userId}/Items/Latest`, listQuery(images, { Limit: '25', IncludeItemTypes: 'Movie' })),
-      get(`Users/${userId}/Items/Latest`, listQuery(images, {
-        Limit: '25',
-        IncludeItemTypes: 'Episode',
-        GroupItems: 'true',
-      })),
+      getLibraries().then(libraries => Promise.all(
+        libraries.filter(isVideoLibrary).map(library => getLatestShelf(library, images)),
+      )),
     ])
     return {
       ...collapseKeepWatching(asItems(resume), asItems(nextUp)),
-      recentlyAddedMovies: asItems(movies),
-      recentlyAddedTv: asItems(tv),
+      recentlyAdded: recentlyAdded.filter(shelf => shelf.items.length),
     }
+  }
+
+  /** Recently Added for one library; a library that fails to load just has no row. */
+  async function getLatestShelf(library: JellyfinItem, images: string): Promise<JellyfinShelf> {
+    const types: Record<string, string> = library.collectionType === 'movies'
+      ? { IncludeItemTypes: 'Movie' }
+      : library.collectionType === 'tvshows'
+        ? { IncludeItemTypes: 'Episode', GroupItems: 'true' }
+        : {}
+    const raw = await get(`Users/${requireSession().userId}/Items/Latest`, listQuery(images, {
+      ParentId: library.id,
+      Limit: '25',
+      ...types,
+    })).catch(() => null)
+    return { title: library.name, items: asItems(raw), seeAllTo: `/library/${library.id}` }
+  }
+
+  /** Movies + series with provider ids, used only to resolve curated packs. Pages load in parallel. */
+  async function getLibraryForCuratedMatch(): Promise<JellyfinItem[]> {
+    const pageSize = 500
+    const fetchPage = (start: number) => userItems({
+      Fields: CURATED_MATCH_FIELDS,
+      IncludeItemTypes: 'Movie,Series',
+      Recursive: 'true',
+      EnableImageTypes: 'Primary',
+      ImageTypeLimit: '1',
+      StartIndex: String(start),
+      Limit: String(pageSize),
+    })
+    const first = await fetchPage(0)
+    const total = Number((first as { TotalRecordCount?: unknown })?.TotalRecordCount) || 0
+    const starts: number[] = []
+    for (let start = pageSize; start < Math.min(total, 10_000); start += pageSize) starts.push(start)
+    const rest = await Promise.all(starts.map(fetchPage))
+    return [first, ...rest].flatMap(asItems)
+  }
+
+  async function getCuratedCollections(): Promise<SoupCuratedCollection[]> {
+    const library = mock
+      ? [...(await mockGetLibraryItems('lib-movies', 'SortName')), ...(await mockGetLibraryItems('lib-tv', 'SortName'))]
+      : await getLibraryForCuratedMatch()
+    const { all } = matchCuratedCollections(library)
+    return all.map(toCuratedCard)
+  }
+
+  async function getCuratedCollection(packId: string): Promise<SoupCuratedCollection | null> {
+    const pack = getCuratedPack(packId)
+    if (!pack) return null
+    const library = mock
+      ? [...(await mockGetLibraryItems('lib-movies', 'SortName')), ...(await mockGetLibraryItems('lib-tv', 'SortName'))]
+      : await getLibraryForCuratedMatch()
+    const matched = matchCuratedPack(pack, library)
+    return matched ? toCuratedCard(matched) : null
   }
 
   async function getHomeExtras(): Promise<JellyfinHomeExtras> {
     if (mock) return mockGetHomeExtras()
-    const [topRated, spotlight] = await Promise.all([
-      userItems(listQuery('Primary,Backdrop', {
-        Recursive: 'true',
-        IncludeItemTypes: 'Movie,Series',
+    const [topRated, unwatched] = await Promise.all([
+      getRated('Primary,Backdrop', 9).catch((): JellyfinItem[] => []),
+      // Over-fetch so the row stays full after dropping anything already in Top Rated.
+      getRated('Primary', 30, { IsPlayed: 'false' }).catch((): JellyfinItem[] => []),
+    ])
+    const topIds = new Set(topRated.map(item => item.id))
+    return {
+      topRated,
+      unwatchedTopRated: unwatched.filter(item => !topIds.has(item.id)).slice(0, 20),
+    }
+  }
+
+  /** The collection card loads on its own so the library match doesn't hold up Top Rated. */
+  async function getHomeCollection(): Promise<HomeCollection> {
+    if (mock) return mockGetHomeCollection()
+    const curated = await getCuratedCollections().catch((): SoupCuratedCollection[] => [])
+    // BoxSet spotlight only when Soup packs didn't fill the slot.
+    const spotlight = curated.length ? null : await getSpotlight().catch(() => null)
+    return { curated, spotlight }
+  }
+
+  /**
+   * Highest community rating first. Jellyfin keeps no vote counts, so a title scored 10 by
+   * a handful of people would otherwise top the list; these filters screen those out.
+   * Movies need a critic score of 60+ (Rotten Tomatoes only scores titles with enough
+   * reviews). Series rarely have one, so they need a score under 9.5 (only tiny vote counts
+   * average that high) and 6+ seasons and episodes, which drops specials and OVAs.
+   */
+  async function getRated(images: string, limit: number, extra: Record<string, string> = {}): Promise<JellyfinItem[]> {
+    const query = (fetchLimit: number, params: Record<string, string>) => userItems(listQuery(images, {
+      Recursive: 'true',
+      SortBy: 'CommunityRating',
+      SortOrder: 'Descending',
+      HasCommunityRating: 'true',
+      Limit: String(fetchLimit),
+      ...extra,
+      ...params,
+    })).then(asItems)
+    const [movies, series] = await Promise.all([
+      query(limit, { IncludeItemTypes: 'Movie', MinCriticRating: '60' }),
+      // Over-fetch: the series filters run here, not on the server.
+      query(100, {
+        IncludeItemTypes: 'Series',
+        Fields: `${LIST_FIELDS},RecursiveItemCount`,
+      }).then(items => items.filter(item =>
+        (item.communityRating ?? 0) < 9.5 && (item.recursiveItemCount ?? 0) >= 6)),
+    ])
+    return [...movies, ...series]
+      .sort((a, b) => (b.communityRating ?? 0) - (a.communityRating ?? 0))
+      .slice(0, limit)
+  }
+
+  /**
+   * A few genre rows, picked from the library's most common genres. Both the genres and
+   * each row's titles rotate daily rather than on every request.
+   */
+  async function getGenreShelves(): Promise<JellyfinShelf[]> {
+    if (mock) return mockGetGenreShelves()
+    const titles = { Recursive: 'true', IncludeItemTypes: 'Movie,Series' }
+    const tally = countGenres(asItems(await userItems({
+      ...titles,
+      Fields: 'Genres',
+      EnableTotalRecordCount: 'false',
+      EnableImages: 'false',
+      EnableUserData: 'false',
+    })))
+    // Common enough to fill a row; the top dozen keeps niche genres out of the rotation.
+    const pool = tally.filter(genre => genre.count >= 8).slice(0, 12).map(genre => genre.name)
+    const picks = dailyShuffle(pool, 'genres').slice(0, 4)
+    const shelves = await Promise.all(picks.map(async (genre): Promise<JellyfinShelf> => {
+      const raw = await userItems(listQuery('Primary', {
+        ...titles,
+        Genres: genre,
         SortBy: 'CommunityRating',
         SortOrder: 'Descending',
-        HasCommunityRating: 'true',
-        Limit: '9',
-      })).catch(() => null),
-      getSpotlight().catch(() => null),
-    ])
-    return { topRated: asItems(topRated), spotlight }
+        Limit: '60',
+      })).catch(() => null)
+      return { title: genre, items: dailyShuffle(asItems(raw), genre).slice(0, 20) }
+    }))
+    return shelves.filter(shelf => shelf.items.length >= 4)
+  }
+
+  /** "Because you watched X" rows for the last couple of distinct titles the user finished. */
+  async function getBecauseYouWatched(): Promise<JellyfinShelf[]> {
+    if (mock) return mockGetBecauseYouWatched()
+    const recent = asItems(await userItems({
+      Recursive: 'true',
+      IncludeItemTypes: 'Movie,Episode',
+      Filters: 'IsPlayed',
+      SortBy: 'DatePlayed',
+      SortOrder: 'Descending',
+      Limit: '20',
+      EnableImages: 'false',
+    }))
+    // Episodes stand in for their show, so one binge doesn't take both rows.
+    const anchors = new Map<string, string>()
+    for (const item of recent) {
+      const id = item.seriesId || item.id
+      if (!anchors.has(id)) anchors.set(id, item.seriesName || item.name)
+      if (anchors.size === 2) break
+    }
+    const shelves = await Promise.all([...anchors].map(async ([id, name]): Promise<JellyfinShelf> => ({
+      title: `Because You Watched ${name}`,
+      items: (await getSimilar(id).catch((): JellyfinItem[] => [])).filter(item => !anchors.has(item.id)),
+    })))
+    return shelves.filter(shelf => shelf.items.length >= 4)
   }
 
   /**
@@ -635,6 +817,10 @@ function createJellyfin() {
     jellyfin,
     getHome,
     getHomeExtras,
+    getHomeCollection,
+    getCuratedCollection,
+    getGenreShelves,
+    getBecauseYouWatched,
     getLibraries,
     getLibraryItems,
     getLibraryTotal,

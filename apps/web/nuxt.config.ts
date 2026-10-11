@@ -25,7 +25,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       /** The browser calls Identity directly; fixed at build time for `nuxt generate`. */
-      soupIdentityBaseUrl: 'http://localhost:8787',
+      soupIdentityBaseUrl: 'https://soup-idm.bestiestudios.com',
       appName: 'Soup',
       appOrigin: 'http://localhost:3000',
       /** Prefills the server field for direct Jellyfin sign-in. */

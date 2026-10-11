@@ -18,7 +18,7 @@ const schema = z.object({
     .optional()
     .default("http://localhost:8787/auth/google/callback"),
   DEV_GOOGLE_EMAIL: z.string().email().default("dev@example.com"),
-  ALLOW_DEV_LOGIN: bool.default("true"),
+  ALLOW_DEV_LOGIN: bool.default("false"),
   JWT_ALG: z.enum(["EdDSA", "RS256"]).default("RS256"),
   JWT_PRIVATE_KEY_PEM: z.string().optional().default(""),
   JWT_PUBLIC_KEY_PEM: z.string().optional().default(""),

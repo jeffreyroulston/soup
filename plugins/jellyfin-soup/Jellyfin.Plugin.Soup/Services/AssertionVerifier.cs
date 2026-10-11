@@ -107,7 +107,17 @@ public sealed class AssertionVerifier
             throw new SecurityTokenException("Assertion server_id does not match this plugin");
         }
 
-        return new AssertionClaims(email, serverId);
+        var jti = token.Id;
+        if (string.IsNullOrWhiteSpace(jti))
+        {
+            throw new SecurityTokenException("Assertion missing jti");
+        }
+
+        var expiresAt = token.ValidTo == DateTime.MinValue
+            ? DateTimeOffset.UtcNow.AddMinutes(5)
+            : new DateTimeOffset(DateTime.SpecifyKind(token.ValidTo, DateTimeKind.Utc));
+
+        return new AssertionClaims(email, serverId, jti, expiresAt);
     }
 
     private async Task<string> GetJwksCachedAsync(CancellationToken cancellationToken)
@@ -136,4 +146,10 @@ public sealed class AssertionVerifier
 /// </summary>
 /// <param name="Email">Google account email (JWT <c>sub</c>).</param>
 /// <param name="ServerId">Optional server_id claim.</param>
-public sealed record AssertionClaims(string Email, string? ServerId);
+/// <param name="Jti">JWT ID for one-time exchange.</param>
+/// <param name="ExpiresAt">Assertion expiry (UTC).</param>
+public sealed record AssertionClaims(
+    string Email,
+    string? ServerId,
+    string Jti,
+    DateTimeOffset ExpiresAt);

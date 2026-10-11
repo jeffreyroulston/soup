@@ -206,24 +206,57 @@ const trackChoice = computed<TrackChoice>(() => {
 
 const cast = computed<JellyfinPerson[]>(() => (item.value?.people ?? []).slice(0, 20))
 
-const information = computed(() => {
+type InfoEntry = {
+  label: string
+  value?: string
+  links?: { label: string, href: string }[]
+}
+
+function providerLinks(
+  ids: Record<string, string> | undefined,
+  itemType: string,
+): { label: string, href: string }[] {
+  if (!ids) return []
+  const links: { label: string, href: string }[] = []
+  const imdb = ids.Imdb || ids.IMDB
+  if (imdb) links.push({ label: 'IMDb', href: `https://www.imdb.com/title/${imdb}/` })
+  const tmdb = ids.Tmdb || ids.TmdbId || ids.TMDb
+  if (tmdb) {
+    const kind = itemType === 'Movie' ? 'movie' : 'tv'
+    links.push({ label: 'TMDB', href: `https://www.themoviedb.org/${kind}/${tmdb}` })
+  }
+  const tvdb = ids.Tvdb || ids.TvdbId || ids.TVDB
+  if (tvdb && (itemType === 'Series' || itemType === 'Season' || itemType === 'Episode')) {
+    links.push({ label: 'TVDB', href: `https://www.thetvdb.com/?tab=series&id=${tvdb}` })
+  }
+  return links
+}
+
+const information = computed((): InfoEntry[] => {
   const value = item.value
   if (!value) return []
-  const streams = (playTarget.value?.mediaStreams?.length ? playTarget.value : value).mediaStreams ?? []
-  const audio = streams.filter(s => s.type === 'Audio').map(s => s.displayTitle || s.language || s.codec)
-  const subs = streams.filter(s => s.type === 'Subtitle').map(s => s.displayTitle || s.language || s.codec)
-  const video = streams.find(s => s.type === 'Video')
-  return [
-    { label: 'Studio', value: value.studios?.join(', ') },
-    { label: 'Released', value: yearLabel(value) },
-    { label: 'Genres', value: value.genres?.join(', ') },
-    { label: 'Rated', value: value.officialRating },
-    { label: 'Runtime', value: runtimeLabel(value.runTimeTicks) },
-    { label: 'Audio', value: audio.filter(Boolean).join('\n') },
-    { label: 'Subtitles', value: subs.filter(Boolean).join(', ') },
-    { label: 'Video', value: video?.displayTitle },
-    { label: 'File', value: value.path },
-  ].filter((entry): entry is { label: string, value: string } => Boolean(entry.value))
+  const original = value.originalTitle?.trim()
+  const showOriginal = original
+    && original.localeCompare(value.name.trim(), undefined, { sensitivity: 'accent' }) !== 0
+  const links = providerLinks(value.providerIds, value.type)
+  const entries: InfoEntry[] = [
+    { label: 'Original title', value: showOriginal ? original : undefined },
+    { label: 'Studio', value: value.studios?.join(', ') || undefined },
+    { label: 'Network', value: value.networks?.join(', ') || undefined },
+    { label: 'Released', value: yearLabel(value) || undefined },
+    { label: 'Status', value: value.status || undefined },
+    { label: 'Genres', value: value.genres?.join(', ') || undefined },
+    { label: 'Country', value: value.productionLocations?.join(', ') || undefined },
+    { label: 'Tags', value: value.tags?.join(', ') || undefined },
+    { label: 'Rated', value: value.officialRating || undefined },
+    {
+      label: 'Critics',
+      value: value.criticRating != null ? `${Math.round(value.criticRating)}%` : undefined,
+    },
+    { label: 'Runtime', value: runtimeLabel(value.runTimeTicks) || undefined },
+    { label: 'Links', links: links.length ? links : undefined },
+  ]
+  return entries.filter(entry => Boolean(entry.value) || Boolean(entry.links?.length))
 })
 
 // Both toggles patch the cached item first, so these flip immediately.
@@ -612,7 +645,25 @@ function selectSeason(seasonId: string) {
               <dt class="text-sm font-extrabold">
                 {{ entry.label }}
               </dt>
-              <dd class="m-0 whitespace-pre-line break-words text-sm leading-normal text-muted">
+              <dd
+                v-if="entry.links?.length"
+                class="m-0 flex flex-wrap gap-x-3 gap-y-1 text-sm leading-normal"
+              >
+                <a
+                  v-for="link in entry.links"
+                  :key="link.href"
+                  :href="link.href"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="font-semibold text-muted underline-offset-2 hover:text-ink hover:underline"
+                >
+                  {{ link.label }}
+                </a>
+              </dd>
+              <dd
+                v-else
+                class="m-0 whitespace-pre-line break-words text-sm leading-normal text-muted"
+              >
                 {{ entry.value }}
               </dd>
             </div>

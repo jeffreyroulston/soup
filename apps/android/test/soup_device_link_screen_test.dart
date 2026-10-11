@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/soup/soup_session_store.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/soup/soup_session_store.dart';
 import 'package:soup/src/features/soup_auth/soup_device_link_screen.dart';
-import 'package:soup/src/features/soup_auth/soup_device_link_view_model.dart';
+import 'package:soup_core/src/features/soup_auth/soup_device_link_view_model.dart';
 import 'package:soup_identity/soup_identity.dart';
 
 import 'support/connectivity_fakes.dart';

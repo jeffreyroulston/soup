@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup/src/data/soup/soup_session_store.dart';
+import 'package:soup_core/src/data/soup/soup_session_store.dart';
 import 'package:soup_identity/soup_identity.dart';
 
 void main() {

@@ -5,9 +5,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:soup/src/data/jellyfin/jellyfin_discovery.dart';
-import 'package:soup/src/data/jellyfin/lan_discovery.dart';
-import 'package:soup/src/data/session/connection_preferences_store.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_discovery.dart';
+import 'package:soup_core/src/data/jellyfin/lan_discovery.dart';
+import 'package:soup_core/src/data/session/connection_preferences_store.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
 import 'support/connectivity_fakes.dart';

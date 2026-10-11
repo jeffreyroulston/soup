@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-ARG NUXT_PUBLIC_SOUP_IDENTITY_BASE_URL=http://localhost:8787
+ARG NUXT_PUBLIC_SOUP_IDENTITY_BASE_URL=https://soup-idm.bestiestudios.com
 ARG NUXT_PUBLIC_APP_ORIGIN=http://localhost:3000
 ARG NUXT_PUBLIC_APP_NAME=Soup
 ARG NUXT_PUBLIC_JELLYFIN_URL=

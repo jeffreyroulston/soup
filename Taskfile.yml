@@ -102,6 +102,8 @@ tasks:
     desc: Run static analysis for the app and packages
     cmds:
       - task: analyze:app
+      - task: analyze:v2
+      - task: analyze:core
       - task: analyze:tailscale
       - task: analyze:jellyfin
       - task: analyze:soup-identity
@@ -109,6 +111,18 @@ tasks:
   analyze:app:
     desc: Analyze the Flutter Android app
     dir: apps/android
+    cmds:
+      - flutter analyze
+
+  analyze:v2:
+    desc: Analyze the Flutter Android v2 app
+    dir: apps/android-v2
+    cmds:
+      - flutter analyze
+
+  analyze:core:
+    desc: Analyze the shared soup_core package
+    dir: packages/soup_core
     cmds:
       - flutter analyze
 
@@ -135,6 +149,7 @@ tasks:
     desc: Run tests for the app and packages
     cmds:
       - task: test:app
+      - task: test:v2
       - task: test:tailscale
       - task: test:jellyfin
       - task: test:soup-identity
@@ -142,6 +157,12 @@ tasks:
   test:app:
     desc: Run Android app tests; pass extra flags after --
     dir: apps/android
+    cmds:
+      - flutter test {{.CLI_ARGS}}
+
+  test:v2:
+    desc: Run Android v2 app tests; pass extra flags after --
+    dir: apps/android-v2
     cmds:
       - flutter test {{.CLI_ARGS}}
 
@@ -197,7 +218,7 @@ tasks:
 
   db:generate:
     desc: Regenerate the Drift database bindings
-    dir: apps/android
+    dir: packages/soup_core
     cmds:
       - dart run build_runner build
 
@@ -205,7 +226,7 @@ tasks:
     desc: Regenerate Drift bindings and fail if committed output is stale
     cmds:
       - task: db:generate
-      - git diff --exit-code -- apps/android/lib/src/data/cache
+      - git diff --exit-code -- packages/soup_core/lib/src/data/cache
 
   build:apk:debug:
     aliases: [build]
@@ -213,6 +234,24 @@ tasks:
     dir: apps/android
     cmds:
       - flutter build apk --debug {{.CLI_ARGS}}
+
+  v2:build:
+    desc: Build the Android v2 debug APK
+    dir: apps/android-v2
+    cmds:
+      - flutter build apk --debug {{.CLI_ARGS}}
+
+  v2:run:
+    desc: Run Soup v2 on a selected device; optionally pass DEVICE=<id>
+    dir: apps/android-v2
+    cmds:
+      - 'flutter run {{if .DEVICE}}--device-id "{{.DEVICE}}"{{end}} {{.CLI_ARGS}}'
+
+  v2:install:
+    desc: Build and install the v2 debug APK; optionally pass DEVICE=<adb-serial>
+    deps: [v2:build]
+    cmds:
+      - '"{{.ADB}}" {{if .DEVICE}}-s "{{.DEVICE}}"{{end}} install -r apps/android-v2/build/app/outputs/flutter-apk/app-debug.apk'
 
   build:apk:release:
     desc: Build a release APK using the prototype signing configuration

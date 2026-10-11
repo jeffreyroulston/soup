@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup/src/data/appearance/appearance_settings.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup/src/features/appearance/soup_theme.dart';
-import 'package:soup/src/features/connectivity/connectivity_view_model.dart';
+import 'package:soup_core/src/features/connectivity/connectivity_view_model.dart';
 import 'package:soup/src/features/library/library_screen.dart';
 import 'package:soup/src/features/shared/tv_text_input.dart';
 

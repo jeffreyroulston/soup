@@ -1,0 +1,35 @@
+name: soup_v2
+description: "Soup TV client with the web app's UI over an embedded Tailscale connection."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  path_provider: ^2.1.6
+  phosphoricons_flutter: ^1.0.0
+  qr_flutter: ^4.1.0
+  soup_core:
+    path: ../../packages/soup_core
+  soup_identity:
+    path: ../../packages/soup_identity
+  soup_tailscale:
+    path: ../../packages/soup_tailscale
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/branding/soup-icon.png
+    - assets/fonts/OFL.txt
+  fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-Variable.ttf

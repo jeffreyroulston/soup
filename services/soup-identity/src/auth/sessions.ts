@@ -183,14 +183,21 @@ export async function pollDeviceLink(
   if (row.status === "pending") return { kind: "pending" as const };
 
   if (row.status === "approved" && row.email) {
-    const tokens = await createSession(db, keys, env, {
-      email: row.email,
-      deviceName: "device-link",
-    });
-    await db.query(
-      `UPDATE device_links SET status = 'consumed' WHERE device_code = $1`,
+    // Claim first so concurrent polls cannot mint two sessions.
+    const claimed = await db.query<{ email: string }>(
+      `UPDATE device_links
+       SET status = 'consumed'
+       WHERE device_code = $1 AND status = 'approved' AND email IS NOT NULL
+       RETURNING email`,
       [deviceCode],
     );
+    const email = claimed.rows[0]?.email;
+    if (!email) return { kind: "missing" as const };
+
+    const tokens = await createSession(db, keys, env, {
+      email,
+      deviceName: "device-link",
+    });
     return { kind: "approved" as const, tokens };
   }
 
@@ -311,22 +318,3 @@ export async function exchangeGoogleCode(
   };
 }
 
-/** Opaque state for OIDC round-trip (user_code optional). */
-export function encodeOAuthState(userCode?: string): string {
-  return Buffer.from(
-    JSON.stringify({ user_code: userCode ?? null, n: randomToken(8) }),
-  ).toString("base64url");
-}
-
-export function decodeOAuthState(state: string): { user_code: string | null } {
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(state, "base64url").toString("utf8"),
-    ) as {
-      user_code?: string | null;
-    };
-    return { user_code: parsed.user_code ?? null };
-  } catch {
-    return { user_code: null };
-  }
-}

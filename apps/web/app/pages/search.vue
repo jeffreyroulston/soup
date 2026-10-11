@@ -111,7 +111,7 @@ onBeforeUnmount(() => {
           type="search"
           placeholder="Movies, shows, people"
           autocomplete="off"
-          class="min-w-0 flex-1 border-0 bg-transparent text-[22px] font-bold text-ink outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
+          class="min-w-0 flex-1 border-0 bg-transparent text-[22px] font-bold text-ink outline-none focus-visible:outline-none! placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
         >
         <button
           v-if="query"

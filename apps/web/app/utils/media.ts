@@ -270,6 +270,31 @@ export function countGenres(items: Pick<JellyfinItem, 'genres'>[]): GenreCount[]
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 }
 
+/**
+ * Shuffles `items` the same way all day (local date as the seed), so rotating home rows
+ * change daily but don't reshuffle on every refetch. `salt` gives each row its own order.
+ */
+export function dailyShuffle<T>(items: readonly T[], salt = ''): T[] {
+  const now = new Date()
+  let seed = 0
+  for (const ch of `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}:${salt}`) {
+    seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0
+  }
+  // mulberry32
+  const random = () => {
+    seed = (seed + 0x6D2B79F5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const copy = [...items]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j]!, copy[i]!]
+  }
+  return copy
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)

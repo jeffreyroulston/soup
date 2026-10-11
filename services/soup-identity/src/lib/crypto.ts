@@ -139,9 +139,10 @@ export async function signAssertion(
     audience: string;
     serverId: string;
   },
-): Promise<{ assertion: string; expiresIn: number }> {
+): Promise<{ assertion: string; expiresIn: number; jti: string }> {
   const expiresIn = env.ASSERTION_TTL_SECONDS;
   const email = input.email.trim().toLowerCase();
+  const jti = randomToken(16);
   const assertion = await new SignJWT({
     typ: "soup_assertion",
     email,
@@ -151,10 +152,48 @@ export async function signAssertion(
     .setSubject(email)
     .setIssuer(env.ASSERTION_ISSUER)
     .setAudience(input.audience)
+    .setJti(jti)
     .setIssuedAt()
     .setExpirationTime(`${expiresIn}s`)
     .sign(keys.privateKey);
-  return { assertion, expiresIn };
+  return { assertion, expiresIn, jti };
+}
+
+/** Signed OIDC state so callbacks cannot forge a user_code binding. */
+export async function signOAuthState(
+  keys: SigningKeys,
+  env: Env,
+  userCode?: string,
+): Promise<string> {
+  return new SignJWT({
+    typ: "soup_oauth_state",
+    user_code: userCode ?? null,
+  })
+    .setProtectedHeader({ alg: keys.alg, kid: keys.kid, typ: "JWT" })
+    .setIssuer(env.ASSERTION_ISSUER)
+    .setAudience("soup-oauth-state")
+    .setIssuedAt()
+    .setExpirationTime("10m")
+    .sign(keys.privateKey);
+}
+
+export async function verifyOAuthState(
+  keys: SigningKeys,
+  env: Env,
+  state: string,
+): Promise<{ user_code: string | null }> {
+  const { payload } = await jwtVerify(state, keys.publicKey, {
+    issuer: env.ASSERTION_ISSUER,
+    audience: "soup-oauth-state",
+  });
+  if (payload.typ !== "soup_oauth_state") {
+    throw new Error("invalid oauth state");
+  }
+  const userCode =
+    typeof payload.user_code === "string" && payload.user_code
+      ? payload.user_code
+      : null;
+  return { user_code: userCode };
 }
 
 /** Short-lived proof that Google SSO already verified this email (for TV code entry). */

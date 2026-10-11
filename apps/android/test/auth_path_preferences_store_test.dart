@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup/src/data/session/auth_path_preferences_store.dart';
+import 'package:soup_core/src/data/session/auth_path_preferences_store.dart';
 
 void main() {
   test('MemoryAuthPathStore round trips direct opt-in', () async {

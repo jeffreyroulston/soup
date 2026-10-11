@@ -1,6 +1,7 @@
 import type {
   JellyfinCollection,
   JellyfinHome,
+  HomeCollection,
   JellyfinHomeExtras,
   JellyfinItem,
   JellyfinMediaSegment,
@@ -8,9 +9,11 @@ import type {
   JellyfinPlaybackPlan,
   JellyfinSearchResults,
   JellyfinSessionPayload,
+  JellyfinShelf,
   JellyfinTrickplay,
 } from '~/types/jellyfin'
 import type { LibrarySort } from '~/composables/useJellyfin'
+import { matchCuratedCollections, toCuratedCard } from './curatedCollections'
 import { countGenres, type GenreCount } from './media'
 
 const TICKS_PER_MIN = 10_000_000 * 60
@@ -128,6 +131,22 @@ const movies: MockMovie[] = [
   movie('movie-iron-tide', 'Iron Tide', 2022, 141, 7.7, 'PG-13', 55, ['Action'], null),
 ]
 
+// Provider ids from curated packs so mock home can exercise Soup collections.
+const mockCuratedImdb = [
+  'tt0114709', // Toy Story — Pixar
+  'tt0120363', // Toy Story 2
+  'tt0198781', // Monsters, Inc.
+  'tt0266543', // Finding Nemo
+  'tt0910970', // WALL·E
+  'tt0245429', // Spirited Away — Ghibli
+  'tt0119698', // Princess Mononoke
+  'tt0096283', // Totoro
+]
+for (const [index, item] of movies.entries()) {
+  const imdb = mockCuratedImdb[index]
+  if (imdb) item.providerIds = { Imdb: imdb }
+}
+
 // One title with only a YouTube trailer, to exercise the embedded trailer player.
 Object.assign(movies.find(item => item.id === 'movie-static-bloom')!, { localTrailerCount: 0, specialFeatureCount: 0 })
 
@@ -135,6 +154,7 @@ const seriesList: MockSeries[] = [
   series('series-signal', 'Signal Drift', 2022, 8.4, 'TV-14', 225, ['Sci-Fi'], 2),
   series('series-kitchen', 'After Kitchen', 2020, 7.8, 'TV-MA', 40, ['Drama'], 1),
 ]
+seriesList[0]!.providerIds = { Imdb: 'tt11126994' } // Arcane — animated beyond kids
 
 const seasons: JellyfinItem[] = [
   season('season-signal-1', 'series-signal', 1, 'Season 1'),
@@ -227,6 +247,12 @@ function movie(
     backdropImageTag: 'b',
     genres,
     studios: ['Mock Studio'],
+    networks: ['Mock Network'],
+    originalTitle: `${name} (Original)`,
+    productionLocations: ['United States'],
+    tags: ['Mock', 'Festival'],
+    status: 'Released',
+    criticRating: Math.min(99, Math.round(rating * 10)),
     people: people.map(person => ({ ...person })),
     mediaSourceId: `${id}-source`,
     mediaStreams: defaultStreams(),
@@ -270,6 +296,12 @@ function series(
     backdropImageTag: 'b',
     genres,
     studios: ['Mock Television'],
+    networks: ['Mock Network'],
+    originalTitle: `${name} (Original)`,
+    productionLocations: ['United States'],
+    tags: ['Mock', 'Series'],
+    status: 'Ended',
+    criticRating: Math.min(99, Math.round(rating * 10)),
     people: people.map(person => ({ ...person })),
     childCount,
     isFavorite: false,
@@ -470,20 +502,54 @@ export function mockGetHome(): JellyfinHome {
   return {
     resume,
     nextUp,
-    recentlyAddedMovies: movies.slice(0, 6).map(withUserFlags),
-    recentlyAddedTv: [withUserFlags(episodes[1]!), withUserFlags(episodes[5]!), withUserFlags(episodes[3]!)],
+    recentlyAdded: [
+      { title: 'Movies', items: movies.slice(0, 6).map(withUserFlags), seeAllTo: '/library/lib-movies' },
+      {
+        title: 'TV Shows',
+        items: [withUserFlags(episodes[1]!), withUserFlags(episodes[5]!), withUserFlags(episodes[3]!)],
+        seeAllTo: '/library/lib-tv',
+      },
+    ],
   }
 }
 
-export function mockGetHomeExtras(): JellyfinHomeExtras {
+export function mockGetHomeCollection(): HomeCollection {
+  const library = [...movies, ...seriesList].map(withUserFlags)
+  const curated = matchCuratedCollections(library).all.map(toCuratedCard)
   const spotlight: JellyfinCollection = {
     collection: withUserFlags(spotlightCollection),
     items: movies.slice(0, 4).map(withUserFlags),
   }
+  return { curated, spotlight: curated.length ? null : spotlight }
+}
+
+export function mockGetHomeExtras(): JellyfinHomeExtras {
+  const rated = [...movies, ...seriesList].sort((a, b) => (b.communityRating ?? 0) - (a.communityRating ?? 0))
   return {
-    topRated: [...movies].sort((a, b) => (b.communityRating ?? 0) - (a.communityRating ?? 0)).slice(0, 9).map(withUserFlags),
-    spotlight,
+    topRated: rated.slice(0, 6).map(withUserFlags),
+    unwatchedTopRated: rated.slice(6).filter(item => !played.has(item.id)).map(withUserFlags),
   }
+}
+
+/** The mock catalog is tiny, so every genre with two or more titles gets a row. */
+export function mockGetGenreShelves(): JellyfinShelf[] {
+  const titles = [...movies, ...seriesList]
+  return countGenres(titles)
+    .filter(genre => genre.count >= 2)
+    .map(genre => ({
+      title: genre.name,
+      items: titles.filter(item => item.genres?.includes(genre.name)).map(withUserFlags),
+    }))
+}
+
+export function mockGetBecauseYouWatched(): JellyfinShelf[] {
+  const anchors = [...new Set([...played].map(id => findRaw(id)).map(item => item?.seriesId || item?.id))]
+    .map(id => (id ? findRaw(id) : undefined))
+    .filter((item): item is JellyfinItem => Boolean(item))
+  return anchors.map(anchor => ({
+    title: `Because You Watched ${anchor.name}`,
+    items: [...movies, ...seriesList].filter(item => item.id !== anchor.id).slice(0, 8).map(withUserFlags),
+  }))
 }
 
 export function mockGetLibraryItems(libraryId: string, sortBy: LibrarySort = 'SortName'): JellyfinItem[] {

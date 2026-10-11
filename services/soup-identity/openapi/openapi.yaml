@@ -82,7 +82,11 @@ paths:
   /auth/device/approve:
     post:
       tags: [auth]
-      summary: Approve a device-link user code after Google (or dev) identity
+      summary: Approve a device-link user code with a Google link_token proof
+      description: >
+        Requires a short-lived `link_token` (soup_device_link_proof) minted after
+        Google SSO. Email is taken from the proof, not the request body.
+        For local smoke without Google, use `/auth/dev/complete` when ALLOW_DEV_LOGIN=true.
       security: []
       requestBody:
         required: true
@@ -104,8 +108,12 @@ paths:
                     enum: [approved]
         "400":
           description: Invalid or expired code
+        "401":
+          description: Invalid or expired link_token
         "404":
           description: Unknown user code
+        "429":
+          description: Rate limited
 
   /auth/google/start:
     get:
@@ -592,15 +600,16 @@ components:
 
     DeviceLinkApprove:
       type: object
-      required: [user_code, email]
+      required: [user_code, link_token]
       properties:
         user_code:
           type: string
-        email:
+          description: TV user code (XXXX-XXXX)
+        link_token:
           type: string
-          description: Normalized Google account email
-        name:
-          type: string
+          description: >
+            Short-lived JWT (typ soup_device_link_proof, aud soup-device-link)
+            proving Google SSO already verified the email
 
     SessionTokens:
       type: object

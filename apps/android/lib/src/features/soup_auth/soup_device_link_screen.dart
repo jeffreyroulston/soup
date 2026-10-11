@@ -6,7 +6,7 @@ import 'package:soup/src/features/appearance/soup_theme.dart';
 import 'package:soup/src/features/connectivity/onboarding_backdrop.dart';
 import 'package:soup/src/features/connectivity/onboarding_intro_panel.dart';
 import 'package:soup/src/features/shared/soup_mark.dart';
-import 'package:soup/src/features/soup_auth/soup_device_link_view_model.dart';
+import 'package:soup_core/src/features/soup_auth/soup_device_link_view_model.dart';
 import 'package:soup_identity/soup_identity.dart';
 
 /// TV-first Soup Identity device-link step (feature-flagged Wave 1B shell).

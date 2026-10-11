@@ -14,7 +14,7 @@ Frozen OpenAPI: [`openapi/openapi.yaml`](./openapi/openapi.yaml)
 - TypeScript + [Hono](https://hono.dev)
 - Postgres 16
 - JWT assertions: **RS256** recommended (`JWT_ALG=RS256`; Jellyfin IdentityModel cannot verify EdDSA)
-- Google OIDC when `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are set; otherwise `ALLOW_DEV_LOGIN` device approve
+- Google OIDC when `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are set; otherwise gated `ALLOW_DEV_LOGIN` (`false` by default)
 
 ## Quick start (Docker)
 
@@ -49,13 +49,13 @@ npm run dev
 
 ## Device-link smoke (dev login)
 
-Use when Google client env is unset and `ALLOW_DEV_LOGIN=true`:
+Use when Google client env is unset. Set `ALLOW_DEV_LOGIN=true` explicitly (it defaults to **false**):
 
 ```bash
 # 1) Start a device link (TV)
 curl -sS -X POST http://localhost:8787/auth/device/link | jq
 
-# 2) Approve with the returned user_code (phone / curl)
+# 2) Approve with the returned user_code (phone / curl) — only when ALLOW_DEV_LOGIN=true
 curl -sS -X POST http://localhost:8787/auth/dev/complete \
   -H 'content-type: application/json' \
   -d '{"user_code":"ABCD-EFGH","email":"dev@example.com"}' | jq
@@ -65,6 +65,10 @@ curl -sS "http://localhost:8787/auth/device/link/<device_code>" | jq
 ```
 
 Or open `verification_uri_complete` in a browser (Festival-styled HTML form when Google env is unset).
+
+**JSON approve with Google proof:** after Google SSO, `POST /auth/device/approve` accepts `{ "user_code", "link_token" }` only — email comes from the signed `link_token`, never from the body. Raw email approve is not supported.
+
+Public device-link / refresh routes are per-IP rate limited (in-memory; shared store needed if you run multiple Identity processes).
 
 ## Google OIDC setup
 
@@ -99,7 +103,7 @@ ALLOW_DEV_LOGIN=false
 | `PUBLIC_BASE_URL` | Base used in `verification_uri` / QR links the TV shows |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enables real Google SSO (`google=on`) |
 | `GOOGLE_REDIRECT_URI` | Must match a Console authorized redirect URI **exactly** |
-| `ALLOW_DEV_LOGIN` | `false` in production; `true` keeps `/auth/dev/complete` for local smoke |
+| `ALLOW_DEV_LOGIN` | Defaults `false`; set `true` only for local smoke (`/auth/dev/complete`) |
 
 Docker Compose may override `GOOGLE_REDIRECT_URI` to a LAN callback — keep Console and compose in sync.
 
@@ -118,6 +122,8 @@ TV  POST /auth/device/link
 Phone opens QR → GET /auth/google/start?user_code=…
     → redirect to Google → GET /auth/google/callback
 
+    OAuth `state` is a short-lived signed JWT (cannot forge user_code).
+
     If user_code was in OAuth state and still valid:
       → HTML “Device linked” (TV poll succeeds)
 
@@ -127,10 +133,10 @@ Phone opens QR → GET /auth/google/start?user_code=…
       → HTML “Device linked”
 
 TV  GET /auth/device/link/{device_code} → status=approved + Soup tokens (email)
-    → roster → assertion → Jellyfin /SoupAuth/Exchange
+    → roster → assertion (includes jti) → Jellyfin /SoupAuth/Exchange (one-time jti)
 ```
 
-Soup **never** shows access/refresh tokens in the browser. Tokens are only returned on the TV poll (and to the app).
+Soup **never** shows access/refresh tokens on the phone HTML path. Tokens are only returned on the TV/app poll. The static web app still stores Soup refresh tokens in `localStorage` — XSS on that origin remains a residual risk (no BFF/HttpOnly cookie path yet).
 
 ### 5. Troubleshooting
 
@@ -167,7 +173,7 @@ curl -sS -X POST http://localhost:8787/v1/assertions \
   -d '{"server_id":"home-jf"}' | jq
 ```
 
-Assertion JWT claims: `sub` = Google email, `aud` = server audience, `exp` ≈ 2–5 minutes (`ASSERTION_TTL_SECONDS`, default 180).
+Assertion JWT claims: `sub` = Google email, `aud` = server audience, `jti` (one-time on Jellyfin exchange), `exp` ≈ 2–5 minutes (`ASSERTION_TTL_SECONDS`, default 180).
 
 ## Session refresh
 

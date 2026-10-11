@@ -6,7 +6,7 @@ Nuxt 4 SPA, built as static files so one central deployment serves everyone. Sig
 
 | Key | Storage | Holds |
 | --- | --- | --- |
-| `soup.identity.tokens` | localStorage | Soup access + refresh token, email, expiry (shared by all tabs; refreshed under a Web Lock because Identity rotates refresh tokens) |
+| `soup.identity.tokens` | localStorage | Soup access + refresh token, email, expiry (shared by all tabs; refreshed under a Web Lock because Identity rotates refresh tokens). XSS on this origin can steal the session — residual risk without a BFF. |
 | `soup.jellyfin.session` | sessionStorage | This tab's Jellyfin token, so a reload skips the exchange |
 | `soup.jellyfin.direct` | localStorage | Direct Jellyfin username/password sign-in |
 | `soup.jellyfin.deviceId` | localStorage | One Jellyfin device ID per browser |
@@ -26,7 +26,7 @@ Open `http://localhost:3000` — you are signed in as `mock@soup.dev` automatica
 
 ## Prerequisites (live mode)
 
-1. **Soup Identity** reachable from users' browsers at `NUXT_PUBLIC_SOUP_IDENTITY_BASE_URL` (default `http://localhost:8787`) — see [`services/soup-identity/README.md`](../../services/soup-identity/README.md). Identity already serves open CORS. Its `PUBLIC_BASE_URL` (the verification page) must be reachable too.
+1. **Soup Identity** reachable from users' browsers at `NUXT_PUBLIC_SOUP_IDENTITY_BASE_URL` (default `https://soup-idm.bestiestudios.com`) — see [`services/soup-identity/README.md`](../../services/soup-identity/README.md). Identity already serves open CORS. Its `PUBLIC_BASE_URL` (the verification page) must be reachable too.
 2. Jellyfin with the Soup plugin, and the user's Google/dev email **entitled** on the roster with a `base_url` / `magic_dns` **their browser** can reach (LAN or Tailscale).
 3. **Jellyfin CORS** allows the web app's origin (`http://localhost:3000` in dev, the hosted origin in production).
 4. **HTTPS:** an https-hosted app can't call an `http://` Jellyfin (mixed content). On https pages the exchange prefers the server's `magic_dns` (`https://…ts.net`), so give servers a Tailscale name or put them behind TLS.

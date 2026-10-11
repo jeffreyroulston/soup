@@ -5,6 +5,8 @@ const props = defineProps<{
   items: JellyfinItem[]
   /** Item ids that came from Continue Watching. */
   resumeIds?: Set<string>
+  /** Placeholder in the same box while the home rows load. */
+  loading?: boolean
 }>()
 
 const { imageUrl } = useJellyfin()
@@ -96,8 +98,32 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- Same box and bottom anchoring as the real hero -->
   <section
-    v-if="current"
+    v-if="loading"
+    aria-hidden="true"
+    class="relative h-[min(88vh,780px)] min-h-[560px] w-full overflow-hidden bg-surface/50"
+  >
+    <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/60 via-30% to-transparent to-60%" />
+    <div class="absolute inset-x-4 bottom-10 flex flex-wrap items-end justify-between gap-6 sm:inset-x-8 sm:bottom-16 lg:inset-x-12 lg:bottom-[72px]">
+      <div class="flex w-full max-w-[600px] flex-col gap-4">
+        <span class="text-sm font-bold"><span class="inline-block h-[0.8em] w-40 animate-pulse rounded bg-elevated align-middle" /></span>
+        <span class="block h-[calc(clamp(2.75rem,7vw,6rem)*0.92)] w-3/4 animate-pulse rounded-btn bg-elevated" />
+        <span class="text-[15px] font-semibold"><span class="inline-block h-[0.8em] w-56 animate-pulse rounded bg-elevated align-middle" /></span>
+        <span class="flex flex-col text-[17px] leading-relaxed">
+          <span><span class="inline-block h-[0.8em] w-full animate-pulse rounded bg-elevated align-middle" /></span>
+          <span><span class="inline-block h-[0.8em] w-5/6 animate-pulse rounded bg-elevated align-middle" /></span>
+        </span>
+        <div class="mt-1 flex items-center gap-3">
+          <span class="h-[52px] w-48 animate-pulse rounded-btn bg-elevated" />
+          <span class="hidden h-[52px] w-28 animate-pulse rounded-btn bg-elevated sm:block" />
+          <span class="size-[52px] animate-pulse rounded-full bg-elevated" />
+        </div>
+      </div>
+    </div>
+  </section>
+  <section
+    v-else-if="current"
     aria-roledescription="carousel"
     aria-label="Featured"
     class="relative h-[min(88vh,780px)] min-h-[560px] w-full overflow-hidden"

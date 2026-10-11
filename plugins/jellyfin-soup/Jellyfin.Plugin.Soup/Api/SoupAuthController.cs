@@ -19,6 +19,7 @@ namespace Jellyfin.Plugin.Soup.Api;
 public sealed class SoupAuthController : ControllerBase
 {
     private readonly AssertionVerifier _assertionVerifier;
+    private readonly AssertionReplayStore _assertionReplayStore;
     private readonly EntitlementService _entitlementService;
     private readonly UserLinkService _userLinkService;
     private readonly ISessionManager _sessionManager;
@@ -28,18 +29,21 @@ public sealed class SoupAuthController : ControllerBase
     /// Initializes a new instance of the <see cref="SoupAuthController"/> class.
     /// </summary>
     /// <param name="assertionVerifier">Assertion verifier.</param>
+    /// <param name="assertionReplayStore">One-time assertion jti store.</param>
     /// <param name="entitlementService">Entitlement service.</param>
     /// <param name="userLinkService">User link service.</param>
     /// <param name="sessionManager">Session manager.</param>
     /// <param name="logger">Logger.</param>
     public SoupAuthController(
         AssertionVerifier assertionVerifier,
+        AssertionReplayStore assertionReplayStore,
         EntitlementService entitlementService,
         UserLinkService userLinkService,
         ISessionManager sessionManager,
         ILogger<SoupAuthController> logger)
     {
         _assertionVerifier = assertionVerifier;
+        _assertionReplayStore = assertionReplayStore;
         _entitlementService = entitlementService;
         _userLinkService = userLinkService;
         _sessionManager = sessionManager;
@@ -91,6 +95,12 @@ public sealed class SoupAuthController : ControllerBase
         {
             _logger.LogError(ex, "Soup assertion verification error");
             return Unauthorized(new { error = "invalid_assertion", message = "Unable to verify assertion" });
+        }
+
+        if (!_assertionReplayStore.TryConsume(claims.Jti, claims.ExpiresAt))
+        {
+            _logger.LogWarning("Soup assertion replay rejected for jti {Jti}", claims.Jti);
+            return Unauthorized(new { error = "assertion_replayed", message = "Assertion already used" });
         }
 
         var entitlement = await _entitlementService

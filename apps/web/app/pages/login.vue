@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { renderSVG } from 'uqr'
 import { LAST_SERVER_KEY } from '~/composables/useAuthSession'
 
 definePageMeta({ layout: false })
@@ -12,9 +13,18 @@ const phase = ref<'idle' | 'waiting' | 'direct' | 'quickConnect' | 'server' | 'e
 const userCode = ref('')
 const verificationUrl = ref('')
 const errorMessage = ref('')
+/** Couldn't start the device link that backs the QR code and the Google button. */
+const linkError = ref('')
+const qrSvg = computed(() => (verificationUrl.value
+  ? renderSVG(verificationUrl.value, { border: 2, pixelSize: 8, blackColor: '#000', whiteColor: '#fff' })
+  : ''))
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 /** Bumped on cancel so a start or poll that's still in flight is ignored. */
 let loginRun = 0
+let linkTimer: ReturnType<typeof setTimeout> | null = null
+/** Same as `loginRun`, for the device link. */
+let linkRun = 0
+let linkStarting: Promise<void> | null = null
 
 const serverUrl = ref('')
 const username = ref('')
@@ -40,24 +50,65 @@ onMounted(async () => {
   else if (auth.choosingServer.value) {
     phase.value = 'server'
   }
+  else {
+    void ensureLink()
+  }
+})
+
+// The QR code is on the idle screen, so keep a link going whenever we land back there.
+watch(phase, (next) => {
+  if (next === 'idle') void ensureLink()
 })
 
 onBeforeUnmount(() => {
   loginRun++
   if (pollTimer) clearTimeout(pollTimer)
+  stopLink()
 })
 
-async function cancelLogin() {
-  loginRun++
-  if (pollTimer) clearTimeout(pollTimer)
-  pollTimer = null
+function stopLink() {
+  linkRun++
+  if (linkTimer) clearTimeout(linkTimer)
+  linkTimer = null
+  linkStarting = null
   userCode.value = ''
   verificationUrl.value = ''
-  phase.value = 'idle'
-  await auth.cancelLogin()
+  void auth.cancelLogin()
+}
+
+/** Starts a device link (backs both the QR code and "Sign in with Google") unless one is live. */
+function ensureLink(): Promise<void> {
+  if (mock || verificationUrl.value) return Promise.resolve()
+  if (linkStarting) return linkStarting
+  linkError.value = ''
+  const run = ++linkRun
+  linkStarting = (async () => {
+    try {
+      const started = await auth.startLogin()
+      if (run !== linkRun) return
+      userCode.value = started.userCode
+      verificationUrl.value = started.verificationUrl
+      scheduleLinkPoll(started.interval || 5, run)
+    }
+    catch (error) {
+      if (run !== linkRun) return
+      linkError.value = error instanceof Error ? error.message : 'Could not start sign-in'
+    }
+    finally {
+      if (run === linkRun) linkStarting = null
+    }
+  })()
+  return linkStarting
+}
+
+/** Fresh link once the old one expires, so the QR code never goes stale on screen. */
+function restartLink() {
+  stopLink()
+  void ensureLink()
 }
 
 function showDirect() {
+  stopLink()
   directError.value = ''
   phase.value = 'direct'
 }
@@ -167,53 +218,61 @@ async function beginMock() {
   }
 }
 
+/** Opens the verification page for the live link; the QR code's poll finishes the sign-in. */
 async function beginLogin() {
   if (mock) {
     await beginMock()
     return
   }
   errorMessage.value = ''
-  userCode.value = ''
+  // Opened from the click itself when the link is ready, so popup blockers let it through.
+  const popup = verificationUrl.value ? null : window.open('', '_blank')
+  if (verificationUrl.value) window.open(verificationUrl.value, '_blank', 'noopener,noreferrer')
   phase.value = 'waiting'
-  const run = ++loginRun
-  try {
-    const started = await auth.startLogin()
-    if (run !== loginRun) return
-    userCode.value = started.userCode
-    verificationUrl.value = started.verificationUrl
-    window.open(started.verificationUrl, '_blank', 'noopener,noreferrer')
-    schedulePoll(started.interval || 5, run)
-  }
-  catch (error) {
-    if (run !== loginRun) return
+  await ensureLink()
+  if (!verificationUrl.value) {
+    popup?.close()
     phase.value = 'error'
-    errorMessage.value = error instanceof Error ? error.message : 'Could not start sign-in'
+    errorMessage.value = linkError.value || 'Could not start sign-in'
+    return
+  }
+  if (popup) {
+    popup.opener = null
+    popup.location.href = verificationUrl.value
   }
 }
 
-function schedulePoll(intervalSec: number, run: number) {
-  if (pollTimer) clearTimeout(pollTimer)
-  pollTimer = setTimeout(async () => {
+function scheduleLinkPoll(intervalSec: number, run: number) {
+  if (linkTimer) clearTimeout(linkTimer)
+  linkTimer = setTimeout(async () => {
     try {
       const result = await auth.pollLogin()
-      if (run !== loginRun) return
+      if (run !== linkRun) return
       if (result.status === 'approved') {
         await router.replace('/')
         return
       }
       if (result.status === 'chooseServer') {
+        verificationUrl.value = ''
         phase.value = 'server'
         return
       }
       if (result.status === 'expired') {
-        phase.value = 'error'
-        errorMessage.value = 'Sign-in code expired. Try again.'
+        if (phase.value === 'waiting') {
+          stopLink()
+          phase.value = 'error'
+          errorMessage.value = 'Sign-in code expired. Try again.'
+        }
+        else {
+          restartLink()
+        }
         return
       }
-      schedulePoll(result.interval || intervalSec, run)
+      scheduleLinkPoll(result.interval || intervalSec, run)
     }
     catch (error) {
-      if (run !== loginRun) return
+      if (run !== linkRun) return
+      stopLink()
       phase.value = 'error'
       errorMessage.value = error instanceof Error ? error.message : 'Polling failed'
     }
@@ -233,7 +292,7 @@ function schedulePoll(intervalSec: number, run: number) {
         <h1
           v-if="!mock && (phase === 'idle' || phase === 'error')"
           id="login-title"
-          class="pb-[54px] text-center text-[64px] font-extrabold leading-none tracking-[-2.5px]"
+          class="pb-2 text-center text-[64px] font-extrabold leading-none tracking-[-2.5px]"
         >
           soup
         </h1>
@@ -256,11 +315,39 @@ function schedulePoll(intervalSec: number, run: number) {
         </template>
 
         <template v-else-if="phase === 'idle'">
+          <div
+            v-if="linkError"
+            class="mx-auto flex aspect-square w-full max-w-[200px] flex-col items-center justify-center gap-3 rounded-[20px] bg-white/5 p-5 text-center"
+          >
+            <p class="text-[13px] font-semibold text-accent">
+              {{ linkError }}
+            </p>
+            <button type="button" class="text-[14px] font-bold text-ink-2 hover:text-ink hover:underline" @click="ensureLink()">
+              Retry
+            </button>
+          </div>
+          <div v-else-if="!qrSvg" class="mx-auto aspect-square w-full max-w-[200px] animate-pulse rounded-[20px] bg-white/10" />
+          <div
+            v-else
+            role="img"
+            aria-label="QR code to sign in on your phone"
+            class="mx-auto w-full max-w-[200px] overflow-hidden rounded-[20px] bg-white p-2 [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
+            v-html="qrSvg"
+          />
+          <p class="-mt-1 pb-2 text-center text-sm font-semibold text-muted">
+            Scan with your phone to sign in
+          </p>
           <button
             type="button"
-            class="h-[52px] rounded-btn bg-ink text-[17px] font-extrabold text-canvas transition hover:bg-ink/80"
+            class="flex h-[52px] items-center justify-center gap-2.5 rounded-btn bg-ink text-[17px] font-extrabold text-canvas transition hover:bg-ink/80"
             @click="beginLogin"
           >
+            <svg viewBox="0 0 48 48" class="size-5 shrink-0" aria-hidden="true">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+            </svg>
             Sign in with Google
           </button>
           <div class="flex items-center gap-3 text-[13px] font-semibold text-muted" aria-hidden="true">
@@ -432,7 +519,7 @@ function schedulePoll(intervalSec: number, run: number) {
           <button
             type="button"
             class="h-11 rounded-btn text-[15px] font-bold text-muted transition hover:text-ink"
-            @click="cancelLogin"
+            @click="phase = 'idle'"
           >
             Cancel
           </button>

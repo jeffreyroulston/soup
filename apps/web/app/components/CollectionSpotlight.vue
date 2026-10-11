@@ -1,0 +1,116 @@
+<script setup lang="ts">
+import type { JellyfinCollection, SoupCuratedCollection } from '~/types/jellyfin'
+
+const props = withDefaults(defineProps<{
+  /** Soup hard-coded pack matched to this library. */
+  curated?: SoupCuratedCollection | null
+  /** Jellyfin BoxSet fallback when no curated packs match. */
+  spotlight?: JellyfinCollection | null
+  loading?: boolean
+}>(), {
+  curated: null,
+  spotlight: null,
+  loading: false,
+})
+
+const { imageUrl, posterUrl } = useJellyfin()
+
+const title = computed(() => props.curated?.title ?? props.spotlight?.collection.name ?? '')
+const description = computed(() =>
+  props.curated?.description
+  ?? props.spotlight?.collection.overview
+  ?? '')
+const countLabel = computed(() =>
+  props.curated?.countLabel
+  ?? (props.spotlight ? `${props.spotlight.items.length} titles` : ''))
+const to = computed(() =>
+  props.curated?.to
+  ?? (props.spotlight ? `/item/${props.spotlight.collection.id}` : '#'))
+
+const items = computed(() => props.curated?.items ?? props.spotlight?.items ?? [])
+
+const backdrop = computed(() => {
+  const spot = props.spotlight
+  const sources = [...(spot ? [spot.collection] : []), ...items.value]
+  for (const item of sources) {
+    const url = imageUrl(item, 'Backdrop', 1600)
+    if (url) return url
+  }
+  return null
+})
+
+/** Up to four posters, shown side by side on the right. */
+const posters = computed(() =>
+  items.value
+    .map(item => ({ id: item.id, name: item.name, src: posterUrl(item, 360) }))
+    .filter(p => p.src)
+    .slice(0, 4))
+
+/** Slanted panels: each leans the same way, the last one runs off the card's edge. */
+function panelClip(i: number, count: number) {
+  return i === count - 1
+    ? 'polygon(14% 0, 100% 0, 100% 100%, 0 100%)'
+    : 'polygon(14% 0, 100% 0, 86% 100%, 0 100%)'
+}
+</script>
+
+<template>
+  <section
+    v-if="loading"
+    aria-hidden="true"
+    class="relative mx-4 h-[360px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
+  >
+    <div class="absolute inset-x-6 bottom-8 flex max-w-[480px] flex-col gap-3.5 sm:inset-x-14">
+      <span class="text-sm font-bold"><span class="inline-block h-[0.8em] w-36 animate-pulse rounded bg-elevated align-middle" /></span>
+      <span class="block h-[calc(clamp(2.25rem,4vw,3.4rem)*0.95)] w-2/3 animate-pulse rounded-btn bg-elevated" />
+      <span class="h-[46px] w-44 animate-pulse rounded-full bg-elevated" />
+    </div>
+  </section>
+
+  <NuxtLink
+    v-else-if="curated || spotlight"
+    :to="to"
+    :aria-label="`${title} collection`"
+    class="group relative mx-4 block h-[360px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
+  >
+    <img
+      v-if="backdrop"
+      :src="backdrop"
+      alt=""
+      class="absolute inset-0 size-full object-cover object-top transition-transform duration-1000 group-hover:scale-[1.015]"
+      loading="lazy"
+    >
+    <!-- Same scrims as the hero -->
+    <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/60 via-30% to-transparent to-60%" />
+    <div class="absolute inset-0 bg-gradient-to-r from-canvas/70 via-canvas/10 via-45% to-transparent" />
+
+    <!-- Full-bleed posters cut on a diagonal, side by side -->
+    <div class="pointer-events-none absolute inset-y-0 right-0 hidden w-[56%] sm:flex" aria-hidden="true">
+      <img
+        v-for="(poster, i) in posters"
+        :key="poster.id"
+        :src="poster.src!"
+        alt=""
+        class="h-full min-w-0 flex-1 object-cover opacity-90 transition-opacity duration-500 group-hover:opacity-100"
+        :class="i > 0 && '-ml-[3.5%]'"
+        :style="{ clipPath: panelClip(i, posters.length) }"
+        loading="lazy"
+      >
+    </div>
+
+    <div class="absolute inset-x-6 bottom-8 flex max-w-[520px] flex-col gap-3 sm:inset-x-14 sm:bottom-12">
+      <span class="text-sm font-bold text-ink-2">
+        Collection · {{ countLabel }}
+      </span>
+      <h2 class="text-balance text-[clamp(2.25rem,4vw,3.4rem)] font-extrabold leading-[0.95] tracking-[-0.04em] text-white">
+        {{ title }}
+      </h2>
+      <p v-if="description" class="line-clamp-2 text-base leading-relaxed text-white/80">
+        {{ description }}
+      </p>
+      <span class="mt-1 inline-flex h-[46px] items-center self-start rounded-full bg-white px-6 text-base font-extrabold text-black transition group-hover:bg-white/90">
+        Watch the collection
+      </span>
+    </div>
+  </NuxtLink>
+</template>

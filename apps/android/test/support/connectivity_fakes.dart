@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_client_factory.dart';
-import 'package:soup/src/data/session/connection_preferences_store.dart';
-import 'package:soup/src/data/session/session_store.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_client_factory.dart';
+import 'package:soup_core/src/data/session/connection_preferences_store.dart';
+import 'package:soup_core/src/data/session/session_store.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
 class MemorySessionStore implements SessionStore {

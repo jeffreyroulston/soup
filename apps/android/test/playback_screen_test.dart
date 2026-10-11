@@ -5,9 +5,9 @@ import 'support/onboarding_fonts.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup/src/features/playback/playback_screen.dart';
-import 'package:soup/src/features/playback/video_controller.dart';
+import 'package:soup_core/src/features/playback/video_controller.dart';
 
 void main() {
   setUpAll(loadOnboardingFonts);

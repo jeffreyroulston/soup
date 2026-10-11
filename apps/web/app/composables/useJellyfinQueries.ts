@@ -1,6 +1,6 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import type { QueryClient } from '@tanstack/vue-query'
-import type { JellyfinItem } from '~/types/jellyfin'
+import type { JellyfinItem, JellyfinShelf } from '~/types/jellyfin'
 import type { LibrarySort } from '~/composables/useJellyfin'
 
 /**
@@ -23,6 +23,27 @@ export function useJellyfinQueries() {
     homeExtras: () => queryOptions({
       queryKey: queryKeys.homeExtras(),
       queryFn: api.getHomeExtras,
+    }),
+    homeCollection: () => queryOptions({
+      queryKey: queryKeys.homeCollection(),
+      queryFn: api.getHomeCollection,
+      // A whole-library match; the daily pick doesn't need it redone often.
+      staleTime: 30 * 60_000,
+    }),
+    curatedCollection: (id: string) => queryOptions({
+      queryKey: queryKeys.curatedCollection(id),
+      queryFn: () => api.getCuratedCollection(id),
+    }),
+    // Optional rows: an error just leaves them out.
+    homeGenres: () => queryOptions({
+      queryKey: queryKeys.homeGenres(),
+      queryFn: () => api.getGenreShelves().catch((): JellyfinShelf[] => []),
+      // Picks rotate daily and the genre tally is a whole-library scan; no need to redo it often.
+      staleTime: 30 * 60_000,
+    }),
+    homeBecauseYouWatched: () => queryOptions({
+      queryKey: queryKeys.homeBecauseYouWatched(),
+      queryFn: () => api.getBecauseYouWatched().catch((): JellyfinShelf[] => []),
     }),
     item: (id: string) => queryOptions({
       queryKey: queryKeys.item(id),

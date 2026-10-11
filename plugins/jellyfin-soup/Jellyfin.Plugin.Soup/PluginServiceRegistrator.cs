@@ -18,6 +18,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SoupApiClient>();
         serviceCollection.AddSingleton<TailscaleApiClient>();
         serviceCollection.AddSingleton<AssertionVerifier>();
+        serviceCollection.AddSingleton<AssertionReplayStore>();
         serviceCollection.AddSingleton<EntitlementService>();
         serviceCollection.AddSingleton<UserLinkService>();
     }

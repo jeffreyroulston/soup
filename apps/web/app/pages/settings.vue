@@ -4,7 +4,6 @@ import type { SelectOption } from '~/components/SelectMenu.vue'
 definePageMeta({ middleware: 'auth', layout: 'app' })
 
 const auth = useAuthSession()
-const { jellyfin } = useJellyfin()
 const { prefs, update } = usePlaybackPrefs()
 
 const qualityOptions: SelectOption<number | null>[] = [
@@ -61,38 +60,6 @@ async function applyIdentity(input: string | null) {
   }
 }
 
-const servers = auth.servers
-const switchingTo = ref<string | null>(null)
-const switchError = ref('')
-/** Sessions from before the picker don't carry the roster id, so match those by address. */
-const currentServerId = computed(() => jellyfin.value?.soupServerId
-  ?? servers.value.find(server => serverHost(server) === new URL(jellyfin.value?.baseUrl ?? 'http://_').host)?.id
-  ?? null)
-
-onMounted(() => {
-  if (jellyfin.value?.direct) return
-  auth.loadServers().catch(() => {
-    // The current server still works; the list just can't be offered.
-  })
-})
-
-async function switchServer(serverId: string) {
-  if (switchingTo.value || serverId === currentServerId.value) return
-  switchingTo.value = serverId
-  switchError.value = ''
-  try {
-    await auth.selectServer(serverId)
-    await navigateTo('/')
-  }
-  catch (error) {
-    switchError.value = error instanceof Error ? error.message : 'Could not switch servers'
-    if (!auth.jellyfin.value) await navigateTo('/login')
-  }
-  finally {
-    switchingTo.value = null
-  }
-}
-
 async function onLogout() {
   await auth.logout()
   await navigateTo('/login')
@@ -112,58 +79,6 @@ async function onLogout() {
         </h2>
         <p class="text-lg font-bold">
           {{ auth.email.value || 'Signed in' }}
-        </p>
-      </section>
-
-      <section
-        v-if="jellyfin && servers.length > 1"
-        aria-labelledby="settings-server"
-        class="flex flex-col gap-3 rounded-panel bg-surface p-6"
-      >
-        <h2 id="settings-server" class="text-[13px] font-extrabold uppercase tracking-[0.6px] text-muted">
-          Server
-        </h2>
-        <ul class="flex flex-col gap-2">
-          <li v-for="server in servers" :key="server.id">
-            <button
-              type="button"
-              :aria-current="server.id === currentServerId ? 'true' : undefined"
-              :disabled="switchingTo !== null"
-              class="flex w-full items-center gap-3 rounded-btn px-4 py-3 text-left transition disabled:opacity-60"
-              :class="server.id === currentServerId ? 'bg-elevated' : 'hover:bg-elevated/60'"
-              @click="switchServer(server.id)"
-            >
-              <span
-                class="size-2 shrink-0 rounded-full"
-                :class="server.id === currentServerId ? 'bg-ok' : 'bg-white/15'"
-              />
-              <span class="flex min-w-0 flex-1 flex-col">
-                <span class="truncate text-base font-bold">{{ server.name }}</span>
-                <span class="truncate text-sm text-muted">{{ server.id === currentServerId ? jellyfin.baseUrl : serverHost(server) }}</span>
-              </span>
-              <span
-                v-if="switchingTo === server.id"
-                class="size-4 shrink-0 animate-spin rounded-full border-2 border-ink/30 border-t-ink"
-              />
-              <span v-else-if="server.id === currentServerId" class="text-sm font-bold text-muted">Current</span>
-            </button>
-          </li>
-        </ul>
-        <p v-if="switchError" role="alert" class="text-sm font-semibold text-accent">
-          {{ switchError }}
-        </p>
-      </section>
-
-      <section v-else-if="jellyfin" aria-labelledby="settings-server" class="flex flex-col gap-1.5 rounded-panel bg-surface p-6">
-        <h2 id="settings-server" class="text-[13px] font-extrabold uppercase tracking-[0.6px] text-muted">
-          Server
-        </h2>
-        <p v-if="jellyfin.serverName" class="text-lg font-bold">
-          {{ jellyfin.serverName }}
-        </p>
-        <p class="flex items-center gap-2 break-all text-base font-semibold text-ink-2">
-          <span class="size-2 shrink-0 rounded-full bg-ok" />
-          {{ jellyfin.baseUrl }}
         </p>
       </section>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const route = useRoute()
 const auth = useAuthSession()
+const { jellyfin } = useJellyfin()
 const { libraries, loaded: librariesLoaded } = useLibraries()
 
 const scrolled = ref(false)
@@ -30,6 +31,11 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
+  if (!jellyfin.value?.direct) {
+    auth.loadServers().catch(() => {
+      // The current server still works; the list just can't be offered.
+    })
+  }
   onScroll()
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('pointerdown', onPointerDown, true)
@@ -45,6 +51,36 @@ onBeforeUnmount(() => {
 function isActive(path: string) {
   if (path === '/') return route.path === '/'
   return route.path === path || route.path.startsWith(`${path}/`)
+}
+
+const servers = auth.servers
+const switchingTo = ref<string | null>(null)
+const switchError = ref('')
+/** Sessions from before the picker don't carry the roster id, so match those by address. */
+const currentServerId = computed(() => jellyfin.value?.soupServerId
+  ?? servers.value.find(server => serverHost(server) === new URL(jellyfin.value?.baseUrl ?? 'http://_').host)?.id
+  ?? null)
+/** Roster name first; direct sign-ins fall back to Jellyfin's own name, then the address. */
+const currentServerName = computed(() => servers.value.find(server => server.id === currentServerId.value)?.name
+  ?? jellyfin.value?.serverName
+  ?? (jellyfin.value ? new URL(jellyfin.value.baseUrl).host : ''))
+
+async function switchServer(serverId: string) {
+  if (switchingTo.value || serverId === currentServerId.value) return
+  switchingTo.value = serverId
+  switchError.value = ''
+  try {
+    await auth.selectServer(serverId)
+    menuOpen.value = false
+    await navigateTo('/')
+  }
+  catch (error) {
+    switchError.value = error instanceof Error ? error.message : 'Could not switch servers'
+    if (!auth.jellyfin.value) await navigateTo('/login')
+  }
+  finally {
+    switchingTo.value = null
+  }
 }
 
 async function onLogout() {
@@ -123,6 +159,42 @@ async function onLogout() {
           <p class="truncate px-3 pb-2 pt-1.5 text-[13px] font-semibold text-muted">
             {{ auth.email.value || 'Signed in' }}
           </p>
+          <template v-if="servers.length > 1">
+            <p class="px-3 pb-1 pt-1.5 text-[11px] font-extrabold uppercase tracking-[0.6px] text-muted">
+              Server
+            </p>
+            <button
+              v-for="server in servers"
+              :key="server.id"
+              type="button"
+              role="menuitemradio"
+              :aria-checked="server.id === currentServerId"
+              :disabled="switchingTo !== null"
+              class="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[15px] font-semibold text-ink hover:bg-white/10 disabled:opacity-60"
+              @click="switchServer(server.id)"
+            >
+              <span
+                class="size-2 shrink-0 rounded-full"
+                :class="server.id === currentServerId ? 'bg-ok' : 'bg-white/15'"
+              />
+              <span class="min-w-0 flex-1 truncate">{{ server.name }}</span>
+              <span
+                v-if="switchingTo === server.id"
+                class="size-4 shrink-0 animate-spin rounded-full border-2 border-ink/30 border-t-ink"
+              />
+            </button>
+            <p v-if="switchError" role="alert" class="px-3 py-1.5 text-[13px] font-semibold text-accent">
+              {{ switchError }}
+            </p>
+            <div class="mx-3 my-1.5 h-px bg-white/10" />
+          </template>
+          <template v-else-if="currentServerName">
+            <p class="flex items-center gap-2.5 px-3 pb-2 text-[15px] font-semibold text-ink-2">
+              <span class="size-2 shrink-0 rounded-full bg-ok" />
+              <span class="min-w-0 truncate">{{ currentServerName }}</span>
+            </p>
+            <div class="mx-3 my-1.5 h-px bg-white/10" />
+          </template>
           <NuxtLink
             to="/settings"
             role="menuitem"

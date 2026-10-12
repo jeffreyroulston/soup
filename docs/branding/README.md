@@ -1,50 +1,40 @@
-# Soup identity — soup can / play
+# Soup identity — fill line
 
-The red-and-cream can selected in SOUP-89 remains the production mark. SOUP-92
-removes its slate backdrop and surrounding tile. The can now sits directly on
-its host surface in connectivity, appearance and library headers.
+The lowercase Manrope ExtraBold `soup` wordmark from the web app, with the `o`
+filled to the line in the accent orange: a bowl, seen side on. The icon is the same
+idea as a ring on the web canvas gradient.
 
-## Assets and integration
+| Token  | Value                          |
+| ------ | ------------------------------ |
+| Ink    | `#F5F5F7` (light: `#1D1D1F`)   |
+| Accent | `#FC7814` (light: `#E86A0C`)   |
+| Canvas | `#1C1C1E` → `#050506` gradient |
 
-- [Transparent production master](concepts/soup-can-play-transparent.png): 1024 × 1024 RGBA.
-- [Flutter asset](../../apps/android/assets/branding/soup-icon.png).
-- Android copy: `apps/android/android/app/src/main/res/drawable-nodpi/soup_launcher_art.png`.
-- Shared widget: `SoupMark`, with no tint, enclosing tile or corner clipping.
-- Android adaptive launcher: `@mipmap/soup_launcher`, with a 22dp inset and paper background. Android still supplies the platform's required launcher mask.
-- Native launch backgrounds match the paper onboarding canvas in light and dark system mode.
+## Masters
 
-The transparent master and both production copies are byte-identical. Regression
-checks cover their alpha border, visible can, preserved dark play symbol, and
-launcher background. The tightly framed can remains readable at small sizes.
+- `soup-wordmark.svg`, `soup-wordmark-light.svg`: outlined wordmark for dark and light grounds.
+- `soup-mark.svg`, `soup-mark-light.svg`: the ring on its own, transparent.
+- `soup-icon.svg`: full-bleed square for platforms that apply their own mask.
+- `soup-icon-rounded.svg`: pre-rounded tile (favicon, Flutter `SoupMark`, legacy launchers).
+- `android-foreground.svg`: adaptive-icon foreground, drawn with a 22dp inset.
+- `android-tv-banner.svg`: 320×180dp leanback banner.
 
-## Onboarding visual language
+## Where they're used
 
-The onboarding takes its cues from film-festival posters: cobalt introduction
-panels, acid-yellow highlights, ink-black controls and an off-white paper canvas.
-Condensed Barlow headings, crisp corners and offset print shadows give it a
-distinct graphic character. Fine diagonal frames and a narrow filmstrip edge
-provide subtle motion. Body copy and native editors retain platform typography
-for reading and editing.
+- Web: `SoupWordmark.vue` (nav, login); `public/` favicon, touch icon, PWA icons and manifest.
+- android-v2: `SoupWordmark` widget (nav, login, status, touch app bar), adaptive launcher,
+  splash, TV banner.
+- android: adaptive launcher, TV banner and `SoupMark`. The festival onboarding type is unchanged.
 
-The font is an unmodified ExtraBold TTF from the
-[Google Fonts Barlow Condensed distribution](https://github.com/google/fonts/tree/main/ofl/barlowcondensed).
-Its [SIL Open Font License](../../apps/android/assets/fonts/OFL.txt) ships with the
-app and is registered in Flutter's license registry. No runtime font download is
-needed. The app's user-selected library palettes remain available. SOUP-93 extends this
-identity into the default Festival library theme, with light and dark versions;
-see the [Festival gallery](../screenshots/festival/README.md).
+## Regenerating
 
-## Artwork provenance
+`generate.py` draws everything from the Manrope outlines. The wordmark is drawn as paths,
+so it renders the same everywhere.
 
-The [original generated master](concepts/soup-can-play-v2-campbells.png) and its
-[SOUP-89 generation record](concepts/soup-can-play-v2-campbells.md) are retained.
-The SOUP-92 transparent derivative uses that original, without redrawing the can.
+```sh
+python3 -c "from fontTools.ttLib import TTFont; from fontTools.varLib.instancer import instantiateVariableFont as i; i(TTFont('apps/android-v2/assets/fonts/Manrope-Variable.ttf'), {'wght': 800}).save('/tmp/Manrope-800.ttf')"
+python3 docs/branding/generate.py <out-dir> /tmp/Manrope-800.ttf
+```
 
-Background removal used Pillow: flood-fill only the connected dark exterior
-(maximum RGB channel below 90), preserve the enclosed play symbol, recover colour
-and coverage at the antialiased perimeter, then centre an 820px square crop and
-resample to 1024px. The connected foreground bounds in the original were
-`(356, 265, 898, 994)`. The result was inspected against both cream and slate.
-
-The previous fin source is unused. Superseded S-badge and cinema-ticket production
-assets remain in git history.
+The script writes `wordmark.json` and `wordmark_paths.dart.txt` for updating the Vue
+and Flutter components. Rasters come from the SVGs via `rsvg-convert`.

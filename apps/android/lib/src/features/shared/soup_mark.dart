@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The original Soup can on a transparent canvas, without a tile or tint.
+/// The fill-line app icon tile (docs/branding/soup-icon-rounded.svg), untinted.
 class SoupMark extends StatelessWidget {
   const SoupMark({this.size = 40, super.key});
 

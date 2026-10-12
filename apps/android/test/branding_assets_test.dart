@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,50 +56,48 @@ void main() {
     }
   });
 
-  test('Flutter and Android use the same transparent can artwork', () async {
+  Future<(int, int, int Function(int, int))> decode(List<int> bytes) async {
+    final codec = await ui.instantiateImageCodec(Uint8List.fromList(bytes));
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final pixels = (await image.toByteData())!;
+    final width = image.width;
+    final height = image.height;
+    image.dispose();
+    codec.dispose();
+    return (
+      width,
+      height,
+      (int x, int y) => pixels.getUint8((y * width + x) * 4 + 3),
+    );
+  }
+
+  test('Flutter mark is the rounded fill-line icon tile', () async {
     final data = await rootBundle.load(SoupMark.assetName);
-    final bytes = data.buffer.asUint8List();
-    final native = await File(
+    final (width, height, alpha) = await decode(data.buffer.asUint8List());
+    expect(width, height);
+    expect(width, greaterThanOrEqualTo(1024));
+    expect(alpha(0, 0), 0, reason: 'Corners are rounded off');
+    expect(alpha(width ~/ 2, 0), 255, reason: 'The tile reaches each edge');
+    expect(alpha(width ~/ 2, height ~/ 2), 255);
+  });
+
+  test('launcher foreground is the mark on a transparent canvas', () async {
+    final bytes = await File(
       'android/app/src/main/res/drawable-nodpi/soup_launcher_art.png',
     ).readAsBytes();
-    final selected = await File(
-      '../../docs/branding/concepts/soup-can-play-transparent.png',
-    ).readAsBytes();
-    expect(listEquals(bytes, native), isTrue);
-    expect(
-      listEquals(bytes, selected),
-      isTrue,
-      reason: 'Production artwork must match the SOUP-92 transparent master',
-    );
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    try {
-      expect(frame.image.width, frame.image.height);
-      expect(frame.image.width, greaterThanOrEqualTo(1024));
-      final pixels = await frame.image.toByteData();
-      final width = frame.image.width;
-      final height = frame.image.height;
-      int alpha(int x, int y) => pixels!.getUint8((y * width + x) * 4 + 3);
-      for (var i = 0; i < width; i++) {
-        expect(alpha(i, 0), 0);
-        expect(alpha(i, height - 1), 0);
-        expect(alpha(0, i), 0);
-        expect(alpha(width - 1, i), 0);
-      }
-      expect(
-        alpha(width ~/ 2, height ~/ 2),
-        255,
-        reason: 'Background removal must preserve the dark play symbol',
-      );
-      var visible = 0;
-      for (var offset = 3; offset < pixels!.lengthInBytes; offset += 4) {
-        if (pixels.getUint8(offset) > 0) visible++;
-      }
-      expect(visible / (width * height), inInclusiveRange(0.45, 0.65));
-    } finally {
-      frame.image.dispose();
-      codec.dispose();
+    final (width, height, alpha) = await decode(bytes);
+    expect(width, height);
+    for (var i = 0; i < width; i++) {
+      expect(alpha(i, 0), 0);
+      expect(alpha(0, i), 0);
     }
+    expect(alpha(width ~/ 2, height ~/ 2), 0, reason: 'The ring is hollow');
+    expect(
+      alpha(width ~/ 2, height * 3 ~/ 4),
+      255,
+      reason: 'The fill line sits in the lower half',
+    );
   });
 
   for (final size in [24.0, 40.0, 64.0]) {

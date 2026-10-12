@@ -47,6 +47,48 @@ npm run migrate   # optional; the server also auto-applies migrations on boot
 npm run dev
 ```
 
+## Link page (`/link`)
+
+The TV's QR code and `verification_uri` open `/link`, the phone/browser entry point
+for device linking. It takes the TV code (pre-filled from `?user_code=`), checks it
+is still pending, then hands off to the chosen sign-in method. The person can also
+type the address and enter the code by hand.
+
+| Enter code | Code expired | After Google, no code | Linked |
+| --- | --- | --- | --- |
+| <img src="../../docs/screenshots/identity/link-code.png" width="200" alt="Link page with the TV code shown as tiles and a Continue with Google button"> | <img src="../../docs/screenshots/identity/link-expired.png" width="200" alt="Link page explaining the code has expired"> | <img src="../../docs/screenshots/identity/enter-code.png" width="200" alt="Enter your TV code form shown after Google sign-in"> | <img src="../../docs/screenshots/identity/linked.png" width="200" alt="Device linked confirmation"> |
+
+- `GET /link?user_code=…` renders the page; an unknown or expired code is flagged
+  before the person goes through Google.
+- `POST /link` (`user_code`, `provider`) re-checks the code and `303`s to the
+  provider's start route, e.g. `/auth/google/start?user_code=…`.
+- Codes are forgiving: `abcd efgh` and `abcdefgh` both match `ABCD-EFGH`.
+- `/link` reveals whether a code is live, so it is limited to 30 requests/min per IP.
+- With no providers configured, the page says so and returns `503`.
+
+**Sign-in providers** come from `src/auth/link_providers.ts`:
+
+| Provider | Shown when | Start route |
+| --- | --- | --- |
+| Google | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` set | `/auth/google/start` |
+| Dev sign-in | `ALLOW_DEV_LOGIN=true` | `/auth/dev/start` |
+
+To add another social login, add an entry there (id, button label, start path),
+implement its start/callback routes so they end in `approveDeviceLink`, and
+optionally add a brand icon to `PROVIDER_ICONS` in `src/lib/device_link_html.ts`.
+
+Screenshots are 412px-wide phone renders of the production HTML with fixture codes
+and emails. Regenerate them with any headless Chrome:
+
+```bash
+npx tsx scripts/render-link-pages.ts /tmp/link-pages
+for f in /tmp/link-pages/*.html; do
+  chrome --headless --hide-scrollbars --force-device-scale-factor=2 \
+    --virtual-time-budget=5000 --window-size=412,860 \
+    --screenshot="../../docs/screenshots/identity/$(basename "$f" .html).png" "file://$f"
+done
+```
+
 ## Device-link smoke (dev login)
 
 Use when Google client env is unset. Set `ALLOW_DEV_LOGIN=true` explicitly (it defaults to **false**):
@@ -65,8 +107,6 @@ curl -sS "http://localhost:8787/auth/device/link/<device_code>" | jq
 ```
 
 Or open `verification_uri_complete` (`/link?user_code=…`) in a browser and pick **Dev sign-in**.
-
-Sign-in methods on `/link` come from `src/auth/link_providers.ts` (Google when configured, Dev when `ALLOW_DEV_LOGIN`). New social logins add an entry there plus their own start/callback routes.
 
 **JSON approve with Google proof:** after Google SSO, `POST /auth/device/approve` accepts `{ "user_code", "link_token" }` only — email comes from the signed `link_token`, never from the body. Raw email approve is not supported.
 
@@ -226,6 +266,7 @@ npm test   # TTL expiry, claim races, entitlement revoke cascade, redactSecrets
 ```text
 src/           Hono app, auth, JWKS, CRUD, transport grants
 test/          node:test integration tests
+scripts/       README screenshot helpers
 migrations/    Postgres schema
 openapi/       Frozen v1 OpenAPI
 docker-compose.yml

@@ -1230,6 +1230,29 @@ class JellyfinApi
         'BreakOnNonKeyFrames': true,
       },
     ],
+    // Hardware H.264 decoders (webOS, most Android TV) only handle 8-bit
+    // High/Main/Baseline. Without this Jellyfin stream-copies High 10 (common
+    // in anime encodes) into HLS, and the TV fails to decode it.
+    'CodecProfiles': [
+      {
+        'Type': 'Video',
+        'Codec': 'h264',
+        'Conditions': [
+          {
+            'Condition': 'LessThanEqual',
+            'Property': 'VideoBitDepth',
+            'Value': '8',
+            'IsRequired': false,
+          },
+          {
+            'Condition': 'EqualsAny',
+            'Property': 'VideoProfile',
+            'Value': 'high|main|baseline|constrained baseline',
+            'IsRequired': false,
+          },
+        ],
+      },
+    ],
     'SubtitleProfiles': [
       {'Format': 'vtt', 'Method': 'External'},
       {'Format': 'srt', 'Method': 'External'},

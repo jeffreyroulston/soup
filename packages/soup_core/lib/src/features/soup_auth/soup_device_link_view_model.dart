@@ -34,13 +34,14 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     required SoupIdentityClient client,
     required SoupSessionStore sessionStore,
     required SessionStore jellyfinSessionStore,
-    required this._jellyfinApiProvider,
+    required Future<JellyfinApi> Function() jellyfinApiProvider,
     TailscaleClient? tailscaleClient,
     this.connectTransportGrants = true,
     this.performJellyfinExchange = true,
   }) : _client = client,
        _sessionStore = sessionStore,
        _jellyfinSessionStore = jellyfinSessionStore,
+       _jellyfinApiProvider = jellyfinApiProvider,
        _tailscaleClient = tailscaleClient;
 
   final SoupIdentityClient _client;
@@ -414,6 +415,91 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
       _error = _friendlyError(error);
       return false;
     } finally {
+      if (!_disposed && generation == _generation) {
+        _busy = false;
+        _notify();
+      }
+    }
+  }
+
+  String? _switchingServerId;
+
+  /// Roster server [selectServer] is exchanging with, for a spinner.
+  String? get switchingServerId => _switchingServerId;
+
+  /// Signs in to another roster server and remembers it for next launch.
+  ///
+  /// Leaves [phase] at ready throughout, so [showsAuthShell] doesn't swap the
+  /// app back to sign-in mid-switch. Returns null on success; on failure the
+  /// previous server and Jellyfin session stay in place and the error is
+  /// returned.
+  Future<String?> selectServer(String serverId) async {
+    var session = _session;
+    final roster = _roster;
+    if (_disposed ||
+        _busy ||
+        !performJellyfinExchange ||
+        session == null ||
+        roster == null ||
+        serverId == _selectedServer?.id) {
+      return null;
+    }
+    RosterServer? target;
+    for (final server in roster.servers) {
+      if (server.id == serverId) target = server;
+    }
+    if (target == null) return 'That server is no longer on your Soup roster.';
+
+    final generation = ++_generation;
+    final previousServer = _selectedServer;
+    _busy = true;
+    _switchingServerId = serverId;
+    _selectedServer = target;
+    _notify();
+    try {
+      bool exchanged;
+      try {
+        exchanged = await _exchangeNow(session, generation);
+      } on SoupIdentityException catch (error) {
+        if (error.statusCode != 401) rethrow;
+        final tokens = await _client.refreshSession(session.refreshToken);
+        if (_disposed || generation != _generation) return null;
+        session = SoupSession.fromTokens(
+          tokens,
+          lastServerId: session.lastServerId,
+        );
+        await _sessionStore.write(session);
+        if (_disposed || generation != _generation) return null;
+        _session = session;
+        exchanged = await _exchangeNow(session, generation);
+      }
+      if (_disposed || generation != _generation) return null;
+      if (!exchanged) {
+        final message = _exchangeError ?? 'Could not switch servers.';
+        _exchangeError = null;
+        _selectedServer = previousServer;
+        _phase = SoupDeviceLinkPhase.ready;
+        return message;
+      }
+      final next = session.copyWith(lastServerId: target.id);
+      await _sessionStore.write(next);
+      if (_disposed || generation != _generation) return null;
+      _session = next;
+      return null;
+    } on SoupIdentityException catch (error) {
+      if (_disposed || generation != _generation) return null;
+      if (error.statusCode == 401) {
+        await _forceGoogleSignIn();
+        return 'Your Soup sign-in expired. Sign in with Google again.';
+      }
+      _selectedServer = previousServer;
+      return _friendlyError(error);
+    } on Object catch (error) {
+      if (_disposed || generation != _generation) return null;
+      _selectedServer = previousServer;
+      return _friendlyError(error);
+    } finally {
+      if (_switchingServerId == serverId) _switchingServerId = null;
       if (!_disposed && generation == _generation) {
         _busy = false;
         _notify();

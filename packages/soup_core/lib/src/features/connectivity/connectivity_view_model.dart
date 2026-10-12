@@ -186,6 +186,11 @@ class ConnectivityViewModel extends ChangeNotifier {
   ConnectionMode _mode = ConnectionMode.direct;
   ConnectionMode get mode => _mode;
   bool get tailscaleEnabled => mode == ConnectionMode.tailscale;
+
+  /// False where libtailscale isn't built (webOS); the UI then hides
+  /// Tailscale and connects directly.
+  bool get tailscaleAvailable =>
+      _tailscaleClient is! UnavailableTailscaleClient;
   TailscaleStatus _status = const TailscaleStatus.disconnected();
   TailscaleStatus get status => _status;
   bool get tailscaleConnected =>
@@ -821,10 +826,7 @@ class ConnectivityViewModel extends ChangeNotifier {
     if (error is JellyfinApiException) return redactSecrets(error.message);
     if (error is TailscaleException) return redactSecrets(error.message);
     return redactSecrets(
-      error.toString().replaceFirst(
-        RegExp(r'^(Exception|StateError):\s*'),
-        '',
-      ),
+      error.toString().replaceFirst(RegExp(r'^(Exception|StateError):\s*'), ''),
     );
   }
 

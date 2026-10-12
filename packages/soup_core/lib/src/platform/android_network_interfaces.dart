@@ -15,7 +15,13 @@ class AndroidNetworkInterfaces {
 
   Future<List<({InternetAddress address, InternetAddress broadcast})>>
   broadcasts() async {
-    final json = jsonDecode(await getJson());
+    final String raw;
+    try {
+      raw = await getJson();
+    } on MissingPluginException {
+      return _ioBroadcasts();
+    }
+    final json = jsonDecode(raw);
     if (json is! List) return const [];
     final result = <({InternetAddress address, InternetAddress broadcast})>[];
     for (final interface in json.whereType<Map>()) {
@@ -37,5 +43,20 @@ class AndroidNetworkInterfaces {
       }
     }
     return result;
+  }
+
+  /// Without the Android channel (webOS): every IPv4 interface, broadcasting
+  /// to 255.255.255.255 since dart:io doesn't expose netmasks.
+  Future<List<({InternetAddress address, InternetAddress broadcast})>>
+  _ioBroadcasts() async {
+    final interfaces = await NetworkInterface.list(
+      type: InternetAddressType.IPv4,
+    );
+    return [
+      for (final interface in interfaces)
+        for (final address in interface.addresses)
+          if (!address.isLoopback)
+            (address: address, broadcast: InternetAddress('255.255.255.255')),
+    ];
   }
 }

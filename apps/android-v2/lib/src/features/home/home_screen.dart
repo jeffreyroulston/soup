@@ -13,6 +13,7 @@ import '../../ui/widgets/media_row.dart';
 import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/rank_list.dart';
 import '../../ui/widgets/shelf_rows.dart';
+import '../../ui/widgets/error_state.dart';
 import '../../utils/media.dart';
 import 'home_screen_touch.dart';
 
@@ -58,17 +59,7 @@ class HomeScreen extends StatelessWidget {
                     slides: home == null ? const [] : heroSlides(home),
                     loading: home == null && error == null,
                   ),
-                  if (error != null && home == null)
-                    Padding(
-                      padding: const EdgeInsets.all(SoupSpacing.gutter),
-                      child: Text(
-                        'Could not load your library. $error',
-                        style: SoupType.style(
-                          size: 18,
-                          color: SoupColors.accent,
-                        ),
-                      ),
-                    ),
+                  if (error != null && home == null) ErrorState(error: error),
                   if (home != null) _Rows(home: home),
                 ],
               ),

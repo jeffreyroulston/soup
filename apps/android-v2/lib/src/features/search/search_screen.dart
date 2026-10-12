@@ -15,6 +15,7 @@ import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/soup_text_field.dart';
+import '../../ui/widgets/error_state.dart';
 import 'search_screen_touch.dart';
 
 enum _Scope { all, movies, shows, people }
@@ -289,15 +290,7 @@ class _Results extends StatelessWidget {
                 ),
               )
             else if (error != null && results == null)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: SoupSpacing.gutter,
-                ),
-                child: Text(
-                  'Search failed. $error',
-                  style: SoupType.style(size: 17, color: SoupColors.accent),
-                ),
-              )
+              ErrorState(error: error)
             else ...[
               if (scope == _Scope.all && top.isNotEmpty)
                 Padding(

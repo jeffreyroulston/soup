@@ -279,15 +279,20 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       case SoupDeviceLinkPhase.error:
       case SoupDeviceLinkPhase.needsGoogleSignIn:
-        return _soupMessage(
-          model.phase == SoupDeviceLinkPhase.error
-              ? 'Something went wrong'
-              : 'Sign in again',
-          model.error ??
-              model.exchangeError ??
-              'Your Soup session ended. Scan a new code to sign in.',
-          'Try again',
-        );
+        var title = model.phase == SoupDeviceLinkPhase.error
+            ? 'Something went wrong'
+            : 'Sign in again';
+        var message =
+            model.error ??
+            model.exchangeError ??
+            'Your Soup session ended. Scan a new code to sign in.';
+        // "Can't reach Jeline. Make sure…" reads better as heading + body.
+        final split = message.indexOf('. ');
+        if (message.startsWith("Can't reach ") && split > 0) {
+          title = message.substring(0, split);
+          message = message.substring(split + 2);
+        }
+        return _soupMessage(title, message, 'Try again');
       default:
         break;
     }

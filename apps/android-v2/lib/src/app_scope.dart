@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:soup_core/soup_core.dart';
 
 import 'data/catalog.dart';
+import 'data/connection_status.dart';
 import 'data/playback_prefs.dart';
 
 /// Per-account dependencies for everything below the auth gate.
@@ -19,6 +20,7 @@ class SoupScope extends InheritedWidget {
     this.userLabel = '',
     this.soupAuth,
     this.onSelectServer,
+    this.connection,
     super.key,
   });
 
@@ -36,6 +38,9 @@ class SoupScope extends InheritedWidget {
   /// Switches to another roster server; returns an error message on failure.
   final Future<String?> Function(String serverId)? onSelectServer;
 
+  /// Whether the server is answering; null in mock mode and tests.
+  final ConnectionStatus? connection;
+
   bool get isMock => api == null;
 
   /// A copy of this scope around [child], for routes pushed on a navigator
@@ -49,8 +54,13 @@ class SoupScope extends InheritedWidget {
     onSignOut: onSignOut,
     soupAuth: soupAuth,
     onSelectServer: onSelectServer,
+    connection: connection,
     child: child,
   );
+
+  /// Null outside a signed-in session (sign-in screens, some tests).
+  static SoupScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SoupScope>();
 
   static SoupScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<SoupScope>();
@@ -60,5 +70,8 @@ class SoupScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(SoupScope old) =>
-      catalog != old.catalog || session != old.session || api != old.api;
+      catalog != old.catalog ||
+      session != old.session ||
+      api != old.api ||
+      connection != old.connection;
 }

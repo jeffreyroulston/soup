@@ -16,6 +16,7 @@ import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/select_menu.dart';
 import '../../ui/widgets/expandable_overview.dart';
+import '../../ui/widgets/error_state.dart';
 import '../../utils/media.dart';
 import 'item_screen.dart';
 
@@ -48,17 +49,7 @@ class _TouchItemScreenState extends State<TouchItemScreen> {
                 hasScrollBody: false,
                 child: Center(
                   child: error != null
-                      ? Padding(
-                          padding: const EdgeInsets.all(TouchSpacing.gutter),
-                          child: Text(
-                            'Could not load this title. $error',
-                            textAlign: TextAlign.center,
-                            style: SoupType.style(
-                              size: 16,
-                              color: SoupColors.accent,
-                            ),
-                          ),
-                        )
+                      ? ErrorState(error: error)
                       : const CircularProgressIndicator(
                           color: SoupColors.accent,
                         ),

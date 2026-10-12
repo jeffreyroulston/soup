@@ -17,6 +17,7 @@ import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/select_menu.dart';
+import '../../ui/widgets/error_state.dart';
 import '../../utils/media.dart';
 import 'item_screen_touch.dart';
 
@@ -50,13 +51,7 @@ class _ItemScreenState extends State<ItemScreen> {
                 hasScrollBody: false,
                 child: Center(
                   child: error != null
-                      ? Text(
-                          'Could not load this title. $error',
-                          style: SoupType.style(
-                            size: 18,
-                            color: SoupColors.accent,
-                          ),
-                        )
+                      ? ErrorState(error: error)
                       : const CircularProgressIndicator(
                           color: SoupColors.accent,
                         ),

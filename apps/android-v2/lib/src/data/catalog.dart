@@ -72,6 +72,9 @@ abstract class Catalog extends ChangeNotifier {
   /// after a favourite or watched toggle, so screens can refetch.
   int get revision;
 
+  /// Drops cached data and has every screen reload (Retry, reconnect).
+  void refresh() => notifyListeners();
+
   @override
   void dispose() {
     favoriteOverrides.dispose();

@@ -11,6 +11,7 @@ import '../../ui/widgets/glass_nav.dart' show NavSection;
 import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/select_menu.dart';
+import '../../ui/widgets/error_state.dart';
 import 'library_filter.dart';
 
 /// Touch library: library switcher, filters, sort, genre chips and a poster
@@ -44,15 +45,7 @@ class _TouchLibraryScreenState extends State<TouchLibraryScreen> {
           slivers: [
             SliverToBoxAdapter(child: _header(lib)),
             if (error != null && all == null)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(TouchSpacing.gutter),
-                  child: Text(
-                    'Could not load this library. $error',
-                    style: SoupType.style(size: 15, color: SoupColors.accent),
-                  ),
-                ),
-              )
+              SliverToBoxAdapter(child: ErrorState(error: error))
             else if (all != null && items.isEmpty)
               SliverToBoxAdapter(
                 child: Padding(

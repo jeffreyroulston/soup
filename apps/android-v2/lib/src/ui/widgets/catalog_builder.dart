@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../app_scope.dart';
 import '../../data/catalog.dart';
+import '../../data/connection_status.dart';
 
 /// Loads data from the [Catalog] and reloads when the catalog invalidates
 /// (favourite/watched toggles). Keeps showing stale data while reloading.
@@ -27,6 +28,7 @@ class CatalogBuilder<T> extends StatefulWidget {
 
 class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
   Catalog? _catalog;
+  ConnectionStatus? _connection;
   T? _data;
   Object? _error;
   int _generation = 0;
@@ -34,7 +36,9 @@ class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final catalog = SoupScope.of(context).catalog;
+    final scope = SoupScope.of(context);
+    _connection = scope.connection;
+    final catalog = scope.catalog;
     if (!identical(catalog, _catalog)) {
       _catalog?.removeListener(_reload);
       _catalog = catalog..addListener(_reload);
@@ -66,6 +70,7 @@ class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
         .then(
           (value) {
             if (!mounted || generation != _generation) return;
+            _connection?.reportOk();
             setState(() {
               _data = value;
               _error = null;
@@ -73,6 +78,7 @@ class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
           },
           onError: (Object error) {
             if (!mounted || generation != _generation) return;
+            _connection?.report(error);
             setState(() => _error = error);
           },
         );

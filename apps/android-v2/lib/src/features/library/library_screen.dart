@@ -13,6 +13,7 @@ import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/select_menu.dart';
+import '../../ui/widgets/error_state.dart';
 import '../../utils/media.dart';
 import 'library_filter.dart';
 import 'library_screen_touch.dart';
@@ -180,15 +181,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
             if (error != null && all == null)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(SoupSpacing.gutter),
-                  child: Text(
-                    'Could not load this library. $error',
-                    style: SoupType.style(size: 17, color: SoupColors.accent),
-                  ),
-                ),
-              )
+              SliverToBoxAdapter(child: ErrorState(error: error))
             else
               SliverPadding(
                 padding: const EdgeInsets.only(

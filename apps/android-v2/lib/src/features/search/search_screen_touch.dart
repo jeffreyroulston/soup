@@ -14,6 +14,7 @@ import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/soup_text_field.dart';
+import '../../ui/widgets/error_state.dart';
 
 enum _Scope { all, movies, shows, people }
 
@@ -261,7 +262,7 @@ class _Results extends StatelessWidget {
             else if (results == null && error == null)
               _message('Searching…')
             else if (error != null && results == null)
-              _message('Search failed. $error', color: SoupColors.accent)
+              ErrorState(error: error)
             else ...[
               if (scope != _Scope.people && titles.isNotEmpty)
                 _gap(TouchRow(title: 'Movies & Shows', items: titles)),

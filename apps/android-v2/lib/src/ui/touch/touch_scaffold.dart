@@ -6,6 +6,7 @@ import '../theme/soup_tokens.dart';
 import '../widgets/catalog_builder.dart';
 import '../widgets/glass_nav.dart' show NavSection;
 import '../widgets/soup_wordmark.dart';
+import '../widgets/error_state.dart';
 
 /// Touch page shell: a scrolling page with a frosted top bar and, on the
 /// top-level sections, a bottom navigation bar (Home, Library, Search,
@@ -96,6 +97,13 @@ class _TouchScaffoldState extends State<TouchScaffold> {
                   ),
                 ],
               ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              // Above the bottom nav (64) on top-level pages.
+              bottom: padding.bottom + (_topLevel ? 76 : 16),
+              child: const Center(child: ConnectionBanner()),
             ),
             Positioned(
               top: 0,

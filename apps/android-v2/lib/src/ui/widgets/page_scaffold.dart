@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/soup_tokens.dart';
 import '../../navigation.dart';
+import 'error_state.dart';
 import 'glass_nav.dart';
 
 /// Page shell: scrolling content under the fixed [GlassNav]. The nav turns
@@ -97,6 +98,12 @@ class _PageScaffoldState extends State<PageScaffold> {
               ),
             ),
             ?widget.overlay,
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 28,
+              child: Center(child: ConnectionBanner()),
+            ),
             Positioned(
               top: 0,
               left: 0,

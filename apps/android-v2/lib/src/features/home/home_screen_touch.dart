@@ -12,6 +12,7 @@ import '../../ui/widgets/glass_nav.dart' show NavSection;
 import '../../ui/widgets/hero_carousel.dart' show ArtScrims;
 import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
+import '../../ui/widgets/error_state.dart';
 import '../../utils/media.dart';
 import 'home_screen.dart';
 
@@ -34,15 +35,7 @@ class TouchHomeScreen extends StatelessWidget {
             ),
           ),
           if (error != null && home == null)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(TouchSpacing.gutter),
-                child: Text(
-                  'Could not load your library. $error',
-                  style: SoupType.style(size: 16, color: SoupColors.accent),
-                ),
-              ),
-            ),
+            SliverToBoxAdapter(child: ErrorState(error: error)),
           if (home != null) SliverToBoxAdapter(child: _Rows(home: home)),
         ],
       ),

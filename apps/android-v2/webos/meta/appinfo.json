@@ -17,5 +17,7 @@
     "spinnerOnLaunch": false,
     "transparent": true,
     "uiRevision": 2,
-    "requiredACG": []
+    "requiredACG": [
+        "securitykey.operation"
+    ]
 }

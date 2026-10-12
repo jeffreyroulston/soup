@@ -23,12 +23,17 @@ const _nonVideoLibraries = {
   'livetv',
 };
 
+/// Jellyfin only fills an episode's ParentBackdrop* (the show's backdrop) when
+/// Thumb is also enabled, so a Backdrop request always asks for Thumb too.
 Map<String, String> _listQuery(
   String imageTypes, [
   Map<String, String> extra = const {},
 ]) => {
   'Fields': _listFields,
-  'EnableImageTypes': imageTypes,
+  'EnableImageTypes':
+      imageTypes.contains('Backdrop') && !imageTypes.contains('Thumb')
+      ? '$imageTypes,Thumb'
+      : imageTypes,
   'ImageTypeLimit': '1',
   ...extra,
 };
@@ -71,6 +76,9 @@ class JellyfinCatalog extends Catalog {
     _revision++;
     notifyListeners();
   }
+
+  @override
+  void refresh() => invalidate();
 
   // ── helpers ──────────────────────────────────────────────────────────────
   Future<Object?> _get(String path, [Map<String, String>? query]) =>

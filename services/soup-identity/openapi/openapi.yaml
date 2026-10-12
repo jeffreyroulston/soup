@@ -115,6 +115,55 @@ paths:
         "429":
           description: Rate limited
 
+  /link:
+    get:
+      tags: [auth]
+      summary: Device-link entry page (browser). TV QR / verification_uri points here.
+      description: >
+        HTML page to enter the TV code and pick a sign-in method (Google today;
+        the provider list is server-configured). A supplied user_code is
+        validated and pre-filled.
+      security: []
+      parameters:
+        - name: user_code
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: HTML code entry + sign-in buttons
+        "400":
+          description: HTML page noting the code is unknown or expired
+        "429":
+          description: Rate limited
+        "503":
+          description: No sign-in providers configured
+    post:
+      tags: [auth]
+      summary: Validate the TV code and redirect to the chosen provider
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [user_code, provider]
+              properties:
+                user_code:
+                  type: string
+                provider:
+                  type: string
+                  enum: [google, dev]
+      responses:
+        "303":
+          description: Redirect to the provider start route (e.g. /auth/google/start?user_code=…)
+        "400":
+          description: HTML page with the code or provider error
+        "429":
+          description: Rate limited
+
   /auth/google/start:
     get:
       tags: [auth]

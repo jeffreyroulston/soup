@@ -4,6 +4,7 @@ import {
   deviceLinkDevForm,
   deviceLinkEnterCode,
   deviceLinkError,
+  deviceLinkStart,
   deviceLinkSuccess,
   escapeHtml,
 } from "../src/lib/device_link_html.ts";
@@ -56,4 +57,29 @@ test("success and error pages share shell", () => {
   assert.match(ok, /Identity/);
   assert.match(err, /Identity/);
   assert.match(ok, /return to Soup on the TV/);
+});
+
+test("link page offers each provider as a submit button", () => {
+  const html = deviceLinkStart({
+    userCode: "ABCD-EFGH",
+    providers: [
+      { id: "google", label: "Continue with Google" },
+      { id: "dev", label: "Dev sign-in" },
+    ],
+  });
+  assert.match(html, /action="\/link"/);
+  assert.match(html, /name="provider" value="google">\s*<svg/);
+  assert.match(html, /value="dev" class="btn-secondary">Dev sign-in/);
+  assert.match(html, /aria-label="Code ABCD-EFGH"/);
+});
+
+test("link page shows the error instead of code tiles and handles no providers", () => {
+  const html = deviceLinkStart({
+    userCode: "ABCD-EFGH",
+    providers: [],
+    errorHtml: "That code wasn’t found.",
+  });
+  assert.match(html, /role="alert">That code wasn’t found/);
+  assert.doesNotMatch(html, /aria-label="Code/);
+  assert.match(html, /No sign-in methods are configured/);
 });

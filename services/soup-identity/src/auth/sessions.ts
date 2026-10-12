@@ -21,6 +21,17 @@ export function isValidEmail(email: string): boolean {
   return e.length > 3 && e.includes("@") && !e.includes(" ");
 }
 
+/**
+ * Normalize a typed TV code: uppercase, ignore spaces/dashes, re-insert the
+ * XXXX-XXXX dash. Anything that isn't 8 characters is returned uppercased as-is
+ * so lookups simply miss.
+ */
+export function normalizeUserCode(raw: string): string {
+  const compact = raw.toUpperCase().replace(/[\s-]/g, "");
+  if (compact.length !== 8) return raw.trim().toUpperCase();
+  return `${compact.slice(0, 4)}-${compact.slice(4)}`;
+}
+
 export async function upsertSubject(
   db: Db,
   subject: {
@@ -134,7 +145,7 @@ export async function startDeviceLink(db: Db, env: Env) {
   const deviceCode = randomToken(32);
   const userCode = randomUserCode();
   const expiresAt = new Date(Date.now() + DEVICE_LINK_TTL_SECONDS * 1000);
-  const verificationUri = `${env.PUBLIC_BASE_URL}/auth/google/start`;
+  const verificationUri = `${env.PUBLIC_BASE_URL}/link`;
   await db.query(
     `INSERT INTO device_links
       (device_code, user_code, verification_uri, interval_seconds, expires_at, status)
@@ -204,6 +215,20 @@ export async function pollDeviceLink(
   return { kind: "pending" as const };
 }
 
+/** Check a TV code before sending the browser off to a sign-in provider. */
+export async function checkDeviceLinkCode(db: Db, userCode: string) {
+  const { rows } = await db.query<{ status: string; expires_at: Date }>(
+    `SELECT status, expires_at FROM device_links WHERE user_code = $1`,
+    [normalizeUserCode(userCode)],
+  );
+  const row = rows[0];
+  if (!row) return { ok: false as const, reason: "not_found" as const };
+  if (row.expires_at.getTime() < Date.now() || row.status !== "pending") {
+    return { ok: false as const, reason: "invalid" as const };
+  }
+  return { ok: true as const };
+}
+
 export async function approveDeviceLink(
   db: Db,
   input: {
@@ -224,7 +249,7 @@ export async function approveDeviceLink(
     status: string;
     expires_at: Date;
   }>(`SELECT device_code, status, expires_at FROM device_links WHERE user_code = $1`, [
-    input.userCode.toUpperCase(),
+    normalizeUserCode(input.userCode),
   ]);
   const row = rows[0];
   if (!row) return { ok: false as const, reason: "not_found" };

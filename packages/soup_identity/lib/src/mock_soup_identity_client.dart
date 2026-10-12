@@ -9,7 +9,7 @@ import 'package:soup_identity/src/soup_identity_exception.dart';
 class MockSoupIdentityClient implements SoupIdentityClient {
   MockSoupIdentityClient({
     this.pollsUntilApproved = 3,
-    this.baseVerificationUri = 'http://localhost:8787/auth/google/start',
+    this.baseVerificationUri = 'http://localhost:8787/link',
     SoupSessionTokens? tokens,
     List<RosterServer>? servers,
   }) : _tokens =

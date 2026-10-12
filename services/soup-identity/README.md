@@ -64,7 +64,9 @@ curl -sS -X POST http://localhost:8787/auth/dev/complete \
 curl -sS "http://localhost:8787/auth/device/link/<device_code>" | jq
 ```
 
-Or open `verification_uri_complete` in a browser (Festival-styled HTML form when Google env is unset).
+Or open `verification_uri_complete` (`/link?user_code=…`) in a browser and pick **Dev sign-in**.
+
+Sign-in methods on `/link` come from `src/auth/link_providers.ts` (Google when configured, Dev when `ALLOW_DEV_LOGIN`). New social logins add an entry there plus their own start/callback routes.
 
 **JSON approve with Google proof:** after Google SSO, `POST /auth/device/approve` accepts `{ "user_code", "link_token" }` only — email comes from the signed `link_token`, never from the body. Raw email approve is not supported.
 
@@ -117,10 +119,11 @@ In Jellyfin → **Soup Invites**, invite the guest’s **Google email** (not OID
 
 ```text
 TV  POST /auth/device/link
-    → shows user_code + QR (verification_uri_complete?user_code=…)
+    → shows user_code + QR (verification_uri_complete = /link?user_code=…)
 
-Phone opens QR → GET /auth/google/start?user_code=…
-    → redirect to Google → GET /auth/google/callback
+Phone opens QR (or types /link + code) → GET /link
+    → code checked, then "Continue with Google" → POST /link
+    → 303 /auth/google/start?user_code=… → Google → GET /auth/google/callback
 
     OAuth `state` is a short-lived signed JWT (cannot forge user_code).
 

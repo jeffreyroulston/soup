@@ -10,12 +10,15 @@ import {
 } from "../lib/crypto.js";
 import type { AppEnv } from "../middleware/auth.js";
 import { rateLimit } from "../middleware/rate_limit.js";
+import { linkProviders } from "../auth/link_providers.js";
 import {
   approveDeviceLink,
+  checkDeviceLinkCode,
   exchangeGoogleCode,
   googleAuthUrl,
   isValidEmail,
   normalizeEmail,
+  normalizeUserCode,
   pollDeviceLink,
   refreshSession,
   revokeSession,
@@ -26,6 +29,7 @@ import {
   deviceLinkDevForm,
   deviceLinkEnterCode,
   deviceLinkError,
+  deviceLinkStart,
   deviceLinkSuccess,
   escapeHtml,
 } from "../lib/device_link_html.js";
@@ -62,6 +66,55 @@ export function buildAuthRoutes(deps: {
   const linkPollLimit = rateLimit({ windowMs: 60_000, max: 120 });
   const linkApproveLimit = rateLimit({ windowMs: 60_000, max: 30 });
   const refreshLimit = rateLimit({ windowMs: 60_000, max: 60 });
+  // /link answers "is this code live?", so keep guessing slow.
+  const linkPageLimit = rateLimit({ windowMs: 60_000, max: 30 });
+
+  /** Render /link, validating the code when one was supplied. */
+  async function renderLinkPage(rawUserCode: string, providerError?: string) {
+    const providers = linkProviders(deps.env);
+    const userCode = rawUserCode ? normalizeUserCode(rawUserCode) : "";
+    let errorHtml = providerError;
+    if (userCode && !errorHtml) {
+      const check = await checkDeviceLinkCode(deps.db, userCode);
+      if (!check.ok) {
+        errorHtml =
+          check.reason === "not_found"
+            ? "That code wasn’t found. Check the TV and try again."
+            : "That code has expired or was already used. Get a new code on the TV.";
+      }
+    }
+    const status = !providers.length ? 503 : errorHtml ? 400 : 200;
+    return {
+      html: deviceLinkStart({ userCode, providers, errorHtml }),
+      status: status as 200 | 400 | 503,
+      ok: status === 200,
+      userCode,
+      providers,
+    };
+  }
+
+  // Browser entry point the TV QR points at: enter code, pick a sign-in method.
+  app.get("/link", linkPageLimit, async (c) => {
+    const page = await renderLinkPage(c.req.query("user_code")?.trim() ?? "");
+    return c.html(page.html, page.status);
+  });
+
+  app.post("/link", linkPageLimit, async (c) => {
+    const form = await c.req.parseBody();
+    const rawUserCode = String(form.user_code ?? "").trim();
+    const providerId = String(form.provider ?? "");
+    const provider = linkProviders(deps.env).find((p) => p.id === providerId);
+    if (!rawUserCode) {
+      const page = await renderLinkPage("", "Enter the code shown on your TV.");
+      return c.html(page.html, 400);
+    }
+    const page = await renderLinkPage(
+      rawUserCode,
+      provider ? undefined : "Choose a sign-in method.",
+    );
+    if (!page.ok || !provider) return c.html(page.html, page.status);
+    return c.redirect(provider.startPath(page.userCode), 303);
+  });
 
   app.post("/auth/device/link", linkStartLimit, async (c) => {
     const started = await startDeviceLink(deps.db, deps.env);
@@ -299,6 +352,18 @@ export function buildAuthRoutes(deps: {
             : "That code is invalid or expired. Get a new code on the TV.",
       }),
       400,
+    );
+  });
+
+  app.get("/auth/dev/start", (c) => {
+    if (!deps.env.ALLOW_DEV_LOGIN) {
+      return c.json({ error: "forbidden", message: "Dev login disabled" }, 403);
+    }
+    return c.html(
+      deviceLinkDevForm({
+        userCode: c.req.query("user_code") ?? "",
+        emailPlaceholder: deps.env.DEV_GOOGLE_EMAIL,
+      }),
     );
   });
 

@@ -54,9 +54,9 @@ for device linking. It takes the TV code (pre-filled from `?user_code=`), checks
 is still pending, then hands off to the chosen sign-in method. The person can also
 type the address and enter the code by hand.
 
-| Enter code | Code expired | After Google, no code | Linked |
+| Enter code | Code expired | After Google, code not found | Linked |
 | --- | --- | --- | --- |
-| <img src="../../docs/screenshots/identity/link-code.png" width="200" alt="Link page with the TV code shown as tiles and a Continue with Google button"> | <img src="../../docs/screenshots/identity/link-expired.png" width="200" alt="Link page explaining the code has expired"> | <img src="../../docs/screenshots/identity/enter-code.png" width="200" alt="Enter your TV code form shown after Google sign-in"> | <img src="../../docs/screenshots/identity/linked.png" width="200" alt="Device linked confirmation"> |
+| <img src="../../docs/screenshots/identity/link-code.png" width="200" alt="Link page with the TV code shown as tiles and a Continue with Google button"> | <img src="../../docs/screenshots/identity/link-expired.png" width="200" alt="Link page explaining the code has expired"> | <img src="../../docs/screenshots/identity/enter-code.png" width="200" alt="Enter your TV code form after Google sign-in, noting the code was not found"> | <img src="../../docs/screenshots/identity/linked.png" width="200" alt="Device linked confirmation"> |
 
 - `GET /link?user_code=…` renders the page; an unknown or expired code is flagged
   before the person goes through Google.
@@ -77,17 +77,15 @@ To add another social login, add an entry there (id, button label, start path),
 implement its start/callback routes so they end in `approveDeviceLink`, and
 optionally add a brand icon to `PROVIDER_ICONS` in `src/lib/device_link_html.ts`.
 
-Screenshots are 412px-wide phone renders of the production HTML with fixture codes
-and emails. Regenerate them with any headless Chrome:
-
-```bash
-npx tsx scripts/render-link-pages.ts /tmp/link-pages
-for f in /tmp/link-pages/*.html; do
-  chrome --headless --hide-scrollbars --force-device-scale-factor=2 \
-    --virtual-time-budget=5000 --window-size=412,860 \
-    --screenshot="../../docs/screenshots/identity/$(basename "$f" .html).png" "file://$f"
-done
-```
+Screenshots are real captures from Chrome on an Android emulator (Pixel, API 34,
+status bar in demo mode) against this service on the host via `10.0.2.2`, with
+`google=on` and `ALLOW_DEV_LOGIN=false`. The first two are `/link` with a live code
+and the same code after expiry. The Google client was a placeholder, so for the last
+two the Google round trip was stood in for by a `link_token` signed with the
+service's own key (`signDeviceLinkProof`), posted from the emulator to
+`/auth/google/link-device`. The "not found" page came from a wrong code; typing the
+real code into it and tapping **Link TV** produced the linked page, and the TV poll
+then returned tokens. `guest@example.com` is a fixture.
 
 ## Device-link smoke (dev login)
 
@@ -266,7 +264,6 @@ npm test   # TTL expiry, claim races, entitlement revoke cascade, redactSecrets
 ```text
 src/           Hono app, auth, JWKS, CRUD, transport grants
 test/          node:test integration tests
-scripts/       README screenshot helpers
 migrations/    Postgres schema
 openapi/       Frozen v1 OpenAPI
 docker-compose.yml

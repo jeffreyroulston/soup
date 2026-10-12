@@ -36,7 +36,8 @@ const searchQuery = useQuery(computed(() => ({
 const EMPTY: JellyfinSearchResults = { items: [], people: [] }
 const results = computed(() => (searchTerm.value ? searchQuery.data.value ?? EMPTY : EMPTY))
 const searching = computed(() => searchQuery.isFetching.value)
-const errorMessage = computed(() => searchQuery.error.value?.message ?? '')
+/** Kept results stay visible (dimmed) when a later term fails; the banner covers that. */
+const loadError = computed(() => (searchTerm.value && !searchQuery.data.value ? searchQuery.error.value : null))
 
 const personId = computed(() => (typeof route.query.person === 'string' ? route.query.person : null))
 const personQuery = useQuery(computed(() => ({
@@ -62,7 +63,7 @@ const showEpisodes = computed(() => scope.value === 'all' || scope.value === 'sh
 const showPeople = computed(() => scope.value === 'all' || scope.value === 'people')
 const hasQuery = computed(() => query.value.trim().length > 0)
 const nothingFound = computed(() =>
-  hasQuery.value && !searching.value && !errorMessage.value
+  hasQuery.value && !searching.value && !loadError.value
   && !results.value.items.length && !results.value.people.length
   && !personItems.value.length && !loadingPerson.value,
 )
@@ -156,9 +157,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <p v-else-if="errorMessage" class="mt-12 text-center font-semibold text-accent">
-      {{ errorMessage }}
-    </p>
+    <ErrorState v-else-if="loadError" compact class="mt-6" :error="loadError" :on-retry="searchQuery.refetch" />
     <p v-else-if="nothingFound" class="mt-12 text-center text-muted">
       Nothing matches “{{ query.trim() }}”.
     </p>

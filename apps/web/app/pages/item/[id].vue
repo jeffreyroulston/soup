@@ -21,6 +21,11 @@ const item = computed(() => itemQuery.data.value ?? null)
 const isSeries = computed(() => item.value?.type === 'Series')
 const isCollection = computed(() => item.value?.type === 'BoxSet')
 
+// Seasons have no page of their own; show the series with that season selected.
+watch(item, (value) => {
+  if (value?.type === 'Season' && value.seriesId) navigateTo(itemRoute(value), { replace: true })
+}, { immediate: true })
+
 const seasonsQuery = useQuery(computed(() => ({ ...queries.seasons(itemId.value), enabled: isSeries.value })))
 const nextUpQuery = useQuery(computed(() => ({ ...queries.seriesNextUp(itemId.value), enabled: isSeries.value })))
 const collectionQuery = useQuery(computed(() => ({
@@ -73,7 +78,12 @@ const episodesQuery = useQuery(computed(() => ({
 })))
 const episodes = computed(() => episodesQuery.data.value ?? [])
 const loadingEpisodes = computed(() => episodesQuery.isPlaceholderData.value)
-const episodesError = computed(() => episodesQuery.error.value?.message ?? '')
+/** Server-wide failures show in the offline banner; anything else gets a short note. */
+const episodesError = computed(() => {
+  const error = episodesQuery.error.value
+  if (!error || OFFLINE_KINDS.includes(classifyError(error))) return ''
+  return 'Couldn\'t load these episodes.'
+})
 const watchedEpisodes = computed(() => episodes.value.filter(ep => ep.played).length)
 
 /** Skeleton until everything that shapes the layout above the fold has arrived. */
@@ -86,10 +96,8 @@ const loading = computed(() => {
   return isCollection.value && collectionQuery.isPending.value
 })
 
-const errorMessage = computed(() => {
-  const error = itemQuery.error.value
-  return error && !item.value ? error.message || 'Failed to load item' : ''
-})
+/** Only when there's nothing to show; a failed background refresh keeps the page. */
+const loadError = computed(() => (item.value ? null : itemQuery.error.value))
 
 const moreOpen = ref(false)
 const actionError = ref('')
@@ -103,7 +111,26 @@ watch(itemId, () => {
   pickedSeasonId.value = null
   moreOpen.value = false
   actionError.value = ''
+  overviewExpanded.value = false
 })
+
+/** The overview clamps to six lines; More appears only when that cuts it off. */
+const overviewEl = ref<HTMLElement | null>(null)
+const overviewExpanded = ref(false)
+const overviewClamped = ref(false)
+function measureOverview() {
+  const el = overviewEl.value
+  overviewClamped.value = Boolean(el && !overviewExpanded.value && el.scrollHeight > el.clientHeight + 1)
+}
+let overviewObserver: ResizeObserver | null = null
+watch(overviewEl, (el) => {
+  overviewObserver?.disconnect()
+  if (!el) return
+  overviewObserver ??= new ResizeObserver(measureOverview)
+  overviewObserver.observe(el)
+})
+watch(() => item.value?.overview, () => nextTick(measureOverview))
+onBeforeUnmount(() => overviewObserver?.disconnect())
 // Pickers open on the tracks Settings prefers, falling back to the file's defaults.
 watch(() => item.value?.id, () => {
   const value = item.value
@@ -141,19 +168,6 @@ const playLabel = computed(() => {
 const progressPercent = computed(() => {
   const target = playTarget.value
   return target && isInProgress(target) ? Math.min(100, target.playedPercentage ?? 0) : 0
-})
-
-const kicker = computed(() => {
-  const value = item.value
-  if (!value) return ''
-  if (isSeries.value) {
-    const parts = ['Series']
-    if (seasons.value.length) parts.push(`${seasons.value.length} Season${seasons.value.length === 1 ? '' : 's'}`)
-    if (value.childCount) parts.push(`${value.childCount} Episodes`)
-    return parts.join(' · ')
-  }
-  if (isCollection.value) return `Collection · ${collectionItems.value.length} titles`
-  return value.type === 'Movie' ? 'Movie' : value.type
 })
 
 const title = computed(() => item.value?.name ?? '')
@@ -322,26 +336,23 @@ function selectSeason(seasonId: string) {
 <template>
   <main class="w-full pb-20">
     <div v-if="loading" aria-busy="true" aria-label="Loading title">
-      <!-- Same box, padding and columns as the hero below -->
+      <!-- Same box and padding as the hero below -->
       <section class="relative min-h-[min(88vh,720px)] w-full overflow-hidden bg-surface/50">
-        <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/55 via-35% to-transparent to-65%" />
+        <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/75 via-40% to-transparent to-75%" />
         <div class="relative flex min-h-[min(88vh,720px)] flex-wrap items-end justify-between gap-8 px-4 pb-14 pt-32 sm:px-8 lg:px-12">
           <div class="flex w-full max-w-[820px] flex-col gap-4">
-            <span class="text-sm font-bold"><span class="inline-block h-[0.8em] w-36 animate-pulse rounded bg-elevated align-middle" /></span>
             <span class="block h-[calc(clamp(2.75rem,7.5vw,6.5rem)*0.9)] w-2/3 animate-pulse rounded-btn bg-elevated" />
+            <span class="text-[15px] font-semibold"><span class="inline-block h-[0.8em] w-52 animate-pulse rounded bg-elevated align-middle" /></span>
+            <span class="flex max-w-[600px] flex-col text-[17px] leading-relaxed">
+              <span><span class="inline-block h-[0.8em] w-full animate-pulse rounded bg-elevated align-middle" /></span>
+              <span><span class="inline-block h-[0.8em] w-full animate-pulse rounded bg-elevated align-middle" /></span>
+              <span><span class="inline-block h-[0.8em] w-2/3 animate-pulse rounded bg-elevated align-middle" /></span>
+            </span>
             <div class="flex items-center gap-3">
               <span class="h-[52px] w-44 animate-pulse rounded-btn bg-elevated" />
               <span class="size-[52px] animate-pulse rounded-full bg-elevated" />
               <span class="size-[52px] animate-pulse rounded-full bg-elevated" />
             </div>
-          </div>
-          <div class="flex w-full max-w-[420px] flex-col gap-3">
-            <span class="flex flex-col text-base leading-relaxed">
-              <span><span class="inline-block h-[0.8em] w-full animate-pulse rounded bg-elevated align-middle" /></span>
-              <span><span class="inline-block h-[0.8em] w-full animate-pulse rounded bg-elevated align-middle" /></span>
-              <span><span class="inline-block h-[0.8em] w-2/3 animate-pulse rounded bg-elevated align-middle" /></span>
-            </span>
-            <span class="text-sm font-semibold"><span class="inline-block h-[0.8em] w-52 animate-pulse rounded bg-elevated align-middle" /></span>
           </div>
         </div>
       </section>
@@ -355,17 +366,15 @@ function selectSeason(seasonId: string) {
         </MediaRow>
       </div>
     </div>
-    <p v-else-if="errorMessage && !item" class="px-4 pt-32 font-semibold text-accent sm:px-8 lg:px-12">
-      {{ errorMessage }}
-    </p>
+    <ErrorState v-else-if="loadError" class="pt-32" :error="loadError" :on-retry="itemQuery.refetch" />
     <template v-else-if="item">
       <!-- Hero -->
       <section :aria-label="title" class="relative min-h-[min(88vh,720px)] w-full overflow-hidden">
         <div class="absolute inset-0 bg-surface">
           <img v-if="backdrop" :src="backdrop" alt="" class="absolute inset-0 size-full object-cover object-top">
         </div>
-        <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/55 via-35% to-transparent to-65%" />
-        <div class="absolute inset-0 bg-gradient-to-r from-canvas/70 via-transparent via-50% to-transparent" />
+        <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/75 via-40% to-transparent to-75%" />
+        <div class="absolute inset-0 bg-gradient-to-r from-canvas/90 via-canvas/50 via-45% to-transparent to-75%" />
 
         <div class="relative flex min-h-[min(88vh,720px)] flex-wrap items-end justify-between gap-8 px-4 pb-14 pt-32 sm:px-8 lg:px-12">
           <div class="flex max-w-[820px] flex-col gap-4">
@@ -395,10 +404,41 @@ function selectSeason(seasonId: string) {
                 </span>
               </div>
             </template>
-            <span v-else class="text-sm font-bold text-ink-2">{{ kicker }}</span>
             <h1 class="text-balance font-extrabold tracking-[-0.04em]" :class="heroTitleClass(title)">
               {{ title }}
             </h1>
+            <!-- Meta and overview sit under the title, as in the home hero -->
+            <div class="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink-2">
+              <template v-for="(bit, i) in metaBits" :key="bit">
+                <span v-if="i" aria-hidden="true">·</span>
+                <span>{{ bit }}</span>
+              </template>
+              <span
+                v-for="chip in chips"
+                :key="chip"
+                class="rounded bg-white/20 px-1.5 py-px text-xs font-extrabold text-ink"
+              >{{ chip }}</span>
+            </div>
+            <div v-if="item.overview" class="flex max-w-[600px] flex-col items-start gap-1">
+              <p
+                :id="`overview-${item.id}`"
+                ref="overviewEl"
+                class="text-[17px] leading-relaxed text-ink-2"
+                :class="overviewExpanded ? '' : 'line-clamp-6'"
+              >
+                {{ item.overview }}
+              </p>
+              <button
+                v-if="overviewClamped || overviewExpanded"
+                type="button"
+                class="text-[15px] font-extrabold text-ink underline decoration-transparent decoration-2 underline-offset-4 transition-colors hover:decoration-current focus-visible:decoration-current"
+                :aria-expanded="overviewExpanded"
+                :aria-controls="`overview-${item.id}`"
+                @click="overviewExpanded = !overviewExpanded"
+              >
+                {{ overviewExpanded ? 'Less' : 'More' }}
+              </button>
+            </div>
             <div class="flex flex-wrap items-center gap-3">
               <button
                 v-if="playLabel"
@@ -499,22 +539,6 @@ function selectSeason(seasonId: string) {
             </p>
           </div>
 
-          <div class="flex max-w-[420px] flex-col gap-3">
-            <p v-if="item.overview" class="line-clamp-6 text-base leading-relaxed text-ink-2">
-              {{ item.overview }}
-            </p>
-            <div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-muted">
-              <template v-for="(bit, i) in metaBits" :key="bit">
-                <span v-if="i" aria-hidden="true">·</span>
-                <span>{{ bit }}</span>
-              </template>
-              <span
-                v-for="chip in chips"
-                :key="chip"
-                class="rounded bg-white/20 px-1.5 py-px text-xs font-extrabold text-ink"
-              >{{ chip }}</span>
-            </div>
-          </div>
         </div>
       </section>
 

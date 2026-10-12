@@ -61,6 +61,12 @@ export type TrackChoice = {
   subtitleStreamIndex?: number | null
 }
 
+/** Route to an item's page; a season opens its show with that season selected. */
+export function itemRoute(item: JellyfinItem) {
+  if (item.type === 'Season' && item.seriesId) return { path: `/item/${item.seriesId}`, query: { season: item.id } }
+  return `/item/${item.id}`
+}
+
 /** Route to the player, resuming unless `fromStart`. */
 export function watchRoute(item: JellyfinItem, fromStart = false, tracks: TrackChoice = {}) {
   const resume = !fromStart && canResume(item)

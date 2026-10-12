@@ -36,6 +36,9 @@ const quickConnectCode = ref('')
 const quickConnectBusy = ref(false)
 /** Roster id being signed in to from the server picker. */
 const selectingServer = ref<string | null>(null)
+/** The roster with the user's nicknames and order from Settings. */
+const { entries: serverEntries } = useServers()
+const rosterServers = computed(() => serverEntries.value.filter(entry => entry.kind === 'soup'))
 
 /** Jellyfin servers that answered from this browser, offered on the idle screen. */
 const nearby = ref<DiscoveredServer[]>([])
@@ -189,7 +192,7 @@ function scheduleQuickConnectPoll(baseUrl: string, secret: string, run: number) 
   if (pollTimer) clearTimeout(pollTimer)
   pollTimer = setTimeout(async () => {
     try {
-      const status = await auth.pollQuickConnect(baseUrl, secret)
+      const { status } = await auth.pollQuickConnect(baseUrl, secret)
       if (run !== loginRun) return
       if (status === 'approved') {
         await router.replace('/')
@@ -326,9 +329,9 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
         <h1
           v-if="!mock && (phase === 'idle' || phase === 'error')"
           id="login-title"
-          class="pb-2 text-center text-[64px] font-extrabold leading-none tracking-[-2.5px]"
+          class="pb-2 text-center text-[64px] leading-none"
         >
-          soup
+          <SoupWordmark />
         </h1>
         <h1 v-else id="login-title" class="text-[38px] font-extrabold leading-[1.05] tracking-[-0.04em]">
           {{ mock ? 'Browse the mock library' : phase === 'waiting' || phase === 'quickConnect' ? 'Approve this sign-in' : phase === 'server' ? 'Choose a server' : 'Sign in with Jellyfin' }}
@@ -585,7 +588,7 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
             {{ auth.serverError.value }}
           </p>
           <ul class="flex flex-col gap-2">
-            <li v-for="server in auth.servers.value" :key="server.id">
+            <li v-for="server in rosterServers" :key="server.key">
               <button
                 type="button"
                 :disabled="selectingServer !== null"
@@ -594,7 +597,7 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
               >
                 <span class="flex min-w-0 flex-1 flex-col">
                   <span class="truncate text-[17px] font-extrabold">{{ server.name }}</span>
-                  <span class="truncate text-[13px] font-semibold text-muted">{{ serverHost(server) }}</span>
+                  <span class="truncate text-[13px] font-semibold text-muted">{{ server.host }}</span>
                 </span>
                 <span
                   v-if="selectingServer === server.id"

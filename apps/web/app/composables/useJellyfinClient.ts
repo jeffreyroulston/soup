@@ -1,6 +1,9 @@
 import type { NuxtApp } from '#app'
 import type { JellyfinSessionPayload } from '~/types/jellyfin'
 
+/** Whole-library scans can take a while on big servers; past this, give up. */
+const REQUEST_TIMEOUT_MS = 30_000
+
 function createJellyfinClient() {
   const { jellyfin, reexchange } = useAuthSession()
 
@@ -37,9 +40,11 @@ function createJellyfinClient() {
       method,
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      // A server that accepts the connection but never answers reads as "isn't responding".
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (response.status === 401 && !retried) {
-      await reexchange()
+      await reexchange(session.accessToken)
       return request(method, path, options, true)
     }
     return response

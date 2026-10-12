@@ -85,9 +85,14 @@ function isVideoLibrary(library: JellyfinItem): boolean {
   return !NON_VIDEO_LIBRARIES.has(library.collectionType ?? '')
 }
 
-/** Query for item lists: the shared field set plus one image of each requested kind. */
+/**
+ * Query for item lists: the shared field set plus one image of each requested kind.
+ * Jellyfin only fills an episode's ParentBackdrop* (the show's backdrop) when Thumb is also
+ * enabled, so a Backdrop request always asks for Thumb too.
+ */
 function listQuery(imageTypes: string, extra: Record<string, string> = {}): Record<string, string> {
-  return { Fields: LIST_FIELDS, EnableImageTypes: imageTypes, ImageTypeLimit: '1', ...extra }
+  const types = imageTypes.includes('Backdrop') && !imageTypes.includes('Thumb') ? `${imageTypes},Thumb` : imageTypes
+  return { Fields: LIST_FIELDS, EnableImageTypes: types, ImageTypeLimit: '1', ...extra }
 }
 
 function asPeople(value: unknown): JellyfinPerson[] {
@@ -368,13 +373,11 @@ function createJellyfin() {
     return imageUrlFor(item.id, 'Primary', item.primaryImageTag, maxWidth)
   }
 
-  /** 2:3 key art; episodes use their series poster rather than the episode still. */
+  /** 2:3 key art; episodes use their series poster rather than the episode still, seasons fall back to it. */
   function posterUrl(item: JellyfinItem, maxWidth = 480): string | null {
-    if (item.type === 'Episode' && item.seriesId) {
-      const series = imageUrlFor(item.seriesId, 'Primary', item.seriesPrimaryImageTag, maxWidth)
-      if (series) return series
-    }
-    return imageUrl(item, 'Primary', maxWidth)
+    const series = item.seriesId ? imageUrlFor(item.seriesId, 'Primary', item.seriesPrimaryImageTag, maxWidth) : null
+    if (item.type === 'Episode' && series) return series
+    return imageUrl(item, 'Primary', maxWidth) ?? (item.type === 'Season' ? series : null)
   }
 
   function personImageUrl(person: JellyfinPerson, maxWidth = 256): string | null {

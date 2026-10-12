@@ -76,18 +76,19 @@ const showSeriesLink = computed(() => isEpisode.value && props.caption != null &
 const titleHref = computed(() => {
   if (props.titleTo) return props.titleTo
   if (props.caption == null && isEpisode.value && props.item.seriesId) return `/item/${props.item.seriesId}`
-  return `/item/${props.item.id}`
+  return itemRoute(props.item)
 })
 
 const secondary = computed(() => {
   if (props.detail != null) return props.detail
   if (episodeIn.value === 'detail') return null
+  if (props.item.type === 'Season') return props.item.name
   if (landscape.value) return timeLeftLabel(props.item) ?? runtimeLabel(props.item.runTimeTicks)
   return props.item.productionYear ? String(props.item.productionYear) : null
 })
 
 const progress = computed(() => (isInProgress(props.item) ? Math.min(100, props.item.playedPercentage ?? 0) : 0))
-const href = computed(() => props.to ?? `/item/${props.item.id}`)
+const href = computed(() => props.to ?? itemRoute(props.item))
 
 const prefetchItem = usePrefetchItem()
 

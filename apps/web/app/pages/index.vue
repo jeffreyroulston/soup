@@ -25,10 +25,7 @@ const collectionLoading = computed(() => collectionQuery.isPending.value)
 const genresLoading = computed(() => genresQuery.isPending.value)
 const becauseLoading = computed(() => becauseQuery.isPending.value)
 /** Only when there's nothing to show; a failed background refresh keeps the cached rows. */
-const errorMessage = computed(() => {
-  const error = homeQuery.error.value
-  return error && !home.value ? error.message || 'Failed to load home' : ''
-})
+const loadError = computed(() => (home.value ? null : homeQuery.error.value))
 
 const resumeIds = computed(() => new Set(home.value?.resume.map(item => item.id) ?? []))
 
@@ -65,9 +62,7 @@ function upNextDetail(item: JellyfinItem) {
 
 <template>
   <main class="w-full pb-20">
-    <p v-if="errorMessage" class="px-4 pt-32 font-semibold text-accent sm:px-8 lg:px-12">
-      {{ errorMessage }}
-    </p>
+    <ErrorState v-if="loadError" class="pt-32" :error="loadError" :on-retry="homeQuery.refetch" />
     <template v-else>
       <!-- Every row brings its own skeleton, so the layout is in place before the data -->
       <HeroCarousel v-if="loading || featured.length" :items="featured" :resume-ids="resumeIds" :loading="loading" />

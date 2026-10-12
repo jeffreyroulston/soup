@@ -70,10 +70,8 @@ const total = computed(() => totalQuery.data.value ?? null)
 const genreCounts = computed(() => genresQuery.data.value ?? (genresQuery.isError.value ? [] : null))
 const libraryName = computed(() =>
   knownLibrary.value?.name ?? nameQuery.data.value?.name ?? (nameQuery.isError.value ? 'Library' : ''))
-const errorMessage = computed(() => {
-  const error = itemsQuery.error.value
-  return error && !items.value.length ? error.message || 'Failed to load library' : ''
-})
+/** Only when there's nothing to show; a failed background refresh keeps the grid. */
+const loadError = computed(() => (items.value.length ? null : itemsQuery.error.value))
 
 const genres = computed(() => {
   const counts = items.value.length ? countGenres(items.value) : (genreCounts.value ?? [])
@@ -326,9 +324,7 @@ onBeforeUnmount(() => {
             <MediaCardSkeleton />
           </div>
         </div>
-        <p v-else-if="errorMessage" class="font-semibold text-accent">
-          {{ errorMessage }}
-        </p>
+        <ErrorState v-else-if="loadError" compact :error="loadError" :on-retry="itemsQuery.refetch" />
         <p v-else-if="!visible.length" class="text-muted">
           {{ items.length ? 'Nothing matches these filters.' : 'This library is empty.' }}
         </p>

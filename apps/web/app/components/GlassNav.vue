@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { ServerEntry } from '~/composables/useServers'
+
 const route = useRoute()
 const auth = useAuthSession()
-const { jellyfin } = useJellyfin()
 const { libraries, loaded: librariesLoaded } = useLibraries()
 
 const scrolled = ref(false)
@@ -31,11 +32,9 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  if (!jellyfin.value?.direct) {
-    auth.loadServers().catch(() => {
-      // The current server still works; the list just can't be offered.
-    })
-  }
+  auth.loadServers().catch(() => {
+    // The current server still works; the list just can't be offered.
+  })
   onScroll()
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('pointerdown', onPointerDown, true)
@@ -53,33 +52,19 @@ function isActive(path: string) {
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 
-const servers = auth.servers
-const switchingTo = ref<string | null>(null)
-const switchError = ref('')
-/** Sessions from before the picker don't carry the roster id, so match those by address. */
-const currentServerId = computed(() => jellyfin.value?.soupServerId
-  ?? servers.value.find(server => serverHost(server) === new URL(jellyfin.value?.baseUrl ?? 'http://_').host)?.id
-  ?? null)
-/** Roster name first; direct sign-ins fall back to Jellyfin's own name, then the address. */
-const currentServerName = computed(() => servers.value.find(server => server.id === currentServerId.value)?.name
-  ?? jellyfin.value?.serverName
-  ?? (jellyfin.value ? new URL(jellyfin.value.baseUrl).host : ''))
+const {
+  entries: servers,
+  currentKey,
+  currentName: currentServerName,
+  switchTo,
+  switchingTo,
+  switchError,
+} = useServers()
 
-async function switchServer(serverId: string) {
-  if (switchingTo.value || serverId === currentServerId.value) return
-  switchingTo.value = serverId
-  switchError.value = ''
-  try {
-    await auth.selectServer(serverId)
+async function switchServer(entry: ServerEntry) {
+  if (await switchTo(entry)) {
     menuOpen.value = false
     await navigateTo('/')
-  }
-  catch (error) {
-    switchError.value = error instanceof Error ? error.message : 'Could not switch servers'
-    if (!auth.jellyfin.value) await navigateTo('/login')
-  }
-  finally {
-    switchingTo.value = null
   }
 }
 
@@ -95,8 +80,8 @@ async function onLogout() {
     class="fixed inset-x-0 top-0 z-30 flex items-center justify-between gap-4 px-4 py-4 transition-colors duration-300 sm:px-8 lg:px-12 lg:py-5"
     :class="scrolled ? 'bg-canvas/75 backdrop-blur-xl' : 'bg-transparent'"
   >
-    <NuxtLink to="/" class="text-[28px] font-extrabold leading-none tracking-[-1px] text-ink">
-      soup
+    <NuxtLink to="/" class="text-[28px] leading-none text-ink">
+      <SoupWordmark />
     </NuxtLink>
 
     <nav
@@ -160,26 +145,31 @@ async function onLogout() {
             {{ auth.email.value || 'Signed in' }}
           </p>
           <template v-if="servers.length > 1">
-            <p class="px-3 pb-1 pt-1.5 text-[11px] font-extrabold uppercase tracking-[0.6px] text-muted">
-              Server
-            </p>
+            <div class="flex items-center justify-between px-3 pb-1 pt-1.5">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.6px] text-muted">
+                Server
+              </p>
+              <NuxtLink to="/settings/servers" role="menuitem" class="text-[12px] font-bold text-muted hover:text-ink">
+                Manage
+              </NuxtLink>
+            </div>
             <button
               v-for="server in servers"
-              :key="server.id"
+              :key="server.key"
               type="button"
               role="menuitemradio"
-              :aria-checked="server.id === currentServerId"
+              :aria-checked="server.key === currentKey"
               :disabled="switchingTo !== null"
               class="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-[15px] font-semibold text-ink hover:bg-white/10 disabled:opacity-60"
-              @click="switchServer(server.id)"
+              @click="switchServer(server)"
             >
               <span
                 class="size-2 shrink-0 rounded-full"
-                :class="server.id === currentServerId ? 'bg-ok' : 'bg-white/15'"
+                :class="server.key === currentKey ? 'bg-ok' : 'bg-white/15'"
               />
               <span class="min-w-0 flex-1 truncate">{{ server.name }}</span>
               <span
-                v-if="switchingTo === server.id"
+                v-if="switchingTo === server.key"
                 class="size-4 shrink-0 animate-spin rounded-full border-2 border-ink/30 border-t-ink"
               />
             </button>

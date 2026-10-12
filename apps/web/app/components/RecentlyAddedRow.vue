@@ -47,7 +47,7 @@ const active = computed(() => props.shelves[selected.value] ?? props.shelves[0] 
         <!-- Latest episodes stand in for their show -->
         <MediaCard
           :item="item"
-          :to="item.seriesId ? `/item/${item.seriesId}` : undefined"
+          :to="item.type === 'Episode' && item.seriesId ? `/item/${item.seriesId}` : undefined"
         />
       </div>
     </template>

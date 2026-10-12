@@ -46,7 +46,7 @@ const chips = computed(() => {
 const primaryAction = computed(() => {
   const item = current.value
   if (!item) return null
-  if (!isPlayable(item)) return { label: 'View', to: `/item/${item.id}` }
+  if (!isPlayable(item)) return { label: 'View', to: itemRoute(item) }
   const left = timeLeftLabel(item)
   return {
     label: left && canResume(item) ? `Resume · ${left}` : 'Play',
@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
             {{ primaryAction.label }}
           </NuxtLink>
           <NuxtLink
-            :to="`/item/${current.id}`"
+            :to="itemRoute(current)"
             class="glass hidden h-[52px] items-center rounded-btn px-6 text-[17px] font-bold text-ink sm:inline-flex"
           >
             Details

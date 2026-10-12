@@ -58,7 +58,7 @@ function panelClip(i: number, count: number) {
   <section
     v-if="loading"
     aria-hidden="true"
-    class="relative mx-4 h-[360px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
+    class="relative mx-4 h-[420px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
   >
     <div class="absolute inset-x-6 bottom-8 flex max-w-[480px] flex-col gap-3.5 sm:inset-x-14">
       <span class="text-sm font-bold"><span class="inline-block h-[0.8em] w-36 animate-pulse rounded bg-elevated align-middle" /></span>
@@ -71,7 +71,7 @@ function panelClip(i: number, count: number) {
     v-else-if="curated || spotlight"
     :to="to"
     :aria-label="`${title} collection`"
-    class="group relative mx-4 block h-[360px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
+    class="group relative mx-4 block h-[420px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
   >
     <img
       v-if="backdrop"
@@ -84,8 +84,15 @@ function panelClip(i: number, count: number) {
     <div class="absolute inset-0 bg-gradient-to-t from-canvas via-canvas/60 via-30% to-transparent to-60%" />
     <div class="absolute inset-0 bg-gradient-to-r from-canvas/70 via-canvas/10 via-45% to-transparent" />
 
-    <!-- Full-bleed posters cut on a diagonal, side by side -->
-    <div class="pointer-events-none absolute inset-y-0 right-0 hidden w-[56%] sm:flex" aria-hidden="true">
+    <!--
+      Full-bleed posters cut on a diagonal, side by side. Phones get them as a
+      strip across the top that fades into the backdrop; wider screens get them
+      down the right side, narrower until there's room for the copy beside them.
+    -->
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0 flex h-[42%] [mask-image:linear-gradient(to_bottom,#000_45%,transparent)] sm:inset-y-0 sm:left-auto sm:h-auto sm:w-[42%] sm:[mask-image:none] xl:w-[52%]"
+      aria-hidden="true"
+    >
       <img
         v-for="(poster, i) in posters"
         :key="poster.id"
@@ -98,14 +105,15 @@ function panelClip(i: number, count: number) {
       >
     </div>
 
-    <div class="absolute inset-x-6 bottom-8 flex max-w-[520px] flex-col gap-3 sm:inset-x-14 sm:bottom-12">
+    <!-- Copy stops short of the posters so it never runs over them -->
+    <div class="absolute inset-x-6 bottom-8 flex max-w-[520px] flex-col gap-3 sm:bottom-12 sm:left-14 sm:right-[calc(42%+1.5rem)] xl:right-[calc(52%+1.5rem)]">
       <span class="text-sm font-bold text-ink-2">
         Collection · {{ countLabel }}
       </span>
       <h2 class="text-balance text-[clamp(2.25rem,4vw,3.4rem)] font-extrabold leading-[0.95] tracking-[-0.04em] text-white">
         {{ title }}
       </h2>
-      <p v-if="description" class="line-clamp-2 text-base leading-relaxed text-white/80">
+      <p v-if="description" class="line-clamp-3 text-base leading-relaxed text-white/80 xl:line-clamp-2">
         {{ description }}
       </p>
       <span class="mt-1 inline-flex h-[46px] items-center self-start rounded-full bg-white px-6 text-base font-extrabold text-black transition group-hover:bg-white/90">

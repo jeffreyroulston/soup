@@ -23,7 +23,7 @@ withDefaults(defineProps<{
         <!-- Latest episodes stand in for their show -->
         <MediaCard
           :item="item"
-          :to="item.seriesId ? `/item/${item.seriesId}` : undefined"
+          :to="item.type === 'Episode' && item.seriesId ? `/item/${item.seriesId}` : undefined"
         />
       </div>
     </template>

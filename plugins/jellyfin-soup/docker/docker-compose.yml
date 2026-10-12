@@ -16,9 +16,11 @@ services:
         JELLYFIN_TAG: "10.11.5"
     image: soup-jellyfin:local
     container_name: soup-jellyfin
-    ports:
-      - "8096:8096"
-      - "8920:8920"
+    # Host networking so LAN clients can discover the server: Jellyfin answers
+    # "Who is JellyfinServer?" broadcasts on UDP 7359, which Docker's port
+    # publishing never forwards. Serves 8096 (HTTP) and 8920 (HTTPS) directly;
+    # open them and 7359/udp in the host firewall.
+    network_mode: host
     volumes:
       - soup_jellyfin_config:/config
       - soup_jellyfin_cache:/cache

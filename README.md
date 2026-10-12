@@ -6,26 +6,28 @@ separate VPN app.
 
 ## Screenshots
 
-The current Festival design, rendered from the app's Flutter widgets with sample
-accounts and library artwork. The QR and Quick Connect codes are demonstrations.
+Soup v2 (`apps/android-v2`) on the Android TV emulator, signed in to a real
+Jellyfin server.
 
-### Onboarding on Android TV
+### Sign in
 
-| Choose your connection | Connect with Tailscale (optional) |
+| Sign in with Soup, or pick a server | Sign in to Jellyfin |
 | --- | --- |
-| ![Welcome screen with the optional Tailscale switch](docs/screenshots/onboarding/welcome-tv.png) | ![Optional Tailscale setup with a demonstration authorization QR code](docs/screenshots/onboarding/tailscale-qr-tv.png) |
+| ![Soup sign-in over a wall of classic film posters, with a QR code, a device code and discovered Jellyfin servers](docs/screenshots/tv/sign-in-soup.jpg) | ![Jellyfin sign-in with a Quick Connect code beside username and password fields](docs/screenshots/tv/sign-in-jellyfin.jpg) |
 
-| Find your server | Sign in |
+### Library
+
+| Home | Recently added |
 | --- | --- |
-| ![Automatically discovered Jellyfin server with a manual address option](docs/screenshots/onboarding/jellyfin-discovery-tv.png) | ![Jellyfin sign-in with Quick Connect and username and password options](docs/screenshots/onboarding/jellyfin-sign-in-tv.png) |
+| ![Home screen with a full-bleed featured show, Resume and Details buttons](docs/screenshots/tv/home.jpg) | ![Recently Added row of posters with Anime, Movies and TV Shows filters](docs/screenshots/tv/recently-added.jpg) |
 
-### Sample signed-in homepage
+| Movies | Seasons and episodes |
+| --- | --- |
+| ![Movies library grid with genre tiles, filters, sort and an A–Z strip](docs/screenshots/tv/movies.jpg) | ![Show details with a season picker and episode thumbnails](docs/screenshots/tv/episodes.jpg) |
 
-![Festival homepage with a featured film and sample Continue Watching row](docs/screenshots/festival/home-light-tv.png)
-
-Browse the [complete onboarding gallery](docs/screenshots/onboarding/README.md)
-and [Festival gallery](docs/screenshots/festival/README.md) for phone layouts,
-additional setup steps, and light and dark themes.
+The original `apps/android` Festival design is kept in the
+[onboarding gallery](docs/screenshots/onboarding/README.md) and
+[Festival gallery](docs/screenshots/festival/README.md).
 
 ## Supported target
 

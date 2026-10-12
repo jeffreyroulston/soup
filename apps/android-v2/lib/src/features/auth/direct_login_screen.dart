@@ -6,7 +6,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:soup_core/soup_core.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
+import '../../form_factor.dart';
 import '../../ui/theme/soup_tokens.dart';
+import '../../ui/touch/sign_in_link.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/soup_button.dart' show SoupButtonStyle;
 import 'auth_button.dart';
@@ -171,7 +173,8 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
       if (_scroll.hasClients) _scroll.jumpTo(0);
       switch (model.phase) {
         case SetupPhase.connection:
-          (model.tailscaleConnected && model.canContinueConnection
+          (!model.tailscaleAvailable ||
+                      model.tailscaleConnected && model.canContinueConnection
                   ? _nextFocus
                   : _switchFocus)
               .requestFocus();
@@ -297,8 +300,10 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: wide ? 900 : 640),
                   child: Container(
-                    margin: const EdgeInsets.all(24),
-                    padding: const EdgeInsets.fromLTRB(36, 30, 36, 28),
+                    margin: EdgeInsets.all(context.isTouch ? 12 : 24),
+                    padding: context.isTouch
+                        ? const EdgeInsets.fromLTRB(20, 22, 20, 20)
+                        : const EdgeInsets.fromLTRB(36, 30, 36, 28),
                     decoration: BoxDecoration(
                       color: const Color(0xEB1E1E20),
                       borderRadius: BorderRadius.circular(SoupRadii.spotlight),
@@ -362,7 +367,9 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
         1,
         'Connection',
         'Connect to Jellyfin',
-        'Optionally use Tailscale, then continue.',
+        model.tailscaleAvailable
+            ? 'Optionally use Tailscale, then continue.'
+            : 'Soup connects directly to your Jellyfin server.',
       ),
       SetupPhase.server => (
         2,
@@ -393,7 +400,11 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
         const SizedBox(height: 8),
         Text(
           title,
-          style: SoupType.style(size: 38, weight: 800, letterSpacing: -1),
+          style: SoupType.style(
+            size: context.isTouch ? 28 : 38,
+            weight: 800,
+            letterSpacing: -1,
+          ),
         ),
         if (subtitle.isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -421,16 +432,17 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
   Widget _connectionStep() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _SwitchTile(
-        key: const ValueKey('tailscale-toggle'),
-        focusNode: _switchFocus,
-        title: 'Use Tailscale',
-        subtitle: 'Optional · Use your private network',
-        value: model.tailscaleEnabled,
-        onChanged: model.initialized && !model.isBusy
-            ? (v) => unawaited(model.setTailscaleEnabled(v))
-            : null,
-      ),
+      if (model.tailscaleAvailable)
+        _SwitchTile(
+          key: const ValueKey('tailscale-toggle'),
+          focusNode: _switchFocus,
+          title: 'Use Tailscale',
+          subtitle: 'Optional · Use your private network',
+          value: model.tailscaleEnabled,
+          onChanged: model.initialized && !model.isBusy
+              ? (v) => unawaited(model.setTailscaleEnabled(v))
+              : null,
+        ),
       if (!model.tailscaleEnabled) ...[
         const SizedBox(height: 18),
         Text(
@@ -447,6 +459,36 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
   Widget _tailscaleArea() {
     final status = model.status;
     final url = status.authorizationUrl;
+    if (status.phase == TailscaleConnectionPhase.awaitingLogin &&
+        url != null &&
+        context.isTouch) {
+      // A phone can't scan its own screen: open the sign-in page instead.
+      return Column(
+        key: const ValueKey('tailscale-authorization'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SignInLinkButton(url: url, label: 'Open Tailscale sign-in'),
+          const SizedBox(height: 10),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              'Waiting for sign-in',
+              key: const ValueKey('connection-status'),
+              textAlign: TextAlign.center,
+              style: SoupType.style(size: 14, color: SoupColors.muted),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _button(
+            'Get a new link',
+            model.isBusy ? null : model.retryTailscale,
+            style: SoupButtonStyle.glass,
+            height: 48,
+            expand: true,
+          ),
+        ],
+      );
+    }
     if (status.phase == TailscaleConnectionPhase.awaitingLogin && url != null) {
       return Row(
         key: const ValueKey('tailscale-authorization'),
@@ -973,27 +1015,22 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
   Widget _footer() {
     final phase = model.phase;
     if (model.showingServerDiscovery) {
-      return Row(
-        key: const ValueKey('setup-footer'),
-        children: [
-          _button(
-            'Back',
-            model.isBusy ? null : _back,
-            style: SoupButtonStyle.glass,
-            focusNode: _backFocus,
-            key: const ValueKey('onboarding-back-button'),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _button(
-              model.isBusy ? 'Connecting…' : 'Enter address manually',
-              model.isBusy ? null : model.enterServerManually,
-              focusNode: _manualFocus,
-              expand: true,
-              key: const ValueKey('enter-server-manually'),
-            ),
-          ),
-        ],
+      return _footerLayout(
+        _button(
+          'Back',
+          model.isBusy ? null : _back,
+          style: SoupButtonStyle.glass,
+          focusNode: _backFocus,
+          expand: context.isTouch,
+          key: const ValueKey('onboarding-back-button'),
+        ),
+        _button(
+          model.isBusy ? 'Connecting…' : 'Enter address manually',
+          model.isBusy ? null : model.enterServerManually,
+          focusNode: _manualFocus,
+          expand: true,
+          key: const ValueKey('enter-server-manually'),
+        ),
       );
     }
     final connection = phase == SetupPhase.connection;
@@ -1009,40 +1046,57 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
         : phase == SetupPhase.credentials
         ? 'Sign in'
         : 'Next';
-    return Row(
-      key: const ValueKey('setup-footer'),
-      children: [
-        if (connection && widget.onUseSoupInvite != null) ...[
-          _button(
+    final Widget? secondary = connection && widget.onUseSoupInvite != null
+        ? _button(
             'Use Soup invite instead',
             model.isBusy ? null : widget.onUseSoupInvite,
             style: SoupButtonStyle.glass,
+            expand: context.isTouch,
             key: const ValueKey('connectivity-use-soup-invite'),
-          ),
-          const SizedBox(width: 16),
-        ] else if (!connection) ...[
-          _button(
+          )
+        : !connection
+        ? _button(
             'Back',
             model.isBusy && phase != SetupPhase.credentials ? null : _back,
             style: SoupButtonStyle.glass,
             focusNode: _backFocus,
+            expand: context.isTouch,
             key: const ValueKey('onboarding-back-button'),
-          ),
-          const SizedBox(width: 16),
+          )
+        : null;
+    return _footerLayout(
+      secondary,
+      _button(
+        label,
+        enabled ? _next : null,
+        focusNode: _nextFocus,
+        expand: true,
+        key: ValueKey(switch (phase) {
+          SetupPhase.connection => 'connection-next-button',
+          SetupPhase.server => 'check-server-button',
+          SetupPhase.credentials || SetupPhase.ready => 'sign-in-button',
+        }),
+      ),
+    );
+  }
+
+  /// Secondary then primary side by side on TV; stacked full-width on touch,
+  /// where a phone is too narrow for both.
+  Widget _footerLayout(Widget? secondary, Widget primary) {
+    if (context.isTouch) {
+      return Column(
+        key: const ValueKey('setup-footer'),
+        children: [
+          primary,
+          if (secondary != null) ...[const SizedBox(height: 10), secondary],
         ],
-        Expanded(
-          child: _button(
-            label,
-            enabled ? _next : null,
-            focusNode: _nextFocus,
-            expand: true,
-            key: ValueKey(switch (phase) {
-              SetupPhase.connection => 'connection-next-button',
-              SetupPhase.server => 'check-server-button',
-              SetupPhase.credentials || SetupPhase.ready => 'sign-in-button',
-            }),
-          ),
-        ),
+      );
+    }
+    return Row(
+      key: const ValueKey('setup-footer'),
+      children: [
+        if (secondary != null) ...[secondary, const SizedBox(width: 16)],
+        Expanded(child: primary),
       ],
     );
   }

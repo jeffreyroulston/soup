@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
+import '../../form_factor.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/catalog_builder.dart';
 import '../../ui/widgets/glass_nav.dart';
 import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/page_scaffold.dart';
+import 'collection_screen_touch.dart';
 
 /// Web `pages/collection/[id].vue`: a curated pack's matched titles.
 class CollectionScreen extends StatelessWidget {
@@ -14,6 +16,7 @@ class CollectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isTouch) return TouchCollectionScreen(packId: packId);
     return CatalogBuilder<CuratedCollection?>(
       load: (c) => c.curatedCollection(packId),
       keys: [packId],

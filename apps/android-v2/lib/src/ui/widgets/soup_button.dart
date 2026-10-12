@@ -13,6 +13,7 @@ class SoupButton extends StatelessWidget {
     this.style = SoupButtonStyle.primary,
     this.icon,
     this.autofocus = false,
+    this.focusNode,
     this.height = 56,
     super.key,
   });
@@ -22,6 +23,7 @@ class SoupButton extends StatelessWidget {
   final SoupButtonStyle style;
   final Widget? icon;
   final bool autofocus;
+  final FocusNode? focusNode;
   final double height;
 
   @override
@@ -29,6 +31,7 @@ class SoupButton extends StatelessWidget {
     final primary = style == SoupButtonStyle.primary;
     return Focusable(
       autofocus: autofocus,
+      focusNode: focusNode,
       onActivate: onPressed,
       radius: SoupRadii.button,
       builder: (context, focused) => Container(

@@ -4,13 +4,17 @@ import 'app_scope.dart';
 import 'data/mock_catalog.dart';
 import 'data/playback_prefs.dart';
 import 'features/home/home_screen.dart';
+import 'form_factor.dart';
 import 'ui/theme/soup_theme.dart';
+import 'ui/touch/touch_frame.dart';
 import 'ui/widgets/design_scale.dart';
 
 /// `--dart-define=SOUP_MOCK=true`: the full UI over [MockCatalog], with no
 /// Tailscale, identity or Jellyfin server.
 class MockApp extends StatefulWidget {
-  const MockApp({super.key});
+  const MockApp({this.formFactor = FormFactor.tv, super.key});
+
+  final FormFactor formFactor;
 
   @override
   State<MockApp> createState() => _MockAppState();
@@ -32,15 +36,21 @@ class _MockAppState extends State<MockApp> {
     title: 'Soup (mock)',
     debugShowCheckedModeBanner: false,
     theme: SoupTheme.dark,
-    builder: (context, child) => DesignScale(
-      child: SoupScope(
+    builder: (context, child) {
+      final scoped = SoupScope(
         catalog: _catalog,
         prefs: _prefs,
         userLabel: 'mock@soup.dev',
         onSignOut: () async {},
         child: child!,
-      ),
-    ),
+      );
+      return FormFactorScope(
+        value: widget.formFactor,
+        child: widget.formFactor.isTouch
+            ? TouchFrame(child: scoped)
+            : DesignScale(child: scoped),
+      );
+    },
     home: const HomeScreen(),
   );
 }

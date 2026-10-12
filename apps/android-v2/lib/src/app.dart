@@ -10,7 +10,9 @@ import 'features/auth/direct_login_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/shell/authenticated_root.dart';
 import 'features/shared/status_screen.dart';
+import 'form_factor.dart';
 import 'ui/theme/soup_theme.dart';
+import 'ui/touch/touch_frame.dart';
 import 'ui/widgets/design_scale.dart';
 
 /// Auth gate shared in shape with the v1 app: loading → sign-in home →
@@ -28,6 +30,7 @@ class SoupApp extends StatefulWidget {
     this.connectionStore,
     this.authPathStore,
     this.discoveryService,
+    this.formFactor = FormFactor.tv,
     super.key,
   });
 
@@ -40,6 +43,7 @@ class SoupApp extends StatefulWidget {
   final ConnectionPreferencesStore? connectionStore;
   final AuthPathPreferencesStore? authPathStore;
   final JellyfinDiscoveryService? discoveryService;
+  final FormFactor formFactor;
 
   @override
   State<SoupApp> createState() => _SoupAppState();
@@ -81,7 +85,10 @@ class _SoupAppState extends State<SoupApp> {
       jellyfinSessionStore: widget.sessionStore,
       jellyfinApiProvider: () => _connectivity.authenticatedApi(),
       tailscaleClient: widget.tailscaleClient,
-      connectTransportGrants: flags.connectTransportGrants,
+      // A roster's Tailscale grant can't be joined without libtailscale.
+      connectTransportGrants:
+          flags.connectTransportGrants &&
+          widget.tailscaleClient is! UnavailableTailscaleClient,
     )..initialize();
     _traceStateChanges();
   }
@@ -176,7 +183,12 @@ class _SoupAppState extends State<SoupApp> {
           title: 'Soup',
           debugShowCheckedModeBanner: false,
           theme: SoupTheme.dark,
-          builder: (context, child) => DesignScale(child: child!),
+          builder: (context, child) => FormFactorScope(
+            value: widget.formFactor,
+            child: widget.formFactor.isTouch
+                ? TouchFrame(child: child!)
+                : DesignScale(child: child!),
+          ),
           home: _home(session, authenticated),
         );
       },
@@ -246,7 +258,7 @@ class _SoupAppState extends State<SoupApp> {
       return StatusScreen(
         title: 'Reconnecting to Tailscale',
         message: status.authorizationUrl != null
-            ? 'Scan to reconnect. Your Jellyfin sign-in is saved.'
+            ? '${widget.formFactor.isTouch ? 'Sign in to Tailscale' : 'Scan'} to reconnect. Your Jellyfin sign-in is saved.'
             : status.phase == TailscaleConnectionPhase.awaitingApproval
             ? 'Approve this device in Tailscale. Your Jellyfin sign-in is saved.'
             : _connectivity.connecting

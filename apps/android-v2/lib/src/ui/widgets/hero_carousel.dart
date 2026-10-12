@@ -349,20 +349,24 @@ class _Slide extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Focusable(
-                    radius: 28,
-                    onActivate: () =>
-                        scope.catalog.setFavorite(item.id, !item.isFavorite),
-                    builder: (context, focused) => _GlassPill(
-                      focused: focused,
-                      round: true,
-                      child: Icon(
-                        item.isFavorite
-                            ? Icons.check_rounded
-                            : Icons.add_rounded,
-                        size: 26,
-                      ),
-                    ),
+                  ValueListenableBuilder(
+                    valueListenable: scope.catalog.favoriteOverrides,
+                    builder: (context, _, _) {
+                      final favorite = scope.catalog.isFavorite(item);
+                      return Focusable(
+                        radius: 28,
+                        onActivate: () =>
+                            scope.catalog.setFavorite(item.id, !favorite),
+                        builder: (context, focused) => _GlassPill(
+                          focused: focused,
+                          round: true,
+                          child: Icon(
+                            favorite ? Icons.check_rounded : Icons.add_rounded,
+                            size: 26,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),

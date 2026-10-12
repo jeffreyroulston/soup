@@ -43,7 +43,7 @@ class _RecentlyAddedRowState extends State<RecentlyAddedRow> {
     final i = _index.clamp(0, widget.shelves.length - 1);
     final shelf = widget.shelves[i];
     return MediaRow(
-      key: ValueKey(shelf.libraryId),
+      railKey: ValueKey(shelf.libraryId),
       title: 'Recently Added',
       items: shelf.items,
       header: widget.shelves.length > 1

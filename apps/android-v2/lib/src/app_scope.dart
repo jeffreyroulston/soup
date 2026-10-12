@@ -17,6 +17,8 @@ class SoupScope extends InheritedWidget {
     this.api,
     this.session,
     this.userLabel = '',
+    this.soupAuth,
+    this.onSelectServer,
     super.key,
   });
 
@@ -26,6 +28,13 @@ class SoupScope extends InheritedWidget {
   final JellyfinSession? session;
   final String userLabel;
   final Future<void> Function() onSignOut;
+
+  /// Soup sign-in, for the roster and the current server; null for direct
+  /// Jellyfin sign-ins and mock mode.
+  final SoupDeviceLinkViewModel? soupAuth;
+
+  /// Switches to another roster server; returns an error message on failure.
+  final Future<String?> Function(String serverId)? onSelectServer;
 
   bool get isMock => api == null;
 
@@ -38,6 +47,8 @@ class SoupScope extends InheritedWidget {
     session: session,
     userLabel: userLabel,
     onSignOut: onSignOut,
+    soupAuth: soupAuth,
+    onSelectServer: onSelectServer,
     child: child,
   );
 

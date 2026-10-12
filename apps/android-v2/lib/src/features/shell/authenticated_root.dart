@@ -67,6 +67,20 @@ class _AuthenticatedRootState extends State<AuthenticatedRoot> {
     return _Ready(api, session, catalog);
   }
 
+  /// The app rebuilds its navigator once the new Jellyfin session is adopted,
+  /// so a successful switch reopens Home on that server.
+  Future<String?> _selectServer(String serverId) async {
+    final soup = widget.soupAuth!;
+    if (serverId == soup.selectedServer?.id) return null;
+    final error = await soup.selectServer(serverId);
+    if (error != null) return error;
+    final session = soup.jellyfinSession;
+    if (session != null) {
+      await widget.connectivity.adoptSoupJellyfinSession(session);
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _catalog?.dispose();
@@ -88,6 +102,8 @@ class _AuthenticatedRootState extends State<AuthenticatedRoot> {
             session: ready.session,
             userLabel: ready.session.userName,
             onSignOut: widget.onSignOut,
+            soupAuth: widget.soupAuth,
+            onSelectServer: widget.soupAuth == null ? null : _selectServer,
             child: const HomeScreen(),
           );
         }

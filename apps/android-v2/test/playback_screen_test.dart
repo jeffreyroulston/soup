@@ -8,10 +8,12 @@ import 'package:soup_v2/src/app_scope.dart';
 import 'package:soup_v2/src/data/mock_catalog.dart';
 import 'package:soup_v2/src/data/models.dart';
 import 'package:soup_v2/src/data/playback_prefs.dart';
+import 'package:soup_v2/src/form_factor.dart';
 import 'package:soup_v2/src/features/playback/playback_screen.dart';
 import 'package:soup_v2/src/features/playback/speed_controller.dart';
 import 'package:soup_v2/src/ui/soup_focus_policy.dart';
 import 'package:soup_v2/src/ui/theme/soup_theme.dart';
+import 'package:soup_v2/src/ui/widgets/soup_button.dart';
 
 final _session = JellyfinSession(
   serverUrl: Uri.parse('http://jellyfin/'),
@@ -52,8 +54,12 @@ Future<void> _pumpPlayer(
   int startTicks = 0,
   int? audioIndex,
   List<http.Request>? log,
+  bool touch = false,
 }) async {
-  tester.view.physicalSize = const Size(960, 540);
+  // Touch: a landscape phone (844×390 logical).
+  tester.view.physicalSize = touch
+      ? const Size(844, 390)
+      : const Size(960, 540);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final client = _client(log: log);
@@ -71,8 +77,10 @@ Future<void> _pumpPlayer(
       child: MaterialApp(
         theme: SoupTheme.dark,
         // Same D-pad traversal as the app (DesignScale installs it there).
-        builder: (context, child) =>
-            FocusTraversalGroup(policy: SoupFocusPolicy(), child: child!),
+        builder: (context, child) => FormFactorScope(
+          value: touch ? FormFactor.touch : FormFactor.tv,
+          child: FocusTraversalGroup(policy: SoupFocusPolicy(), child: child!),
+        ),
         home: Builder(
           builder: (context) => Scaffold(
             body: TextButton(
@@ -143,6 +151,8 @@ const _movie = CatalogItem(
 );
 
 void main() {
+  _touchTests();
+
   testWidgets('direct play shows the Direct pill and starts playing', (
     tester,
   ) async {
@@ -173,6 +183,24 @@ void main() {
     expect(
       factory.controllers.last.value.position,
       const Duration(seconds: 15),
+    );
+  });
+
+  testWidgets('the error overlay takes the D-pad from the player', (
+    tester,
+  ) async {
+    final factory = FakeFactory(failures: 2);
+    await _pumpPlayer(tester, factory: factory, item: _movie);
+    expect(find.byKey(const ValueKey('playback-error')), findsOneWidget);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Try again');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus?.debugLabel, isNot('Try again'));
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<SoupButton>()
+          ?.label,
+      'Back',
     );
   });
 
@@ -429,6 +457,81 @@ void main() {
     expect(factory.controllers.single.uri.toString(), mockSampleUrl);
     await _openSettings(tester);
     expect(find.text('Direct'), findsOneWidget);
+  });
+}
+
+void _touchTests() {
+  testWidgets('touch: settings opens one sheet with Audio, Speed, Quality', (
+    tester,
+  ) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, touch: true);
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('fill-button')), findsOneWidget);
+    expect(find.text('1×'), findsNothing); // no speed in the chrome
+
+    await tester.tap(find.byKey(const ValueKey('settings-button')));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('panel-Settings')), findsOneWidget);
+    expect(find.text('AUDIO'), findsOneWidget);
+    expect(find.text('SUBTITLES'), findsOneWidget);
+    expect(find.byKey(const ValueKey('settings-tab-Quality')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('settings-tab-Speed')));
+    await tester.pump();
+    await tester.tap(find.text('1.5×'));
+    await tester.pump();
+    expect(factory.controllers.single.speed, 1.5);
+
+    await tester.tap(find.byKey(const ValueKey('settings-tab-Quality')));
+    await tester.pump();
+    expect(find.text('Auto'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await _back(tester);
+    expect(find.byKey(const ValueKey('panel-Settings')), findsNothing);
+    expect(find.byType(PlaybackScreen), findsOneWidget);
+  });
+
+  testWidgets('touch: lock hides the controls until unlocked', (tester) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, touch: true);
+    await tester.tap(find.byKey(const ValueKey('lock-button')));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_chromeOpacity(tester), 0);
+    expect(find.byKey(const ValueKey('unlock-button')), findsOneWidget);
+
+    // Back is swallowed while locked.
+    await _back(tester);
+    expect(find.byType(PlaybackScreen), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('unlock-button')));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_chromeOpacity(tester), 1);
+    expect(find.byKey(const ValueKey('unlock-button')), findsNothing);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('touch: taps after a double-tap keep stacking the seek', (
+    tester,
+  ) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, touch: true);
+    final start = factory.controllers.single.value.position;
+    const at = Offset(760, 200); // right half, clear of the chrome
+    await tester.tapAt(at);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(at);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('+10 s'), findsOneWidget);
+    await tester.tapAt(at);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('+20 s'), findsOneWidget);
+    expect(
+      factory.controllers.single.value.position,
+      start + const Duration(seconds: 20),
+    );
+    await tester.pump(const Duration(seconds: 5));
   });
 }
 

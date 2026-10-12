@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
+import '../../form_factor.dart';
 import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/catalog_builder.dart';
@@ -14,6 +15,7 @@ import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/soup_text_field.dart';
+import 'search_screen_touch.dart';
 
 enum _Scope { all, movies, shows, people }
 
@@ -75,6 +77,12 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isTouch) {
+      return TouchSearchScreen(
+        initialQuery: widget.initialQuery,
+        initialPerson: widget.initialPerson,
+      );
+    }
     return PageScaffold(
       section: NavSection.search,
       slivers: [

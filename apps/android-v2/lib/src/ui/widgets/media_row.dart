@@ -19,6 +19,7 @@ class MediaRow extends StatelessWidget {
     this.cardBuilder,
     this.slideWidth,
     this.autofocusFirst = false,
+    this.railKey,
     super.key,
   });
 
@@ -32,6 +33,10 @@ class MediaRow extends StatelessWidget {
   cardBuilder;
   final double? slideWidth;
   final bool autofocusFirst;
+
+  /// Keys only the card rail, so swapping its items (e.g. a [header] tab)
+  /// resets the scroll without rebuilding the header and losing its focus.
+  final Key? railKey;
 
   double get _width => slideWidth ?? (shape == CardShape.poster ? 200 : 400);
 
@@ -82,6 +87,7 @@ class MediaRow extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         SingleChildScrollView(
+          key: railKey,
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
           padding: const EdgeInsets.symmetric(

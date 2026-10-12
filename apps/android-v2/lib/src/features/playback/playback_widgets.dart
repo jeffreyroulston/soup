@@ -112,6 +112,9 @@ class MethodPill extends StatelessWidget {
 }
 
 /// 8px (10 focused) seek bar: played layer, chapter ticks, Left/Right seek.
+///
+/// With [onScrub] it is also draggable: [onScrub] reports the position under
+/// the finger while dragging (or on a tap) and [onScrubEnd] fires on release.
 class SeekBar extends StatelessWidget {
   const SeekBar({
     required this.position,
@@ -119,6 +122,8 @@ class SeekBar extends StatelessWidget {
     required this.chapterFractions,
     required this.onSeekBy,
     this.focusNode,
+    this.onScrub,
+    this.onScrubEnd,
     super.key,
   });
 
@@ -127,6 +132,11 @@ class SeekBar extends StatelessWidget {
   final List<double> chapterFractions;
   final void Function(Duration delta) onSeekBy;
   final FocusNode? focusNode;
+  final ValueChanged<Duration>? onScrub;
+  final VoidCallback? onScrubEnd;
+
+  Duration _at(double dx, double width) =>
+      width <= 0 ? Duration.zero : duration * (dx / width).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
@@ -152,55 +162,72 @@ class SeekBar extends StatelessWidget {
       },
       child: Builder(
         builder: (context) {
-          final focused = Focus.of(context).hasFocus;
+          final draggable = onScrub != null;
+          final focused = Focus.of(context).hasFocus || draggable;
           final height = focused ? 10.0 : 8.0;
           return SizedBox(
             key: const ValueKey('playback-seekbar'),
-            height: 24,
+            height: draggable ? 36 : 24,
             child: LayoutBuilder(
-              builder: (context, c) => Stack(
-                alignment: Alignment.centerLeft,
-                children: [
-                  Container(
-                    height: height,
-                    decoration: BoxDecoration(
-                      color: const Color(0x33FFFFFF),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  Container(
-                    height: height,
-                    width: c.maxWidth * fraction,
-                    decoration: BoxDecoration(
-                      color: SoupColors.ink,
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  for (final f in chapterFractions)
-                    Positioned(
-                      left: c.maxWidth * f - 1,
-                      child: Container(
-                        width: 2,
-                        height: height,
-                        color: const Color(0x99000000),
+              builder: (context, c) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: draggable
+                    ? (d) => onScrub!(_at(d.localPosition.dx, c.maxWidth))
+                    : null,
+                onTapUp: draggable ? (_) => onScrubEnd?.call() : null,
+                onHorizontalDragStart: draggable
+                    ? (d) => onScrub!(_at(d.localPosition.dx, c.maxWidth))
+                    : null,
+                onHorizontalDragUpdate: draggable
+                    ? (d) => onScrub!(_at(d.localPosition.dx, c.maxWidth))
+                    : null,
+                onHorizontalDragEnd: draggable
+                    ? (_) => onScrubEnd?.call()
+                    : null,
+                child: Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [
+                    Container(
+                      height: height,
+                      decoration: BoxDecoration(
+                        color: const Color(0x33FFFFFF),
+                        borderRadius: BorderRadius.circular(5),
                       ),
                     ),
-                  if (focused)
-                    Positioned(
-                      left: (c.maxWidth * fraction - 8).clamp(
-                        0.0,
-                        c.maxWidth - 16,
+                    Container(
+                      height: height,
+                      width: c.maxWidth * fraction,
+                      decoration: BoxDecoration(
+                        color: SoupColors.ink,
+                        borderRadius: BorderRadius.circular(5),
                       ),
-                      child: Container(
-                        width: 16,
-                        height: 16,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: SoupColors.ink,
+                    ),
+                    for (final f in chapterFractions)
+                      Positioned(
+                        left: c.maxWidth * f - 1,
+                        child: Container(
+                          width: 2,
+                          height: height,
+                          color: const Color(0x99000000),
                         ),
                       ),
-                    ),
-                ],
+                    if (focused)
+                      Positioned(
+                        left: (c.maxWidth * fraction - 8).clamp(
+                          0.0,
+                          c.maxWidth - 16,
+                        ),
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: SoupColors.ink,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           );
@@ -339,7 +366,7 @@ class _CardButton extends StatelessWidget {
   );
 }
 
-class PlaybackError extends StatelessWidget {
+class PlaybackError extends StatefulWidget {
   const PlaybackError({
     required this.error,
     required this.onRetry,
@@ -349,6 +376,29 @@ class PlaybackError extends StatelessWidget {
   final String error;
   final VoidCallback onRetry;
   final VoidCallback onClose;
+
+  @override
+  State<PlaybackError> createState() => _PlaybackErrorState();
+}
+
+class _PlaybackErrorState extends State<PlaybackError> {
+  final _retryFocus = FocusNode(debugLabel: 'Try again');
+
+  @override
+  void initState() {
+    super.initState();
+    // The player's root node already holds focus, so autofocus wouldn't
+    // move it; take it explicitly or the D-pad has nothing to drive.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _retryFocus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _retryFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -365,7 +415,7 @@ class PlaybackError extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              error,
+              widget.error,
               key: const ValueKey('playback-error'),
               textAlign: TextAlign.center,
               style: SoupType.style(size: 16, color: SoupColors.muted),
@@ -376,13 +426,13 @@ class PlaybackError extends StatelessWidget {
               children: [
                 SoupButton(
                   label: 'Try again',
-                  onPressed: onRetry,
-                  autofocus: true,
+                  onPressed: widget.onRetry,
+                  focusNode: _retryFocus,
                 ),
                 const SizedBox(width: 12),
                 SoupButton(
                   label: 'Back',
-                  onPressed: onClose,
+                  onPressed: widget.onClose,
                   style: SoupButtonStyle.glass,
                 ),
               ],

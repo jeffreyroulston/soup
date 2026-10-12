@@ -8,7 +8,8 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/soup_launcher"
-        android:roundIcon="@mipmap/soup_launcher">
+        android:roundIcon="@mipmap/soup_launcher"
+        android:banner="@drawable/soup_banner">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -47,6 +48,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Phones open sign-in links (Soup, Tailscale) in the browser. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

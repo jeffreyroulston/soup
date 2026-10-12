@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../form_factor.dart';
 import '../soup_focus_policy.dart';
 import '../theme/soup_tokens.dart';
 import 'focusable.dart';
@@ -81,6 +82,7 @@ class SelectMenu<T> extends StatelessWidget {
   }
 
   Future<void> _open(BuildContext context) async {
+    if (context.isTouch) return _openSheet(context);
     final picked = await showDialog<_Picked<T>>(
       context: context,
       barrierColor: const Color(0x99000000),
@@ -154,6 +156,69 @@ class SelectMenu<T> extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+    if (picked != null) onChanged(picked.value);
+  }
+}
+
+extension<T> on SelectMenu<T> {
+  /// Touch: a bottom sheet of options instead of the centred TV dialog.
+  Future<void> _openSheet(BuildContext context) async {
+    final picked = await showModalBottomSheet<_Picked<T>>(
+      context: context,
+      backgroundColor: const Color(0xF21E1E20),
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+      ),
+      builder: (sheet) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          children: [
+            if (prefix != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  prefix!.toUpperCase(),
+                  style: SoupType.style(
+                    size: 12,
+                    weight: 800,
+                    color: SoupColors.muted,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            for (final o in options)
+              ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                leading: SizedBox(
+                  width: 24,
+                  child: o.value == value
+                      ? const Icon(Icons.check_rounded, color: SoupColors.ink)
+                      : null,
+                ),
+                title: Text(
+                  o.label,
+                  style: SoupType.style(size: 16, weight: 600),
+                ),
+                trailing: o.detail == null
+                    ? null
+                    : Text(
+                        o.detail!,
+                        style: SoupType.style(
+                          size: 14,
+                          color: SoupColors.muted,
+                        ),
+                      ),
+                onTap: () => Navigator.of(sheet).pop(_Picked(o.value)),
+              ),
+          ],
         ),
       ),
     );

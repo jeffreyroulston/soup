@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../platform.dart';
 import '../soup_focus_policy.dart';
 
 /// Lays the app out on a fixed 1440×810 logical canvas and scales it to the
@@ -17,7 +18,7 @@ class DesignScale extends StatelessWidget {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     return ColoredBox(
-      color: Colors.black,
+      color: videoBackdrop,
       child: FittedBox(
         fit: BoxFit.contain,
         child: SizedBox(

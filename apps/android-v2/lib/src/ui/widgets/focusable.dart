@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../form_factor.dart';
 import '../theme/soup_tokens.dart';
 
 /// Shared D-pad affordance: scale up and draw the web's focus ring
 /// (3px ink outline, 3px offset) when focused; select/enter activates.
+///
+/// On touch devices the ring and scale only show while a keyboard is driving
+/// focus; taps get a press-down shrink instead.
 class Focusable extends StatefulWidget {
   const Focusable({
     required this.builder,
@@ -31,6 +35,18 @@ class Focusable extends StatefulWidget {
 
 class _FocusableState extends State<Focusable> {
   bool _focused = false;
+  bool _pressed = false;
+
+  /// Touch UI with no keyboard in use: focus is invisible.
+  bool get _touchOnly =>
+      context.isTouch &&
+      FocusManager.instance.highlightMode == FocusHighlightMode.touch;
+
+  void _press(bool value) {
+    if (_pressed != value && widget.onActivate != null) {
+      setState(() => _pressed = value);
+    }
+  }
 
   /// Scroll just enough to show the focused item with TV-friendly margins
   /// (clear of the top nav), instead of re-centring on every move.
@@ -79,13 +95,14 @@ class _FocusableState extends State<Focusable> {
 
   @override
   Widget build(BuildContext context) {
+    final showFocus = _focused && !_touchOnly;
     return Focus(
       focusNode: widget.focusNode,
       autofocus: widget.autofocus,
       onFocusChange: (value) {
         setState(() => _focused = value);
         widget.onFocusChange?.call(value);
-        if (value) _reveal();
+        if (value && !_touchOnly) _reveal();
       },
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent &&
@@ -100,16 +117,19 @@ class _FocusableState extends State<Focusable> {
       },
       child: GestureDetector(
         onTap: widget.onActivate,
+        onTapDown: (_) => _press(true),
+        onTapUp: (_) => _press(false),
+        onTapCancel: () => _press(false),
         child: AnimatedScale(
-          scale: _focused ? widget.scale : 1,
+          scale: _pressed ? 0.97 : (showFocus ? widget.scale : 1),
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOut,
           child: Stack(
             fit: StackFit.passthrough,
             clipBehavior: Clip.none,
             children: [
-              widget.builder(context, _focused),
-              if (_focused) _ring(),
+              widget.builder(context, showFocus),
+              if (showFocus) _ring(),
             ],
           ),
         ),

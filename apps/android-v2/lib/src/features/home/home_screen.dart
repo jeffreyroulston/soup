@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
+import '../../form_factor.dart';
 import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/catalog_builder.dart';
@@ -13,6 +14,7 @@ import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/rank_list.dart';
 import '../../ui/widgets/shelf_rows.dart';
 import '../../utils/media.dart';
+import 'home_screen_touch.dart';
 
 /// Web `pages/index.vue`: hero, Keep Watching, Recently Added, Top Rated,
 /// because-you-watched, spotlight, genres, highly rated.
@@ -41,6 +43,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isTouch) return const TouchHomeScreen();
     return CatalogBuilder<HomeData>(
       load: (c) => c.home(),
       builder: (context, home, error) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
+import '../../form_factor.dart';
 import '../../ui/soup_focus_policy.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/catalog_builder.dart';
@@ -11,15 +12,8 @@ import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/select_menu.dart';
 import '../../utils/media.dart';
-
-enum _Filter { all, unwatched, inProgress, favourites }
-
-const _filterLabels = {
-  _Filter.all: 'All',
-  _Filter.unwatched: 'Unwatched',
-  _Filter.inProgress: 'In Progress',
-  _Filter.favourites: 'Favourites',
-};
+import 'library_filter.dart';
+import 'library_screen_touch.dart';
 
 const _tints = [
   Color(0xFF2541C8),
@@ -50,7 +44,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   final _scroll = ScrollController();
   final _headerKey = GlobalKey();
-  _Filter _filter = _Filter.all;
+  LibraryFilter _filter = LibraryFilter.all;
   LibrarySort _sort = LibrarySort.title;
   String? _genre;
 
@@ -60,17 +54,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.dispose();
   }
 
-  List<CatalogItem> _apply(List<CatalogItem> items) => [
-    for (final i in items)
-      if ((_genre == null || i.genres.contains(_genre)) &&
-          switch (_filter) {
-            _Filter.all => true,
-            _Filter.unwatched => !i.played,
-            _Filter.inProgress => isInProgress(i),
-            _Filter.favourites => i.isFavorite,
-          })
-        i,
-  ];
+  List<CatalogItem> _apply(List<CatalogItem> items) =>
+      applyLibraryFilter(items, _filter, _genre);
 
   int _columns(double width) {
     final avail = width - SoupSpacing.gutter * 2 - 70; // A–Z strip
@@ -93,6 +78,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isTouch) return TouchLibraryScreen(library: widget.library);
     final lib = widget.library;
     final width = MediaQuery.sizeOf(context).width;
     final columns = _columns(width);
@@ -211,10 +197,10 @@ class _Header extends StatelessWidget {
   });
 
   final CatalogItem library;
-  final _Filter filter;
+  final LibraryFilter filter;
   final LibrarySort sort;
   final String? genre;
-  final ValueChanged<_Filter> onFilter;
+  final ValueChanged<LibraryFilter> onFilter;
   final ValueChanged<LibrarySort> onSort;
   final ValueChanged<String> onGenre;
 
@@ -264,10 +250,10 @@ class _Header extends StatelessWidget {
                   ],
                 ),
               ),
-              PillTabs<_Filter>(
-                options: _Filter.values,
+              PillTabs<LibraryFilter>(
+                options: LibraryFilter.values,
                 value: filter,
-                labelOf: (f) => _filterLabels[f]!,
+                labelOf: (f) => libraryFilterLabels[f]!,
                 onChanged: onFilter,
               ),
               const SizedBox(width: 14),

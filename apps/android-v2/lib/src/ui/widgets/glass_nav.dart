@@ -9,6 +9,7 @@ import '../theme/soup_tokens.dart';
 import 'catalog_builder.dart';
 import 'focusable.dart';
 import 'glass.dart';
+import 'soup_wordmark.dart';
 
 enum NavSection { home, library, search, settings, none }
 
@@ -41,10 +42,7 @@ class GlassNav extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            'soup',
-            style: SoupType.style(size: 30, weight: 800, letterSpacing: -1),
-          ),
+          const SoupWordmark(size: 30),
           Expanded(
             child: Center(
               child: CatalogBuilder<List<CatalogItem>>(
@@ -244,35 +242,20 @@ class _Avatar extends StatelessWidget {
               strong: true,
               radius: SoupRadii.menu,
               padding: const EdgeInsets.all(8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                    child: Text(
-                      label.isEmpty ? initials('Soup') : label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: SoupType.style(size: 14, color: SoupColors.muted),
-                    ),
-                  ),
-                  _MenuItem(
-                    'Settings',
-                    autofocus: true,
-                    onTap: () {
-                      Navigator.of(dialog).pop();
-                      openSettings(context);
-                    },
-                  ),
-                  _MenuItem(
-                    'Sign out',
-                    onTap: () {
-                      Navigator.of(dialog).pop();
-                      scope.onSignOut();
-                    },
-                  ),
-                ],
+              child: _AccountMenu(
+                label: label,
+                scope: scope,
+                onSettings: () {
+                  Navigator.of(dialog).pop();
+                  openSettings(context);
+                },
+                onSignOut: () {
+                  Navigator.of(dialog).pop();
+                  scope.onSignOut();
+                },
+                onSwitched: () {
+                  if (dialog.mounted) Navigator.of(dialog).pop();
+                },
               ),
             ),
           ),
@@ -282,11 +265,189 @@ class _Avatar extends StatelessWidget {
   }
 }
 
+/// Account label, Soup servers (a picker when there's more than one), then
+/// Settings and Sign out, like the web account menu.
+class _AccountMenu extends StatefulWidget {
+  const _AccountMenu({
+    required this.label,
+    required this.scope,
+    required this.onSettings,
+    required this.onSignOut,
+    required this.onSwitched,
+  });
+  final String label;
+  final SoupScope scope;
+  final VoidCallback onSettings;
+  final VoidCallback onSignOut;
+  final VoidCallback onSwitched;
+
+  @override
+  State<_AccountMenu> createState() => _AccountMenuState();
+}
+
+class _AccountMenuState extends State<_AccountMenu> {
+  String? _error;
+
+  Future<void> _select(String serverId) async {
+    final select = widget.scope.onSelectServer;
+    if (select == null) return;
+    setState(() => _error = null);
+    final error = await select(serverId);
+    if (!mounted) return;
+    if (error == null) {
+      widget.onSwitched();
+    } else {
+      setState(() => _error = error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final soup = widget.scope.soupAuth;
+    return ListenableBuilder(
+      listenable: soup ?? const _NoChanges(),
+      builder: (context, _) {
+        final servers = soup?.roster?.servers ?? const [];
+        final current = soup?.selectedServer;
+        final switching = soup?.switchingServerId;
+        final currentName =
+            current?.name ?? widget.scope.session?.serverUrl.host ?? '';
+        final picker =
+            servers.length > 1 && widget.scope.onSelectServer != null;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+              child: Text(
+                widget.label.isEmpty ? initials('Soup') : widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: SoupType.style(size: 14, color: SoupColors.muted),
+              ),
+            ),
+            if (picker) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+                child: Text(
+                  'SERVER',
+                  style: SoupType.style(
+                    size: 12,
+                    weight: 800,
+                    color: SoupColors.muted,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+              for (final server in servers)
+                _MenuItem(
+                  server.name,
+                  autofocus: server.id == current?.id,
+                  leading: switching == server.id
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: SoupColors.ink,
+                          ),
+                        )
+                      : _Dot(active: server.id == current?.id),
+                  onTap: switching == null ? () => _select(server.id) : () {},
+                ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+                  child: Text(
+                    _error!,
+                    style: SoupType.style(
+                      size: 13,
+                      weight: 600,
+                      color: SoupColors.accent,
+                    ),
+                  ),
+                ),
+              const _Divider(),
+            ] else if (currentName.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                child: Row(
+                  children: [
+                    const _Dot(active: true),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        currentName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: SoupType.style(
+                          size: 17,
+                          weight: 600,
+                          color: SoupColors.ink2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const _Divider(),
+            ],
+            _MenuItem('Settings', autofocus: !picker, onTap: widget.onSettings),
+            _MenuItem('Sign out', onTap: widget.onSignOut),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Stand-in listenable when there's no Soup sign-in to watch.
+class _NoChanges implements Listenable {
+  const _NoChanges();
+  @override
+  void addListener(VoidCallback listener) {}
+  @override
+  void removeListener(VoidCallback listener) {}
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot({required this.active});
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 10,
+    height: 10,
+    decoration: BoxDecoration(
+      color: active ? SoupColors.ok : const Color(0x26FFFFFF),
+      shape: BoxShape.circle,
+    ),
+  );
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 1,
+    margin: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+    color: const Color(0x1AFFFFFF),
+  );
+}
+
 class _MenuItem extends StatelessWidget {
-  const _MenuItem(this.label, {required this.onTap, this.autofocus = false});
+  const _MenuItem(
+    this.label, {
+    required this.onTap,
+    this.autofocus = false,
+    this.leading,
+  });
   final String label;
   final VoidCallback onTap;
   final bool autofocus;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) => Focusable(
@@ -303,7 +464,22 @@ class _MenuItem extends StatelessWidget {
         color: focused ? const Color(0x26FFFFFF) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(label, style: SoupType.style(size: 17, weight: 600)),
+      child: Row(
+        children: [
+          if (leading != null) ...[
+            SizedBox(width: 14, child: Center(child: leading)),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: SoupType.style(size: 17, weight: 600),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }

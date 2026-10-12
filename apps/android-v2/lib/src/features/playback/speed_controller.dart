@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:soup_core/soup_core.dart';
 import 'package:video_player/video_player.dart';
+
+import '../../platform.dart';
 
 /// A [SoupVideoController] that can also change playback speed. soup_core's
 /// interface has no speed API, so the v2 player carries its own.
@@ -22,10 +25,14 @@ class SpeedVideoController extends ChangeNotifier
     : _controller = VideoPlayerController.networkUrl(
         uri,
         closedCaptionFile: subtitleVtt?.then(WebVTTCaptionFile.new),
-        videoPlayerOptions: VideoPlayerOptions(
-          allowBackgroundPlayback: false,
-          mixWithOthers: false,
-        ),
+        // webOS's player rejects any VideoPlayerOptions (mixWithOthers is
+        // unsupported), and has no background playback to opt out of.
+        videoPlayerOptions: isWebos
+            ? null
+            : VideoPlayerOptions(
+                allowBackgroundPlayback: false,
+                mixWithOthers: false,
+              ),
       ) {
     _controller.addListener(_sync);
   }
@@ -52,22 +59,38 @@ class SpeedVideoController extends ChangeNotifier
   }
 
   @override
-  Future<void> initialize() => _controller.initialize();
+  Future<void> initialize() => _guard(_controller.initialize);
 
   @override
-  Future<void> play() => _controller.play();
+  Future<void> play() => _guard(_controller.play);
 
   @override
-  Future<void> pause() => _controller.pause();
+  Future<void> pause() => _guard(_controller.pause);
 
   @override
-  Future<void> seekTo(Duration position) => _controller.seekTo(position);
+  Future<void> seekTo(Duration position) =>
+      _guard(() => _controller.seekTo(position));
 
   @override
-  Future<void> setSpeed(double speed) => _controller.setPlaybackSpeed(speed);
+  Future<void> setSpeed(double speed) =>
+      _guard(() => _controller.setPlaybackSpeed(speed));
+
+  /// webOS destroys its player on a media error, so every later call fails
+  /// with "Player not found". Report the media error that caused it instead.
+  Future<void> _guard(Future<void> Function() call) async {
+    try {
+      await call();
+    } on PlatformException {
+      final media = _controller.value.errorDescription;
+      if (media != null) throw VideoMediaException(media);
+      rethrow;
+    }
+  }
 
   @override
-  Widget buildView() => VideoPlayer(_controller);
+  Widget buildView() => isWebos
+      ? ScreenSpace(child: VideoPlayer(_controller))
+      : VideoPlayer(_controller);
 
   @override
   Future<void> close() async {
@@ -75,4 +98,14 @@ class SpeedVideoController extends ChangeNotifier
     await _controller.dispose();
     dispose();
   }
+}
+
+/// The platform player failed on the media itself (unreachable URL,
+/// unsupported codec, …).
+class VideoMediaException implements Exception {
+  const VideoMediaException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
 }

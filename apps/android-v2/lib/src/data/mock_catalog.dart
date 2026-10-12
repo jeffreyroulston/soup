@@ -545,7 +545,7 @@ class MockCatalog extends Catalog {
   ];
 
   @override
-  Future<void> setFavorite(String itemId, bool value) async {
+  Future<void> writeFavorite(String itemId, bool value) async {
     _items[itemId] = _items[itemId]!.copyWith(isFavorite: value);
     _revision++;
     notifyListeners();

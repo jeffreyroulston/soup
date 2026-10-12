@@ -2,21 +2,33 @@ import 'package:flutter/material.dart';
 
 import '../../app_scope.dart';
 import '../../data/playback_prefs.dart';
+import '../../form_factor.dart';
 import '../../ui/theme/soup_tokens.dart';
+import '../../ui/touch/touch_scaffold.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/glass_nav.dart';
 import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/select_menu.dart';
 import '../../ui/widgets/soup_button.dart';
 
-/// Web `pages/settings.vue`: account, server, playback preferences, sign out.
+/// Web `pages/settings.vue`: account, playback preferences, sign out.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final scope = SoupScope.of(context);
-    final prefs = scope.prefs;
+    if (context.isTouch) {
+      return TouchScaffold(
+        section: NavSection.settings,
+        title: 'Settings',
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(child: _body(context, touch: true)),
+          ),
+        ],
+      );
+    }
     return PageScaffold(
       section: NavSection.settings,
       slivers: [
@@ -31,137 +43,190 @@ class SettingsScreen extends StatelessWidget {
                   SoupSpacing.gutter,
                   0,
                 ),
-                child: ListenableBuilder(
-                  listenable: prefs,
-                  builder: (context, _) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Settings',
-                        style: SoupType.style(
-                          size: 52,
-                          weight: 800,
-                          letterSpacing: -2,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      _Section(
-                        title: 'Account',
-                        children: [
-                          Text(
-                            scope.userLabel.isEmpty
-                                ? 'Signed in'
-                                : scope.userLabel,
-                            style: SoupType.style(
-                              size: 17,
-                              color: SoupColors.ink2,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (scope.session != null) ...[
-                        const SizedBox(height: 20),
-                        _Section(
-                          title: 'Server',
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: const BoxDecoration(
-                                    color: SoupColors.ok,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Flexible(
-                                  child: Text(
-                                    scope.session!.serverUrl.toString(),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: SoupType.style(
-                                      size: 17,
-                                      color: SoupColors.ink2,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      _Section(
-                        title: 'Playback',
-                        children: [
-                          _Toggle(
-                            label: 'Autoplay next episode',
-                            detail:
-                                'Count down and start the next episode when the credits begin.',
-                            value: prefs.autoplayNext,
-                            onChanged: (v) => prefs.update(autoplayNext: v),
-                            autofocus: true,
-                          ),
-                          const SizedBox(height: 18),
-                          _Toggle(
-                            label: 'Skip intros and recaps',
-                            detail:
-                                'Jump past them automatically instead of showing a Skip button.',
-                            value: prefs.autoSkipIntros,
-                            onChanged: (v) => prefs.update(autoSkipIntros: v),
-                          ),
-                          const SizedBox(height: 24),
-                          _Picker<int?>(
-                            label: 'Default quality',
-                            value: prefs.maxBitrate,
-                            options: [
-                              const SelectOption(
-                                null,
-                                'Auto',
-                                detail: 'Best available',
-                              ),
-                              for (final q in PlaybackPrefs.qualityCaps)
-                                SelectOption(q.$1, q.$2, detail: q.$3),
-                            ],
-                            onChanged: (v) => prefs.update(maxBitrate: v),
-                          ),
-                          const SizedBox(height: 14),
-                          _Picker<String?>(
-                            label: 'Audio language',
-                            value: prefs.audioLanguage,
-                            options: [
-                              const SelectOption(null, 'File default'),
-                              for (final l in PlaybackPrefs.languages)
-                                SelectOption(l.$1, l.$2),
-                            ],
-                            onChanged: (v) => prefs.update(audioLanguage: v),
-                          ),
-                          const SizedBox(height: 14),
-                          _Picker<String?>(
-                            label: 'Subtitle language',
-                            value: prefs.subtitleLanguage,
-                            options: [
-                              const SelectOption(null, 'Off'),
-                              for (final l in PlaybackPrefs.languages)
-                                SelectOption(l.$1, l.$2),
-                            ],
-                            onChanged: (v) => prefs.update(subtitleLanguage: v),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 28),
-                      SoupButton(label: 'Sign out', onPressed: scope.onSignOut),
-                      const SizedBox(height: 40),
-                    ],
-                  ),
-                ),
+                child: _body(context),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _body(BuildContext context, {bool touch = false}) {
+    final scope = SoupScope.of(context);
+    final prefs = scope.prefs;
+    return ListenableBuilder(
+      listenable: prefs,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Touch shows the title in its top bar.
+          if (!touch) ...[
+            Text(
+              'Settings',
+              style: SoupType.style(
+                size: 52,
+                weight: 800,
+                letterSpacing: -2,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+          _Section(
+            title: 'Account',
+            children: [
+              Text(
+                scope.userLabel.isEmpty ? 'Signed in' : scope.userLabel,
+                style: SoupType.style(size: 17, color: SoupColors.ink2),
+              ),
+              // TV picks servers from the nav's account menu.
+              if (touch) _Servers(scope: scope),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _Section(
+            title: 'Playback',
+            children: [
+              _Toggle(
+                label: 'Autoplay next episode',
+                detail:
+                    'Count down and start the next episode when the credits begin.',
+                value: prefs.autoplayNext,
+                onChanged: (v) => prefs.update(autoplayNext: v),
+                autofocus: !touch,
+              ),
+              const SizedBox(height: 18),
+              _Toggle(
+                label: 'Skip intros and recaps',
+                detail:
+                    'Jump past them automatically instead of showing a Skip button.',
+                value: prefs.autoSkipIntros,
+                onChanged: (v) => prefs.update(autoSkipIntros: v),
+              ),
+              const SizedBox(height: 24),
+              _Picker<int?>(
+                label: 'Default quality',
+                value: prefs.maxBitrate,
+                options: [
+                  const SelectOption(null, 'Auto', detail: 'Best available'),
+                  for (final q in PlaybackPrefs.qualityCaps)
+                    SelectOption(q.$1, q.$2, detail: q.$3),
+                ],
+                onChanged: (v) => prefs.update(maxBitrate: v),
+              ),
+              const SizedBox(height: 14),
+              _Picker<String?>(
+                label: 'Audio language',
+                value: prefs.audioLanguage,
+                options: [
+                  const SelectOption(null, 'File default'),
+                  for (final l in PlaybackPrefs.languages)
+                    SelectOption(l.$1, l.$2),
+                ],
+                onChanged: (v) => prefs.update(audioLanguage: v),
+              ),
+              const SizedBox(height: 14),
+              _Picker<String?>(
+                label: 'Subtitle language',
+                value: prefs.subtitleLanguage,
+                options: [
+                  const SelectOption(null, 'Off'),
+                  for (final l in PlaybackPrefs.languages)
+                    SelectOption(l.$1, l.$2),
+                ],
+                onChanged: (v) => prefs.update(subtitleLanguage: v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          SoupButton(label: 'Sign out', onPressed: scope.onSignOut),
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+}
+
+/// Soup roster servers with the current one checked; tap to switch.
+class _Servers extends StatefulWidget {
+  const _Servers({required this.scope});
+  final SoupScope scope;
+
+  @override
+  State<_Servers> createState() => _ServersState();
+}
+
+class _ServersState extends State<_Servers> {
+  String? _error;
+
+  Future<void> _select(String id) async {
+    final select = widget.scope.onSelectServer;
+    if (select == null) return;
+    setState(() => _error = null);
+    final error = await select(id);
+    if (mounted && error != null) setState(() => _error = error);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final soup = widget.scope.soupAuth;
+    if (soup == null || widget.scope.onSelectServer == null) {
+      return const SizedBox.shrink();
+    }
+    return ListenableBuilder(
+      listenable: soup,
+      builder: (context, _) {
+        final servers = soup.roster?.servers ?? const [];
+        if (servers.length < 2) return const SizedBox.shrink();
+        final current = soup.selectedServer?.id;
+        final switching = soup.switchingServerId;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+            Text(
+              'SERVER',
+              style: SoupType.style(
+                size: 12,
+                weight: 800,
+                color: SoupColors.muted,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final server in servers)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  server.name,
+                  style: SoupType.style(size: 16, weight: 600),
+                ),
+                trailing: switching == server.id
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: SoupColors.ink,
+                        ),
+                      )
+                    : server.id == current
+                    ? const Icon(Icons.check_rounded, color: SoupColors.ok)
+                    : null,
+                onTap: switching == null ? () => _select(server.id) : null,
+              ),
+            if (_error != null)
+              Text(
+                _error!,
+                style: SoupType.style(
+                  size: 13,
+                  weight: 600,
+                  color: SoupColors.accent,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

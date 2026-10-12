@@ -654,7 +654,7 @@ class JellyfinCatalog extends Catalog {
   }
 
   @override
-  Future<void> setFavorite(String itemId, bool value) async {
+  Future<void> writeFavorite(String itemId, bool value) async {
     await _sendWithFallback(
       value ? 'POST' : 'DELETE',
       'UserFavoriteItems/$itemId',

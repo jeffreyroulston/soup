@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:soup_core/soup_core.dart';
+import 'package:soup_identity/soup_identity.dart' show DeviceLinkStart;
 import 'package:soup_tailscale/soup_tailscale.dart';
 
+import '../../form_factor.dart';
 import '../../ui/theme/soup_tokens.dart';
+import '../../ui/touch/sign_in_link.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/soup_button.dart' show SoupButtonStyle;
+import '../../ui/widgets/soup_wordmark.dart';
 import 'auth_button.dart';
 import 'poster_wall.dart';
 
@@ -51,6 +56,9 @@ class _LoginScreenState extends State<LoginScreen> {
   late int _serverCount;
 
   ConnectivityViewModel get _conn => widget.connectivity;
+
+  /// Phones open sign-in links instead of showing QR codes to scan.
+  bool get _touch => context.isTouch;
 
   @override
   void initState() {
@@ -205,7 +213,9 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         _Card(
           width: 615,
-          padding: const EdgeInsets.fromLTRB(48, 39, 48, 42),
+          padding: _touch
+              ? const EdgeInsets.fromLTRB(20, 24, 20, 24)
+              : const EdgeInsets.fromLTRB(48, 39, 48, 42),
           child: busy != null
               ? _busy(busy)
               : Column(
@@ -239,7 +249,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
         ),
-        if (busy == null) ...[const SizedBox(height: 21), _hint()],
+        if (busy == null && !_touch) ...[const SizedBox(height: 21), _hint()],
       ],
     );
   }
@@ -254,10 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _ => null,
   };
 
-  Widget _wordmark() => Text(
-    'soup',
-    style: SoupType.style(size: 66, weight: 800, letterSpacing: -2.6),
-  );
+  Widget _wordmark() => SoupWordmark(size: _touch ? 48 : 66);
 
   Widget _soupBlock() {
     final model = widget.viewModel;
@@ -265,7 +272,9 @@ class _LoginScreenState extends State<LoginScreen> {
       case SoupDeviceLinkPhase.expired:
         return _soupMessage(
           'Code expired',
-          'Get a new code to sign in with your phone.',
+          _touch
+              ? 'Get a new code to sign in.'
+              : 'Get a new code to sign in with your phone.',
           'New code',
         );
       case SoupDeviceLinkPhase.error:
@@ -283,6 +292,7 @@ class _LoginScreenState extends State<LoginScreen> {
         break;
     }
     final link = model.phase == SoupDeviceLinkPhase.waiting ? model.link : null;
+    if (_touch) return _soupLinkTouch(link);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -342,6 +352,46 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  /// Touch: open the device-link page in the browser on this phone.
+  Widget _soupLinkTouch(DeviceLinkStart? link) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        'Sign in with Soup',
+        textAlign: TextAlign.center,
+        style: SoupType.style(size: 24, weight: 800, height: 1.1),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        link == null
+            ? 'Getting a sign-in code…'
+            : 'Continue in your browser, then come back here.',
+        textAlign: TextAlign.center,
+        style: SoupType.style(size: 15, color: SoupColors.ink2, height: 1.4),
+      ),
+      const SizedBox(height: 16),
+      if (link == null)
+        const Center(child: _Spinner(size: 28))
+      else ...[
+        SignInLinkButton(
+          url: link.verificationUriComplete,
+          label: 'Continue in browser',
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Code ${link.userCode}',
+          textAlign: TextAlign.center,
+          style: SoupType.style(
+            size: 15,
+            weight: 700,
+            color: SoupColors.muted,
+            letterSpacing: 1.5,
+          ),
+        ),
+      ],
+    ],
+  );
+
   Widget _soupMessage(String title, String body, String action) => Column(
     children: [
       Text(
@@ -376,8 +426,12 @@ class _LoginScreenState extends State<LoginScreen> {
           flex: 4,
           child: Text(
             _conn.tailscaleConnected
-                ? 'Servers on your network and tailnet'
-                : 'Jellyfin servers on your network',
+                ? (_touch
+                      ? 'Network and tailnet'
+                      : 'Servers on your network and tailnet')
+                : (_touch
+                      ? 'Servers on your network'
+                      : 'Jellyfin servers on your network'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: SoupType.style(
@@ -399,6 +453,16 @@ class _LoginScreenState extends State<LoginScreen> {
         _conn.discovery.searching || _conn.phase != SetupPhase.server;
     if (servers.isEmpty) {
       return searching ? _searchingTile() : _emptyTile();
+    }
+    if (_touch) {
+      return Column(
+        children: [
+          for (final (i, server) in servers.take(3).indexed) ...[
+            if (i > 0) const SizedBox(height: 10),
+            _serverTile(server),
+          ],
+        ],
+      );
     }
     return Row(
       children: [
@@ -514,7 +578,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Is this TV on the same Wi-Fi?',
+                      _touch
+                          ? 'Tap to search again'
+                          : 'Is this TV on the same Wi-Fi?',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: SoupType.style(
@@ -526,14 +592,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-              Text(
-                'Search again',
-                style: SoupType.style(
-                  size: 15,
-                  weight: 700,
-                  color: SoupColors.ink2,
+              if (!_touch)
+                Text(
+                  'Search again',
+                  style: SoupType.style(
+                    size: 15,
+                    weight: 700,
+                    color: SoupColors.ink2,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -593,53 +660,55 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Focusable(
-          key: const ValueKey('tailscale-button'),
-          focusNode: _tailscaleFocus,
-          radius: SoupRadii.card,
-          onFocusChange: (v) => setState(() => _tailscaleHint = v),
-          onActivate: _openTailscale,
-          builder: (context, focused) => Semantics(
-            button: true,
-            label: _conn.tailscaleConnected
-                ? 'Tailscale, connected'
-                : 'Use Tailscale',
-            child: ExcludeSemantics(
-              child: Container(
-                width: 63,
-                height: 63,
-                decoration: BoxDecoration(
-                  color: focused ? _tileFocused : _tileFill,
-                  borderRadius: BorderRadius.circular(SoupRadii.card),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const _TailscaleMark(size: 24),
-                    if (_conn.tailscaleConnected)
-                      Positioned(
-                        top: 10,
-                        right: 10,
-                        child: Container(
-                          width: 11,
-                          height: 11,
-                          decoration: BoxDecoration(
-                            color: SoupColors.ok,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF2A2A2D),
-                              width: 2,
+        if (_conn.tailscaleAvailable) ...[
+          const SizedBox(width: 12),
+          Focusable(
+            key: const ValueKey('tailscale-button'),
+            focusNode: _tailscaleFocus,
+            radius: SoupRadii.card,
+            onFocusChange: (v) => setState(() => _tailscaleHint = v),
+            onActivate: _openTailscale,
+            builder: (context, focused) => Semantics(
+              button: true,
+              label: _conn.tailscaleConnected
+                  ? 'Tailscale, connected'
+                  : 'Use Tailscale',
+              child: ExcludeSemantics(
+                child: Container(
+                  width: 63,
+                  height: 63,
+                  decoration: BoxDecoration(
+                    color: focused ? _tileFocused : _tileFill,
+                    borderRadius: BorderRadius.circular(SoupRadii.card),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const _TailscaleMark(size: 24),
+                      if (_conn.tailscaleConnected)
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Container(
+                            width: 11,
+                            height: 11,
+                            decoration: BoxDecoration(
+                              color: SoupColors.ok,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF2A2A2D),
+                                width: 2,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -714,6 +783,38 @@ class _LoginScreenState extends State<LoginScreen> {
             'Servers on your tailnet show up on the sign-in screen marked TAILSCALE.',
       );
     } else if (url != null &&
+        status.phase == TailscaleConnectionPhase.awaitingLogin &&
+        _touch) {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _step(1, 'Open the Tailscale sign-in page'),
+          const SizedBox(height: 12),
+          _step(2, 'Sign in, then come back here'),
+          const SizedBox(height: 12),
+          _step(3, 'If asked, approve this device in the admin console'),
+          const SizedBox(height: 20),
+          SignInLinkButton(url: url, label: 'Open Tailscale sign-in'),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const _Spinner(size: 18),
+              const SizedBox(width: 12),
+              Text(
+                'Waiting for sign-in',
+                key: const ValueKey('connection-status'),
+                style: SoupType.style(
+                  size: 15,
+                  weight: 700,
+                  color: SoupColors.muted,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    } else if (url != null &&
         status.phase == TailscaleConnectionPhase.awaitingLogin) {
       body = Row(
         children: [
@@ -770,7 +871,7 @@ class _LoginScreenState extends State<LoginScreen> {
         icon: const _Spinner(size: 30),
         title: 'Waiting for device approval',
         text:
-            'You’re signed in to Tailscale. Ask your administrator to approve this TV in the admin console.',
+            'You’re signed in to Tailscale. Ask your administrator to approve this ${_touch ? 'device' : 'TV'} in the admin console.',
       );
     } else if (failed) {
       body = _tailscaleNote(
@@ -803,7 +904,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return _Card(
       width: 780,
-      padding: const EdgeInsets.fromLTRB(48, 42, 48, 42),
+      padding: _touch
+          ? const EdgeInsets.fromLTRB(20, 24, 20, 24)
+          : const EdgeInsets.fromLTRB(48, 42, 48, 42),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -828,7 +931,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(
                       'Connect with Tailscale',
                       style: SoupType.style(
-                        size: 36,
+                        size: _touch ? 24 : 36,
                         weight: 800,
                         letterSpacing: -1,
                         height: 1.05,
@@ -851,7 +954,9 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 30),
           body,
           const SizedBox(height: 30),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: [
               AuthButton(
                 label: 'Back',
@@ -860,7 +965,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: _closeTailscale,
               ),
               if (secondary != null) ...[
-                const SizedBox(width: 12),
                 AuthButton(
                   label: secondary.$1,
                   height: 57,
@@ -955,7 +1059,8 @@ class _Card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: width,
+    // Never wider than the screen (phones), less a 12px margin each side.
+    width: math.min(width, MediaQuery.sizeOf(context).width - 24),
     padding: padding,
     decoration: BoxDecoration(
       color: const Color(0xEB1E1E20),

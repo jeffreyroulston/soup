@@ -7,12 +7,15 @@ import 'package:soup_core/soup_core.dart';
 
 import '../../app_scope.dart';
 import '../../data/models.dart';
+import '../../form_factor.dart';
+import '../../platform.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/glass.dart';
 import 'playback_logic.dart';
 import 'playback_panels.dart';
 import 'playback_widgets.dart';
 import 'speed_controller.dart';
+import 'touch_widgets.dart';
 
 /// Public sample used when the app runs in mock mode (no Jellyfin server).
 const mockSampleUrl =
@@ -21,6 +24,8 @@ const mockSampleUrl =
 enum _Panel { settings, chapters, episodes }
 
 /// Full-screen player in the web player's style, drivable entirely by D-pad.
+/// On touch devices it locks to landscape, toggles its chrome on tap, seeks
+/// on double-tap and scrubs by dragging the seek bar.
 ///
 /// [subtitleIndex]: null = use saved preference, -1 = off, otherwise a stream
 /// index. [audioIndex]: null = default/preference.
@@ -114,6 +119,18 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   final _chaptersFocus = FocusNode(debugLabel: 'playback chapters');
   final _episodesFocus = FocusNode(debugLabel: 'playback episodes');
 
+  // touch
+  late final bool _touch;
+  Duration? _scrub; // seek-bar drag preview
+  Duration? _scrubFrom; // where that drag started
+  int _flashSide = 0; // -1 back, 1 forward: double-tap feedback
+  int _flashSeconds = 0; // seconds stacked by repeated taps on that side
+  Timer? _flashTimer;
+  bool _fill = false; // crop the picture to fill the screen
+  bool _locked = false; // controls locked against stray touches
+  bool _lockHint = false;
+  Timer? _lockTimer;
+
   // seeking / reporting
   Duration? _pendingSeek;
   Duration _lastReported = Duration.zero;
@@ -135,6 +152,18 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   void initState() {
     super.initState();
     _scope = context.getInheritedWidgetOfExactType<SoupScope>()!;
+    _touch = FormFactor.read(context).isTouch;
+    if (_touch) {
+      unawaited(
+        SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]),
+      );
+      unawaited(
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+      );
+    }
     unawaited(_initialize());
   }
 
@@ -574,6 +603,92 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     unawaited(_report(paused: !c.value.playing));
   }
 
+  /// Touch: tapping the picture toggles the chrome (or closes a panel).
+  /// Right after a double-tap seek, taps on the same side keep seeking.
+  void _onVideoTap(Offset at, double width) {
+    if (_locked) return _showLockHint();
+    if (_panel != null) return _closePanel();
+    if (_flashSide != 0 && _sideOf(at, width) == _flashSide) {
+      return _tapSeek(_flashSide);
+    }
+    if (_chrome) {
+      _hideTimer?.cancel();
+      _hideTimer = null;
+      setState(() => _chrome = false);
+    } else {
+      _showChrome();
+    }
+  }
+
+  /// Touch: double-tap the left/right half to seek ∓10 seconds.
+  void _onVideoDoubleTap(Offset position, double width) {
+    if (_locked) return _showLockHint();
+    _tapSeek(_sideOf(position, width));
+  }
+
+  int _sideOf(Offset at, double width) => at.dx < width / 2 ? -1 : 1;
+
+  void _tapSeek(int side) {
+    _seekBy(Duration(seconds: 10 * side));
+    _flashTimer?.cancel();
+    setState(() {
+      _flashSeconds = side == _flashSide ? _flashSeconds + 10 : 10;
+      _flashSide = side;
+    });
+    _flashTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _flashSide = 0;
+          _flashSeconds = 0;
+        });
+      }
+    });
+  }
+
+  void _lock() {
+    _hideTimer?.cancel();
+    _hideTimer = null;
+    setState(() {
+      _locked = true;
+      _chrome = false;
+    });
+    _showLockHint();
+  }
+
+  void _unlock() {
+    _lockTimer?.cancel();
+    setState(() {
+      _locked = false;
+      _lockHint = false;
+    });
+    _showChrome();
+  }
+
+  void _showLockHint() {
+    _lockTimer?.cancel();
+    setState(() => _lockHint = true);
+    _lockTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _lockHint = false);
+    });
+  }
+
+  void _onScrub(Duration target) {
+    _hideTimer?.cancel();
+    _hideTimer = null;
+    _scrubFrom ??= _pendingSeek ?? _c?.value.position ?? Duration.zero;
+    setState(() => _scrub = target);
+  }
+
+  void _onScrubEnd() {
+    final target = _scrub;
+    if (target == null) return;
+    _scrub = null;
+    _scrubFrom = null;
+    final c = _c;
+    if (c == null) return;
+    _seekBy(target - (_pendingSeek ?? c.value.position));
+  }
+
   SkipRange? _activeSkip(Duration position) {
     final seconds = position.inMilliseconds / 1000;
     return _skips.where((r) => r.contains(seconds)).firstOrNull;
@@ -625,6 +740,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   void _showChrome({FocusNode? focus}) {
+    if (_locked) return;
     if (!_chrome) setState(() => _chrome = true);
     _restartHide();
     if (focus != null) {
@@ -653,6 +769,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     final panel = _panel;
     if (panel == null) return;
     setState(() => _panel = null);
+    _restartHide();
+    if (_touch) return;
     final opener = switch (panel) {
       _Panel.settings => _settingsFocus,
       _Panel.chapters => _chaptersFocus,
@@ -661,10 +779,10 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) opener.requestFocus();
     });
-    _restartHide();
   }
 
   void _onBack() {
+    if (_locked) return _showLockHint();
     if (_nextActive) return _dismissNext();
     if (_panel != null) return _closePanel();
     _exit();
@@ -704,8 +822,11 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         return KeyEventResult.handled;
       }
     }
-    // The rest only applies when nothing in the chrome or a panel has focus.
-    if (_panel != null || !node.hasPrimaryFocus) return KeyEventResult.ignored;
+    // The rest only applies when nothing in the chrome or a panel has focus,
+    // and not over the error, whose buttons own the D-pad.
+    if (_panel != null || _error != null || !node.hasPrimaryFocus) {
+      return KeyEventResult.ignored;
+    }
 
     final isSelect =
         key == LogicalKeyboardKey.select ||
@@ -765,6 +886,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   @override
   void dispose() {
     _disposed = true;
+    if (_touch) {
+      unawaited(SystemChrome.setPreferredOrientations(const []));
+      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    }
+    _flashTimer?.cancel();
+    _lockTimer?.cancel();
     _hideTimer?.cancel();
     _countdownTimer?.cancel();
     _reportDebounce?.cancel();
@@ -787,9 +914,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   Widget build(BuildContext context) {
     final controller = _c;
     final v = controller?.value ?? const SoupVideoValue();
-    final position = _pendingSeek ?? v.position;
+    final position = _scrub ?? _pendingSeek ?? v.position;
     final skip = _activeSkip(position);
-    final showChrome = _chrome || _panel != null;
+    // Touch sheets cover the chrome; TV side panels sit beside it.
+    final showChrome = _touch
+        ? _chrome && _panel == null && !_locked
+        : _chrome || _panel != null;
 
     return PopScope(
       canPop: false,
@@ -797,7 +927,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         if (!didPop) _onBack();
       },
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: videoBackdrop,
         body: Focus(
           focusNode: _rootFocus,
           onKeyEvent: _rootKey,
@@ -805,10 +935,72 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             fit: StackFit.expand,
             children: [
               if (v.initialized && controller != null)
-                Center(
-                  child: AspectRatio(
-                    aspectRatio: v.aspectRatio,
-                    child: controller.buildView(),
+                if (_touch && _fill)
+                  FittedBox(
+                    fit: BoxFit.cover,
+                    clipBehavior: Clip.hardEdge,
+                    child: SizedBox(
+                      width: 1080 * v.aspectRatio,
+                      height: 1080,
+                      child: controller.buildView(),
+                    ),
+                  )
+                else
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: v.aspectRatio,
+                      child: controller.buildView(),
+                    ),
+                  ),
+              if (_touch)
+                Positioned.fill(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      Offset? doubleTapAt;
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTapUp: (d) =>
+                            _onVideoTap(d.localPosition, constraints.maxWidth),
+                        onDoubleTapDown: (d) => doubleTapAt = d.localPosition,
+                        onDoubleTap: () => _onVideoDoubleTap(
+                          doubleTapAt ?? Offset.zero,
+                          constraints.maxWidth,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              if (_flashSide != 0 && _touch)
+                _TapSeekRipple(side: _flashSide, seconds: _flashSeconds),
+              if (_flashSide != 0 && !_touch)
+                Align(
+                  alignment: _flashSide < 0
+                      ? const Alignment(-0.6, 0)
+                      : const Alignment(0.6, 0),
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 88,
+                      height: 88,
+                      decoration: const BoxDecoration(
+                        color: Color(0x66000000),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _flashSide < 0
+                                ? PhosphorIconsRegular.arrowCounterClockwise
+                                : PhosphorIconsRegular.clockClockwise,
+                            size: 28,
+                          ),
+                          Text(
+                            _flashSide < 0 ? '−10s' : '+10s',
+                            style: SoupType.style(size: 13, weight: 800),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               if (v.caption.isNotEmpty)
@@ -816,7 +1008,9 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   duration: const Duration(milliseconds: 200),
                   left: 80,
                   right: 80,
-                  bottom: showChrome ? 190 : 40,
+                  bottom: showChrome
+                      ? (_touch ? 136 : 190)
+                      : (_touch ? 24 : 40),
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -835,6 +1029,10 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                       ),
                     ),
                   ),
+                ),
+              if (_touch && _scrub != null)
+                const IgnorePointer(
+                  child: ColoredBox(color: Color(0x73000000)),
                 ),
               IgnorePointer(
                 child: AnimatedOpacity(
@@ -881,13 +1079,17 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                     key: const ValueKey('playback-chrome'),
                     opacity: showChrome ? 1 : 0,
                     duration: const Duration(milliseconds: 200),
-                    child: _chromeBody(v, position),
+                    child: SafeArea(
+                      child: _touch
+                          ? _touchChrome(v, position)
+                          : _chromeBody(v, position),
+                    ),
                   ),
                 ),
               ),
               Positioned(
-                right: 40,
-                bottom: showChrome ? 176 : 40,
+                right: _touch ? 24 : 40,
+                bottom: showChrome ? (_touch ? 136 : 176) : (_touch ? 24 : 40),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -899,7 +1101,10 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                         onPlayNow: _playNext,
                         onCancel: _dismissNext,
                       )
-                    else if (skip != null && _panel == null)
+                    else if (skip != null &&
+                        _panel == null &&
+                        !_locked &&
+                        _scrub == null)
                       SkipButton(
                         key: const ValueKey('skip-button'),
                         label: skip.kind.label,
@@ -908,7 +1113,57 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   ],
                 ),
               ),
-              if (_panel != null)
+              if (_touch && !showChrome && _panel == null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: IgnorePointer(
+                    child: _MiniProgress(
+                      fraction: v.duration <= Duration.zero
+                          ? 0
+                          : (position.inMilliseconds /
+                                    v.duration.inMilliseconds)
+                                .clamp(0.0, 1.0),
+                    ),
+                  ),
+                ),
+              if (_locked && _lockHint)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Center(
+                        child: PlayerPill(
+                          key: const ValueKey('unlock-button'),
+                          icon: PhosphorIconsRegular.lockSimpleOpen,
+                          label: 'Screen locked · Tap to unlock',
+                          onPressed: _unlock,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_panel != null && _touch) ...[
+                const IgnorePointer(
+                  child: ColoredBox(color: Color(0x8C000000)),
+                ),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: _panel == _Panel.episodes
+                          ? double.infinity
+                          : 680,
+                      maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+                    ),
+                    child: _touchPanelBody(),
+                  ),
+                ),
+              ] else if (_panel != null)
                 Positioned(right: 24, top: 24, bottom: 24, child: _panelBody()),
               // With the chrome up, the play button shows the spinner instead.
               if ((_loading || v.buffering) && _error == null && !showChrome)
@@ -938,7 +1193,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     );
   }
 
-  Widget _chromeBody(SoupVideoValue v, Duration position) {
+  (String, String) _titles() {
     final isEpisode = _item.type == 'Episode';
     final title = isEpisode ? (_item.seriesName ?? _item.name) : _item.name;
     final subtitle = isEpisode
@@ -947,12 +1202,262 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             _item.name,
           ].where((s) => s.isNotEmpty).join(' · ')
         : (_item.productionYear?.toString() ?? '');
-    final fractions = [
-      if (v.duration > Duration.zero)
-        for (final c in _item.chapters)
-          if (c.startTicks > 0)
-            (c.startTicks / 10 / v.duration.inMicroseconds).clamp(0.0, 1.0),
-    ];
+    return (title, subtitle);
+  }
+
+  List<double> _chapterFractions(SoupVideoValue v) => [
+    if (v.duration > Duration.zero)
+      for (final c in _item.chapters)
+        if (c.startTicks > 0)
+          (c.startTicks / 10 / v.duration.inMicroseconds).clamp(0.0, 1.0),
+  ];
+
+  String? _chapterAt(Duration position) {
+    String? name;
+    for (final (i, c) in _item.chapters.indexed) {
+      if (Duration(microseconds: c.startTicks ~/ 10) > position) break;
+      name = c.name.isEmpty ? 'Chapter ${i + 1}' : c.name;
+    }
+    return name;
+  }
+
+  Widget _transport(SoupVideoValue v) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      ChromeButton(
+        icon: PhosphorIconsRegular.arrowCounterClockwise,
+        label: 'Back 10 seconds',
+        size: 56,
+        iconSize: 28,
+        onPressed: () => _seekBy(const Duration(seconds: -10)),
+      ),
+      const SizedBox(width: 28),
+      ChromeButton(
+        key: const ValueKey('play-pause-button'),
+        icon: v.playing ? PhosphorIconsFill.pause : PhosphorIconsFill.play,
+        label: v.playing ? 'Pause' : 'Play',
+        size: 76,
+        iconSize: 36,
+        focusNode: _playFocus,
+        autofocus: true,
+        filled: _touch,
+        busy: (_loading || v.buffering) && _error == null,
+        onPressed: () => unawaited(_togglePlayback()),
+      ),
+      const SizedBox(width: 28),
+      ChromeButton(
+        icon: PhosphorIconsRegular.clockClockwise,
+        label: 'Forward 10 seconds',
+        size: 56,
+        iconSize: 28,
+        onPressed: () => _seekBy(const Duration(seconds: 10)),
+      ),
+    ],
+  );
+
+  /// Phone layout: title bar on top, transport in the middle, edge-to-edge
+  /// seek bar and a row of labelled actions along the bottom.
+  Widget _touchChrome(SoupVideoValue v, Duration position) {
+    final (title, subtitle) = _titles();
+    final scrubFrom = _scrubFrom;
+    final scrubbing = _scrub != null && scrubFrom != null;
+    final chapter = _chapterAt(position);
+    final remaining = v.duration > position
+        ? v.duration - position
+        : Duration.zero;
+    final timeStyle = SoupType.style(
+      size: 12,
+      weight: 700,
+      color: SoupColors.ink2,
+    );
+    final delta = scrubbing ? position - scrubFrom : Duration.zero;
+
+    Widget fade(Widget child) => AnimatedOpacity(
+      opacity: scrubbing ? 0 : 1,
+      duration: const Duration(milliseconds: 150),
+      child: IgnorePointer(ignoring: scrubbing, child: child),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+      child: Column(
+        children: [
+          fade(
+            Row(
+              children: [
+                ChromeButton(
+                  icon: PhosphorIconsRegular.caretDown,
+                  label: 'Close',
+                  onPressed: _exit,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        key: const ValueKey('playback-title'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: SoupType.style(
+                          size: 17,
+                          weight: 800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty)
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: SoupType.style(
+                            size: 13,
+                            weight: 600,
+                            color: SoupColors.muted,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (!_loading || _plan != null || _mock) ...[
+                  MethodDot(method: _method),
+                  const SizedBox(width: 8),
+                ],
+                ChromeButton(
+                  key: const ValueKey('lock-button'),
+                  icon: PhosphorIconsRegular.lockSimple,
+                  label: 'Lock controls',
+                  iconSize: 20,
+                  onPressed: _lock,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: scrubbing
+                  ? Container(
+                      height: 34,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xB3282828),
+                        borderRadius: BorderRadius.circular(17),
+                        border: Border.all(color: const Color(0x1AFFFFFF)),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${delta.isNegative ? '−' : '+'}${formatTime(delta.abs())}',
+                        key: const ValueKey('scrub-delta'),
+                        style: SoupType.style(size: 14, weight: 800),
+                      ),
+                    )
+                  : _transport(v),
+            ),
+          ),
+          Row(
+            children: [
+              Text(
+                formatTime(position),
+                key: const ValueKey('playback-position'),
+                style: timeStyle,
+              ),
+              Expanded(
+                child: Text(
+                  scrubbing ? '' : (chapter ?? ''),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: SoupType.style(
+                    size: 12,
+                    weight: 600,
+                    color: SoupColors.muted,
+                  ),
+                ),
+              ),
+              Text('−${formatTime(remaining)}', style: timeStyle),
+            ],
+          ),
+          TouchSeekBar(
+            position: position,
+            duration: v.duration,
+            chapterFractions: _chapterFractions(v),
+            onScrub: _onScrub,
+            onScrubEnd: _onScrubEnd,
+            scrubFrom: scrubbing ? scrubFrom : null,
+            bubble: ScrubBubble(time: formatTime(position), chapter: chapter),
+          ),
+          const SizedBox(height: 2),
+          fade(
+            Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        PlayerPill(
+                          key: const ValueKey('settings-button'),
+                          icon: PhosphorIconsRegular.slidersHorizontal,
+                          label: 'Settings',
+                          onPressed: () => _openPanel(_Panel.settings),
+                        ),
+                        if (_item.chapters.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          PlayerPill(
+                            key: const ValueKey('chapters-button'),
+                            icon: PhosphorIconsRegular.listBullets,
+                            label: 'Chapters',
+                            onPressed: () => _openPanel(_Panel.chapters),
+                          ),
+                        ],
+                        if (_episodes.length > 1) ...[
+                          const SizedBox(width: 8),
+                          PlayerPill(
+                            key: const ValueKey('episodes-button'),
+                            icon: PhosphorIconsRegular.stackSimple,
+                            label: 'Episodes',
+                            onPressed: () => _openPanel(_Panel.episodes),
+                          ),
+                        ],
+                        const SizedBox(width: 8),
+                        PlayerPill(
+                          key: const ValueKey('fill-button'),
+                          icon: _fill
+                              ? PhosphorIconsRegular.cornersIn
+                              : PhosphorIconsRegular.cornersOut,
+                          label: _fill ? 'Fit' : 'Fill',
+                          onPressed: () {
+                            setState(() => _fill = !_fill);
+                            _restartHide();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_next != null) ...[
+                  const SizedBox(width: 8),
+                  PlayerPill(
+                    key: const ValueKey('next-button'),
+                    label: 'Next episode',
+                    trailingIcon: PhosphorIconsFill.skipForward,
+                    primary: true,
+                    onPressed: _playNext,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chromeBody(SoupVideoValue v, Duration position) {
+    final (title, subtitle) = _titles();
+    final fractions = _chapterFractions(v);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       child: Column(
@@ -967,44 +1472,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
               ),
             ],
           ),
-          Expanded(
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ChromeButton(
-                    icon: PhosphorIconsRegular.arrowCounterClockwise,
-                    label: 'Back 10 seconds',
-                    size: 56,
-                    iconSize: 28,
-                    onPressed: () => _seekBy(const Duration(seconds: -10)),
-                  ),
-                  const SizedBox(width: 28),
-                  ChromeButton(
-                    key: const ValueKey('play-pause-button'),
-                    icon: v.playing
-                        ? PhosphorIconsFill.pause
-                        : PhosphorIconsFill.play,
-                    label: v.playing ? 'Pause' : 'Play',
-                    size: 76,
-                    iconSize: 36,
-                    focusNode: _playFocus,
-                    autofocus: true,
-                    busy: (_loading || v.buffering) && _error == null,
-                    onPressed: () => unawaited(_togglePlayback()),
-                  ),
-                  const SizedBox(width: 28),
-                  ChromeButton(
-                    icon: PhosphorIconsRegular.clockClockwise,
-                    label: 'Forward 10 seconds',
-                    size: 56,
-                    iconSize: 28,
-                    onPressed: () => _seekBy(const Duration(seconds: 10)),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          Expanded(child: Center(child: _transport(v))),
           Glass(
             strong: true,
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
@@ -1017,6 +1485,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   duration: v.duration,
                   chapterFractions: fractions,
                   onSeekBy: _seekBy,
+                  onScrub: _touch ? _onScrub : null,
+                  onScrubEnd: _touch ? _onScrubEnd : null,
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1217,7 +1687,18 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     (1000000, '360p', '1 Mbps'),
   ];
 
-  Widget _chaptersPanel() {
+  Widget _chaptersPanel() => SidePanel(
+    title: 'Chapters',
+    onClose: _closePanel,
+    sections: [
+      PanelSection(
+        title: '${_item.chapters.length} chapters',
+        options: _chapterOptions(),
+      ),
+    ],
+  );
+
+  List<PanelOption> _chapterOptions() {
     final position = _pendingSeek ?? _c?.value.position ?? Duration.zero;
     final chapters = _item.chapters;
     var current = 0;
@@ -1226,49 +1707,51 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         current = i;
       }
     }
-    return SidePanel(
-      title: 'Chapters',
-      onClose: _closePanel,
-      sections: [
-        PanelSection(
-          title: '${chapters.length} chapters',
-          options: [
-            for (var i = 0; i < chapters.length; i++)
-              PanelOption(
-                label: chapters[i].name.isEmpty
-                    ? 'Chapter ${i + 1}'
-                    : chapters[i].name,
-                detail: formatTime(
-                  Duration(microseconds: chapters[i].startTicks ~/ 10),
-                ),
-                selected: i == current,
-                onSelect: () {
-                  final start = Duration(
-                    microseconds: chapters[i].startTicks ~/ 10,
-                  );
-                  _closePanel();
-                  unawaited(_c?.seekTo(start));
-                },
-              ),
-          ],
+    return [
+      for (var i = 0; i < chapters.length; i++)
+        PanelOption(
+          label: chapters[i].name.isEmpty
+              ? 'Chapter ${i + 1}'
+              : chapters[i].name,
+          detail: formatTime(
+            Duration(microseconds: chapters[i].startTicks ~/ 10),
+          ),
+          selected: i == current,
+          onSelect: () {
+            final start = Duration(microseconds: chapters[i].startTicks ~/ 10);
+            _closePanel();
+            unawaited(_c?.seekTo(start));
+          },
         ),
-      ],
-    );
+    ];
   }
 
-  Widget _episodesPanel() {
+  List<CatalogItem> _seasonEpisodes() {
     final season = _item.seasonId;
-    final list = [
+    return [
       for (final e in _episodes)
         if (season == null || e.seasonId == season) e,
     ];
+  }
+
+  String get _seasonTitle {
     final seasonNumber = _item.parentIndexNumber;
+    return seasonNumber == null ? 'This season' : 'Season $seasonNumber';
+  }
+
+  void _pickEpisode(CatalogItem e) {
+    if (e.id == _item.id) return _closePanel();
+    _goTo(e, resume: e.playbackPositionTicks >= 100000000);
+  }
+
+  Widget _episodesPanel() {
+    final list = _seasonEpisodes();
     return SidePanel(
       title: 'Episodes',
       onClose: _closePanel,
       sections: [
         PanelSection(
-          title: seasonNumber == null ? 'This season' : 'Season $seasonNumber',
+          title: _seasonTitle,
           options: [
             for (final e in list)
               PanelOption(
@@ -1278,14 +1761,261 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                     ? null
                     : formatTime(Duration(microseconds: e.runTimeTicks! ~/ 10)),
                 selected: e.id == _item.id,
-                onSelect: () {
-                  if (e.id == _item.id) return _closePanel();
-                  _goTo(e, resume: e.playbackPositionTicks >= 100000000);
-                },
+                onSelect: () => _pickEpisode(e),
               ),
           ],
         ),
       ],
     );
   }
+
+  // ── touch sheets ─────────────────────────────────────────────────────────
+  Widget _touchPanelBody() => switch (_panel!) {
+    _Panel.settings => _touchSettings(),
+    _Panel.chapters => PlayerSheet(
+      key: const ValueKey('panel-Chapters'),
+      onClose: _closePanel,
+      header: Text(
+        'Chapters',
+        style: SoupType.style(size: 16, weight: 800, letterSpacing: -0.3),
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 12),
+        children: [for (final o in _chapterOptions()) PanelRow(option: o)],
+      ),
+    ),
+    _Panel.episodes => EpisodesDrawer(
+      title: _seasonTitle,
+      episodes: _seasonEpisodes(),
+      currentId: _item.id,
+      onSelect: _pickEpisode,
+      onClose: _closePanel,
+    ),
+  };
+
+  /// Audio (with subtitles), Speed and Quality tabs in one sheet.
+  Widget _touchSettings() {
+    final plan = _plan;
+    final audio = _item.streamsOf(StreamKind.audio);
+    final defaultAudio = defaultAudioStream(_item);
+    final hasImageSubs = _item
+        .streamsOf(StreamKind.subtitle)
+        .any((s) => !s.isTextSubtitle);
+
+    Widget note(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: Text(
+        text,
+        style: SoupType.style(size: 12, color: SoupColors.muted),
+      ),
+    );
+    Widget scroll(List<Widget> children) => ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.only(bottom: 14),
+      children: children,
+    );
+
+    final audioTab = scroll([
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SheetLabel('Audio'),
+                if (audio.isEmpty)
+                  PanelRow(
+                    option: PanelOption(
+                      label: 'Default',
+                      selected: true,
+                      onSelect: () {},
+                    ),
+                  ),
+                for (final s in audio)
+                  PanelRow(
+                    option: PanelOption(
+                      label: s.label,
+                      selected: (_audioIndex ?? defaultAudio?.index) == s.index,
+                      enabled: plan != null && audio.length > 1,
+                      onSelect: () => _setAudio(s),
+                    ),
+                  ),
+                if (audio.length > 1 && plan != null)
+                  note('Other tracks transcode the stream.'),
+              ],
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SheetLabel('Subtitles'),
+                PanelRow(
+                  option: PanelOption(
+                    label: 'Off',
+                    selected: _subtitle == null,
+                    onSelect: () => _setSubtitle(null),
+                  ),
+                ),
+                for (final t
+                    in plan?.subtitles ?? const <JellyfinSubtitleTrack>[])
+                  PanelRow(
+                    option: PanelOption(
+                      label: t.label,
+                      selected: _subtitle == t,
+                      onSelect: () => _setSubtitle(t),
+                    ),
+                  ),
+                if (hasImageSubs) note("Image-based subtitles can't be shown."),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ]);
+
+    final speedTab = scroll([
+      const SheetLabel('Playback speed'),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            for (final (i, s) in const [
+              0.5,
+              0.75,
+              1.0,
+              1.25,
+              1.5,
+              2.0,
+            ].indexed) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(
+                child: PanelChip(
+                  option: PanelOption(
+                    label: '${s == s.truncate() ? s.toInt() : s}×',
+                    selected: _speed == s,
+                    onSelect: () => unawaited(_setSpeed(s)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ]);
+
+    final qualityTab = scroll([
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: Row(
+          children: [
+            MethodDot(method: _method),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _method == JellyfinPlayMethod.transcode
+                    ? 'The server converts this stream.'
+                    : 'Playing the original file.',
+                style: SoupType.style(size: 12, color: SoupColors.muted),
+              ),
+            ),
+          ],
+        ),
+      ),
+      PanelRow(
+        option: PanelOption(
+          label: 'Auto',
+          detail: 'Best available',
+          selected: _maxBitrate == null,
+          onSelect: () => _setQuality(null),
+        ),
+      ),
+      for (final q in _qualityCaps)
+        PanelRow(
+          option: PanelOption(
+            label: q.$2,
+            detail: q.$3,
+            selected: _maxBitrate == q.$1,
+            onSelect: () => _setQuality(q.$1),
+          ),
+        ),
+    ]);
+
+    return SettingsSheet(
+      onClose: _closePanel,
+      tabs: [
+        ('Audio', audioTab),
+        ('Speed', speedTab),
+        if (plan != null) ('Quality', qualityTab),
+      ],
+    );
+  }
+}
+
+/// Touch double-tap feedback: a lit half-ellipse on the tapped side with the
+/// seconds stacked so far.
+class _TapSeekRipple extends StatelessWidget {
+  const _TapSeekRipple({required this.side, required this.seconds});
+  final int side;
+  final int seconds;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: LayoutBuilder(
+      builder: (context, c) {
+        final edge = Radius.elliptical(c.maxWidth * 0.18, c.maxHeight * 0.6);
+        return Align(
+          alignment: side < 0 ? Alignment.centerLeft : Alignment.centerRight,
+          child: Container(
+            width: c.maxWidth * 0.42,
+            height: c.maxHeight,
+            decoration: BoxDecoration(
+              color: const Color(0x1FFFFFFF),
+              borderRadius: side < 0
+                  ? BorderRadius.horizontal(right: edge)
+                  : BorderRadius.horizontal(left: edge),
+            ),
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  side < 0
+                      ? PhosphorIconsFill.rewind
+                      : PhosphorIconsFill.fastForward,
+                  size: 26,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${side < 0 ? '−' : '+'}$seconds s',
+                  key: const ValueKey('tap-seek-label'),
+                  style: SoupType.style(size: 20, weight: 800),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+/// Thin progress line along the bottom edge while the chrome is hidden.
+class _MiniProgress extends StatelessWidget {
+  const _MiniProgress({required this.fraction});
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 3,
+    color: const Color(0x26FFFFFF),
+    alignment: Alignment.centerLeft,
+    child: FractionallySizedBox(
+      widthFactor: fraction,
+      child: const ColoredBox(color: SoupColors.accent),
+    ),
+  );
 }

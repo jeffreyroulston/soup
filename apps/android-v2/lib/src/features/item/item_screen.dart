@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../app_scope.dart';
 import '../../data/models.dart';
+import '../../form_factor.dart';
 import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/catalog_builder.dart';
 import '../../ui/widgets/catalog_image.dart';
+import '../../ui/widgets/expandable_overview.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/glass_nav.dart';
 import '../../ui/widgets/hero_carousel.dart';
@@ -16,6 +18,7 @@ import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/select_menu.dart';
 import '../../utils/media.dart';
+import 'item_screen_touch.dart';
 
 /// Web `pages/item/[id].vue`: hero, play controls, seasons/episodes, cast,
 /// information and related titles.
@@ -34,6 +37,7 @@ class _ItemScreenState extends State<ItemScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isTouch) return TouchItemScreen(itemId: widget.itemId);
     return CatalogBuilder<CatalogItem>(
       load: (c) => c.item(widget.itemId),
       keys: [widget.itemId],
@@ -93,28 +97,13 @@ class _Hero extends StatelessWidget {
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final minHeight = (size.height * 0.88).clamp(0.0, 720.0);
-    final isSeries = item.type == 'Series';
     final isEpisode = item.type == 'Episode';
-    final isBoxSet = item.type == 'BoxSet';
-    final kicker = isEpisode
-        ? null
-        : isSeries
-        ? [
-            'Series',
-            if ((item.childCount ?? 0) > 0)
-              '${item.childCount} Season${item.childCount == 1 ? '' : 's'}',
-            if ((item.recursiveItemCount ?? 0) > 0)
-              '${item.recursiveItemCount} Episodes',
-          ].join(' · ')
-        : isBoxSet
-        ? 'Collection · ${item.childCount ?? ''} titles'
-        : item.type == 'Movie'
-        ? 'Movie'
-        : item.type;
     final meta = <String>[
       ?yearLabel(item),
       ?runtimeLabel(item.runTimeTicks),
       ...item.genres.take(3),
+      if (item.communityRating != null)
+        '★ ${item.communityRating!.toStringAsFixed(1)}',
     ];
     final chips = <String>[?item.officialRating, ...qualityBadges(item)];
     final audio = item.streamsOf(StreamKind.audio);
@@ -135,190 +124,180 @@ class _Hero extends StatelessWidget {
             alignment: Alignment.topCenter,
           ),
           const ArtScrims(),
+          // Extra dark fade so the title, meta and overview read over bright art.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomLeft,
+                end: Alignment.topRight,
+                colors: [
+                  Color(0xCC0A0A0B),
+                  Color(0x660A0A0B),
+                  Color(0x000A0A0B),
+                ],
+                stops: [0.0, 0.45, 0.8],
+              ),
+            ),
+          ),
           Positioned(
             left: SoupSpacing.gutter,
             right: SoupSpacing.gutter,
             bottom: 48,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isEpisode) ...[
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 820),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isEpisode) ...[
+                      Text(
+                        item.seriesName ?? '',
+                        style: SoupType.style(size: 24, weight: 800),
+                      ),
+                      if (episodeCode(item) != null)
                         Text(
-                          item.seriesName ?? '',
-                          style: SoupType.style(size: 24, weight: 800),
-                        ),
-                        if (episodeCode(item) != null)
-                          Text(
-                            episodeCode(item)!,
-                            style: SoupType.style(
-                              size: 17,
-                              weight: 700,
-                              color: SoupColors.ink2,
-                            ),
-                          ),
-                      ] else if (kicker != null)
-                        Text(
-                          kicker,
+                          episodeCode(item)!,
                           style: SoupType.style(
-                            size: 15,
+                            size: 17,
                             weight: 700,
                             color: SoupColors.ink2,
                           ),
                         ),
                       const SizedBox(height: 8),
-                      Text(
-                        item.name,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: SoupType.style(
-                          size: heroTitleSize(
-                            item.name,
-                            size.width,
-                          ).clamp(40, 80),
-                          weight: 800,
-                          letterSpacing: -2.5,
-                          height: 0.95,
-                        ),
+                    ],
+                    Text(
+                      item.name,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: SoupType.style(
+                        size: heroTitleSize(
+                          item.name,
+                          size.width,
+                        ).clamp(40, 80),
+                        weight: 800,
+                        letterSpacing: -2.5,
+                        height: 0.95,
                       ),
-                      const SizedBox(height: 22),
-                      _Actions(item: item, state: state),
-                      if (audio.length > 1 || subs.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: [
-                            if (audio.length > 1)
-                              SelectMenu<int?>(
-                                prefix: 'Audio',
-                                icon: Icons.volume_up_rounded,
-                                value: state.audio,
-                                options: [
-                                  const SelectOption(null, 'Default'),
-                                  for (final a in audio)
-                                    SelectOption(a.index, a.label),
-                                ],
-                                onChanged: state.setAudio,
-                              ),
-                            if (subs.isNotEmpty)
-                              SelectMenu<int?>(
-                                prefix: 'Subtitles',
-                                icon: Icons.subtitles_outlined,
-                                value: state.subtitle,
-                                options: [
-                                  const SelectOption(null, 'Default'),
-                                  const SelectOption(-1, 'Off'),
-                                  for (final s in subs)
-                                    SelectOption(s.index, s.label),
-                                ],
-                                onChanged: state.setSubtitle,
-                              ),
-                          ],
-                        ),
-                      ],
-                      if (progress > 0) ...[
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: 320,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(2),
-                                child: LinearProgressIndicator(
-                                  value: progress.clamp(0, 1),
-                                  minHeight: 4,
-                                  color: SoupColors.accent,
-                                  backgroundColor: const Color(0x33FFFFFF),
-                                ),
-                              ),
-                              if (left != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Text(
-                                    left,
-                                    style: SoupType.style(
-                                      size: 13,
-                                      weight: 600,
-                                      color: SoupColors.muted,
-                                    ),
-                                  ),
-                                ),
-                            ],
+                    ),
+                    // Meta and overview sit under the title, as in the home hero.
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          meta.join(' · '),
+                          style: SoupType.style(
+                            size: 15,
+                            weight: 600,
+                            color: SoupColors.ink2,
                           ),
                         ),
+                        for (final c in chips)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0x33FFFFFF),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              c,
+                              style: SoupType.style(size: 12, weight: 800),
+                            ),
+                          ),
                       ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 48),
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (item.overview != null && item.overview!.isNotEmpty)
-                        Text(
-                          item.overview!,
-                          maxLines: 6,
-                          overflow: TextOverflow.ellipsis,
+                    ),
+                    if (item.overview != null && item.overview!.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 640),
+                        child: ExpandableOverview(
+                          text: item.overview!,
                           style: SoupType.style(
                             size: 17,
                             color: SoupColors.ink2,
-                            height: 1.45,
+                            height: 1.4,
                           ),
                         ),
-                      const SizedBox(height: 14),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    _Actions(item: item, state: state),
+                    if (audio.length > 1 || subs.isNotEmpty) ...[
+                      const SizedBox(height: 16),
                       Wrap(
-                        spacing: 10,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 12,
+                        runSpacing: 12,
                         children: [
-                          for (final c in chips)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0x33FFFFFF),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                c,
-                                style: SoupType.style(size: 12, weight: 800),
-                              ),
+                          if (audio.length > 1)
+                            SelectMenu<int?>(
+                              prefix: 'Audio',
+                              icon: Icons.volume_up_rounded,
+                              value: state.audio,
+                              options: [
+                                const SelectOption(null, 'Default'),
+                                for (final a in audio)
+                                  SelectOption(a.index, a.label),
+                              ],
+                              onChanged: state.setAudio,
                             ),
-                          Text(
-                            meta.join(' · '),
-                            style: SoupType.style(
-                              size: 15,
-                              weight: 600,
-                              color: SoupColors.muted,
-                            ),
-                          ),
-                          if (item.communityRating != null)
-                            Text(
-                              '★ ${item.communityRating!.toStringAsFixed(1)}',
-                              style: SoupType.style(
-                                size: 15,
-                                weight: 700,
-                                color: SoupColors.muted,
-                              ),
+                          if (subs.isNotEmpty)
+                            SelectMenu<int?>(
+                              prefix: 'Subtitles',
+                              icon: Icons.subtitles_outlined,
+                              value: state.subtitle,
+                              options: [
+                                const SelectOption(null, 'Default'),
+                                const SelectOption(-1, 'Off'),
+                                for (final s in subs)
+                                  SelectOption(s.index, s.label),
+                              ],
+                              onChanged: state.setSubtitle,
                             ),
                         ],
                       ),
                     ],
-                  ),
+                    if (progress > 0) ...[
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: 320,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(2),
+                              child: LinearProgressIndicator(
+                                value: progress.clamp(0, 1),
+                                minHeight: 4,
+                                color: SoupColors.accent,
+                                backgroundColor: const Color(0x33FFFFFF),
+                              ),
+                            ),
+                            if (left != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  left,
+                                  style: SoupType.style(
+                                    size: 13,
+                                    weight: 600,
+                                    color: SoupColors.muted,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -407,24 +386,6 @@ class _Actions extends StatelessWidget {
               ),
             ),
           ),
-        const SizedBox(width: 12),
-        _RoundAction(
-          // Re-created once loading ends so its autofocus can still fire.
-          key: ValueKey(loading),
-          icon: item.isFavorite
-              ? Icons.favorite_rounded
-              : Icons.favorite_border_rounded,
-          color: item.isFavorite ? SoupColors.accent : SoupColors.ink,
-          autofocus: !loading && playTarget == null,
-          onTap: () => scope.catalog.setFavorite(item.id, !item.isFavorite),
-        ),
-        const SizedBox(width: 12),
-        if (item.type != 'Series' && item.type != 'BoxSet')
-          _RoundAction(
-            icon: Icons.check_rounded,
-            filled: item.played,
-            onTap: () => scope.catalog.setPlayed(item.id, !item.played),
-          ),
         if (playTarget != null && canResume(playTarget)) ...[
           const SizedBox(width: 12),
           Focusable(
@@ -448,6 +409,31 @@ class _Actions extends StatelessWidget {
             ),
           ),
         ],
+        if (item.type != 'Series' && item.type != 'BoxSet') ...[
+          const SizedBox(width: 12),
+          _RoundAction(
+            icon: Icons.check_rounded,
+            filled: item.played,
+            onTap: () => scope.catalog.setPlayed(item.id, !item.played),
+          ),
+        ],
+        const SizedBox(width: 12),
+        ValueListenableBuilder(
+          valueListenable: scope.catalog.favoriteOverrides,
+          builder: (context, _, _) {
+            final favorite = scope.catalog.isFavorite(item);
+            return _RoundAction(
+              // Re-created once loading ends so its autofocus can still fire.
+              key: ValueKey(loading),
+              icon: favorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              color: favorite ? SoupColors.accent : SoupColors.ink,
+              autofocus: !loading && playTarget == null,
+              onTap: () => scope.catalog.setFavorite(item.id, !favorite),
+            );
+          },
+        ),
       ],
     );
   }
@@ -519,7 +505,7 @@ class _Body extends StatelessWidget {
                       item: e,
                       shape: CardShape.landscape,
                       width: 400,
-                      kicker: _extraLabel(e),
+                      kicker: extraLabel(e),
                       showPlay: true,
                       onTap: () => openWatch(context, e, fromStart: true),
                     ),
@@ -545,18 +531,6 @@ class _Body extends StatelessWidget {
       ],
     );
   }
-
-  static String _extraLabel(CatalogItem e) => switch (e.extraType) {
-    'Trailer' => 'Trailer',
-    'BehindTheScenes' => 'Behind the Scenes',
-    'DeletedScene' => 'Deleted Scene',
-    'Interview' => 'Interview',
-    'Featurette' => 'Featurette',
-    'Clip' => 'Clip',
-    'Scene' => 'Scene',
-    'Short' => 'Short',
-    _ => 'Extra',
-  };
 }
 
 class _Seasons extends StatelessWidget {
@@ -745,28 +719,7 @@ class _Information extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String? names(String type) {
-      final list = [
-        for (final p in item.people)
-          if (p.type == type) p.name,
-      ];
-      return list.isEmpty ? null : list.take(4).join(', ');
-    }
-
-    final rows = <(String, String)>[
-      if (item.genres.isNotEmpty) ('Genres', item.genres.join(', ')),
-      if (names('Director') != null) ('Directors', names('Director')!),
-      if (names('Writer') != null) ('Writers', names('Writer')!),
-      if (item.studios.isNotEmpty) ('Studios', item.studios.take(4).join(', ')),
-      if (item.premiereDate != null &&
-          DateTime.tryParse(item.premiereDate!) != null)
-        ('Released', _date(DateTime.parse(item.premiereDate!))),
-      if (item.status != null) ('Status', item.status!),
-      if (item.officialRating != null) ('Rated', item.officialRating!),
-      if (item.criticRating != null)
-        ('Critic score', '${item.criticRating!.round()}%'),
-      if (item.tags.isNotEmpty) ('Tags', item.tags.take(6).join(', ')),
-    ];
+    final rows = itemInformation(item);
     if (rows.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: SoupSpacing.gutter),
@@ -816,21 +769,59 @@ class _Information extends StatelessWidget {
       ),
     );
   }
-
-  static const _months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  static String _date(DateTime d) =>
-      '${_months[d.month - 1]} ${d.day}, ${d.year}';
 }
+
+/// "Information" label/value pairs shared by the TV and touch item screens.
+List<(String, String)> itemInformation(CatalogItem item) {
+  String? names(String type) {
+    final list = [
+      for (final p in item.people)
+        if (p.type == type) p.name,
+    ];
+    return list.isEmpty ? null : list.take(4).join(', ');
+  }
+
+  final rows = <(String, String)>[
+    if (item.genres.isNotEmpty) ('Genres', item.genres.join(', ')),
+    if (names('Director') != null) ('Directors', names('Director')!),
+    if (names('Writer') != null) ('Writers', names('Writer')!),
+    if (item.studios.isNotEmpty) ('Studios', item.studios.take(4).join(', ')),
+    if (item.premiereDate != null &&
+        DateTime.tryParse(item.premiereDate!) != null)
+      ('Released', _date(DateTime.parse(item.premiereDate!))),
+    if (item.status != null) ('Status', item.status!),
+    if (item.officialRating != null) ('Rated', item.officialRating!),
+    if (item.criticRating != null)
+      ('Critic score', '${item.criticRating!.round()}%'),
+    if (item.tags.isNotEmpty) ('Tags', item.tags.take(6).join(', ')),
+  ];
+  return rows;
+}
+
+String extraLabel(CatalogItem e) => switch (e.extraType) {
+  'Trailer' => 'Trailer',
+  'BehindTheScenes' => 'Behind the Scenes',
+  'DeletedScene' => 'Deleted Scene',
+  'Interview' => 'Interview',
+  'Featurette' => 'Featurette',
+  'Clip' => 'Clip',
+  'Scene' => 'Scene',
+  'Short' => 'Short',
+  _ => 'Extra',
+};
+
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+String _date(DateTime d) => '${_months[d.month - 1]} ${d.day}, ${d.year}';

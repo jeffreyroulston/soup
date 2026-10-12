@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 0.1.0+1
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.10.0
 
 dependencies:
   flutter:
@@ -19,7 +19,41 @@ dependencies:
     path: ../../packages/soup_identity
   soup_tailscale:
     path: ../../packages/soup_tailscale
-  video_player: ^2.14.0
+  url_launcher: ^6.3.2
+  video_player: ^2.11.0
+
+  # webOS implementations (LG flutter-webOS). They only register on webOS;
+  # Android builds ignore them.
+  flutter_secure_storage_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/flutter_secure_storage
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+  path_provider_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/path_provider
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+  shared_preferences_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/shared_preferences
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+  url_launcher_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/url_launcher
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+  video_player_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/video_player
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+
+dependency_overrides:
+  # flutter_secure_storage_webos still asks for the 1.x interface, but it
+  # implements the same methods as 2.x (which flutter_secure_storage 10 needs).
+  flutter_secure_storage_platform_interface: ^2.0.0
 
 dev_dependencies:
   http: ^1.6.0

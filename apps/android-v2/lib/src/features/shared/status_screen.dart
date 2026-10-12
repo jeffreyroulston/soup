@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../form_factor.dart';
 import '../../ui/theme/soup_tokens.dart';
+import '../../ui/touch/sign_in_link.dart';
 import '../../ui/widgets/soup_button.dart';
+import '../../ui/widgets/soup_wordmark.dart';
 
 /// Startup / reconnect states: wordmark, message, optional QR + retry.
 class StatusScreen extends StatelessWidget {
@@ -29,30 +32,39 @@ class StatusScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final touch = context.isTouch;
     return Scaffold(
       body: Center(
-        child: ConstrainedBox(
+        child: Container(
           constraints: const BoxConstraints(maxWidth: 640),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'soup',
-                style: SoupType.style(size: 56, weight: 800, letterSpacing: -2),
-              ),
+              const SoupWordmark(size: 56),
               const SizedBox(height: 28),
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: SoupType.style(size: 34, weight: 800, letterSpacing: -1),
+                style: SoupType.style(
+                  size: touch ? 28 : 34,
+                  weight: 800,
+                  letterSpacing: -1,
+                ),
               ),
               const SizedBox(height: 12),
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: SoupType.style(size: 20, color: SoupColors.muted),
+                style: SoupType.style(
+                  size: touch ? 17 : 20,
+                  color: SoupColors.muted,
+                ),
               ),
-              if (authorizationUrl case final url?) ...[
+              if (authorizationUrl case final url? when touch) ...[
+                const SizedBox(height: 24),
+                SignInLinkButton(url: url, label: 'Open Tailscale sign-in'),
+              ] else if (authorizationUrl case final url?) ...[
                 const SizedBox(height: 24),
                 Container(
                   padding: const EdgeInsets.all(14),

@@ -31,7 +31,37 @@ abstract class Catalog extends ChangeNotifier {
   Future<SearchResults> search(String term);
   Future<List<CatalogItem>> personItems(String personId);
 
-  Future<void> setFavorite(String itemId, bool value);
+  /// Favourite states set on this device, applied to the UI straight away
+  /// rather than after the server round trip and refetch.
+  final favoriteOverrides = ValueNotifier<Map<String, bool>>(const {});
+
+  bool isFavorite(CatalogItem item) =>
+      favoriteOverrides.value[item.id] ?? item.isFavorite;
+
+  /// Optimistic: shows [value] immediately, reverts if the write fails.
+  Future<void> setFavorite(String itemId, bool value) async {
+    final previous = favoriteOverrides.value[itemId];
+    favoriteOverrides.value = {...favoriteOverrides.value, itemId: value};
+    try {
+      await writeFavorite(itemId, value);
+    } catch (_) {
+      // Only undo if no later toggle has replaced ours.
+      if (favoriteOverrides.value[itemId] == value) {
+        final next = {...favoriteOverrides.value};
+        if (previous == null) {
+          next.remove(itemId);
+        } else {
+          next[itemId] = previous;
+        }
+        favoriteOverrides.value = next;
+      }
+      rethrow;
+    }
+  }
+
+  @protected
+  Future<void> writeFavorite(String itemId, bool value);
+
   Future<void> setPlayed(String itemId, bool value);
 
   /// Artwork bytes, or null when the server has none. Goes through the
@@ -41,4 +71,10 @@ abstract class Catalog extends ChangeNotifier {
   /// Bumped (and listeners notified) whenever cached data was invalidated, e.g.
   /// after a favourite or watched toggle, so screens can refetch.
   int get revision;
+
+  @override
+  void dispose() {
+    favoriteOverrides.dispose();
+    super.dispose();
+  }
 }

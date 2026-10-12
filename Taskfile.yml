@@ -253,6 +253,81 @@ tasks:
     cmds:
       - '"{{.ADB}}" {{if .DEVICE}}-s "{{.DEVICE}}"{{end}} install -r apps/android-v2/build/app/outputs/flutter-apk/app-debug.apk'
 
+  # webOS builds run in an Ubuntu container (tool/webos/Dockerfile) with LG's
+  # flutter-webOS. It keeps its own .dart_tool, pub cache and lockfile
+  # (webos/pubspec.lock: flutter-webOS pins Flutter 3.38) so the host's Android
+  # setup is untouched.
+  v2:webos:image:
+    desc: Build the flutter-webOS image; needs WEBOS_NDK_ACCEPT_EULA=1 (LG SDK licence)
+    dir: tool/webos
+    cmds:
+      - >-
+        docker build -t soup-flutter-webos
+        --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)
+        --build-arg WEBOS_NDK_ACCEPT_EULA=${WEBOS_NDK_ACCEPT_EULA:-}
+        .
+    # Built once; rebuild with `docker rmi soup-flutter-webos` first.
+    status:
+      - docker image inspect soup-flutter-webos >/dev/null 2>&1
+
+  v2:webos:volumes:
+    internal: true
+    deps: [v2:webos:image]
+    cmds:
+      # New named volumes are root-owned; hand them to the container user.
+      - >-
+        docker run --rm -u root
+        -v soup-webos-dart-tool:/v/dart-tool -v soup-webos-pub-cache:/v/pub-cache
+        -v soup-webos-config:/v/config -v soup-webos-ssh:/v/ssh
+        -v soup-webos-ares:/v/ares
+        soup-flutter-webos chown -R soup /v
+
+  v2:webos:build:
+    desc: Build the Soup v2 webOS IPK in the flutter-webOS container; pass MODE=debug|profile|release
+    deps: [v2:webos:volumes]
+    cmds:
+      - test -f apps/android-v2/webos/pubspec.lock || cp apps/android-v2/pubspec.lock apps/android-v2/webos/pubspec.lock
+      - >-
+        docker run --rm
+        -v "$PWD":/soup
+        -v "$PWD/apps/android-v2/webos/pubspec.lock":/soup/apps/android-v2/pubspec.lock
+        -v soup-webos-dart-tool:/soup/apps/android-v2/.dart_tool
+        -v soup-webos-pub-cache:/home/soup/.pub-cache
+        soup-flutter-webos
+        bash -c '. "$WEBOS_FLUTTER_NDK_ENV" && flutter-webos build webos --{{.MODE | default "release"}} {{.CLI_ARGS}}'
+      - ls apps/android-v2/build/webos/*/{{.MODE | default "release"}}/ipk/
+
+  v2:webos:run:
+    desc: Build, install and launch Soup v2 on a registered webOS TV; pass DEVICE=<id> and MODE=debug|profile|release
+    deps: [v2:webos:volumes]
+    cmds:
+      - >-
+        docker run --rm -it --network host
+        -v "$PWD":/soup
+        -v "$PWD/apps/android-v2/webos/pubspec.lock":/soup/apps/android-v2/pubspec.lock
+        -v soup-webos-dart-tool:/soup/apps/android-v2/.dart_tool
+        -v soup-webos-pub-cache:/home/soup/.pub-cache
+        -v soup-webos-config:/home/soup/.config
+        -v soup-webos-ssh:/home/soup/.ssh
+        -v soup-webos-ares:/home/soup/.webos
+        soup-flutter-webos
+        bash -c '. "$WEBOS_FLUTTER_NDK_ENV" && flutter-webos run {{if .DEVICE}}-d "{{.DEVICE}}"{{end}} --{{.MODE | default "release"}} {{.CLI_ARGS}}'
+
+  v2:webos:shell:
+    desc: Open a shell in the flutter-webOS container (register a TV, flutter-webos devices)
+    deps: [v2:webos:volumes]
+    cmds:
+      - >-
+        docker run --rm -it --network host
+        -v "$PWD":/soup
+        -v "$PWD/apps/android-v2/webos/pubspec.lock":/soup/apps/android-v2/pubspec.lock
+        -v soup-webos-dart-tool:/soup/apps/android-v2/.dart_tool
+        -v soup-webos-pub-cache:/home/soup/.pub-cache
+        -v soup-webos-config:/home/soup/.config
+        -v soup-webos-ssh:/home/soup/.ssh
+        -v soup-webos-ares:/home/soup/.webos
+        soup-flutter-webos bash
+
   build:apk:release:
     desc: Build a release APK using the prototype signing configuration
     dir: apps/android

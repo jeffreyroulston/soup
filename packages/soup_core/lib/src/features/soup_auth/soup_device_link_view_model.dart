@@ -749,16 +749,31 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
       return redactSecrets(error.message);
     }
     final raw = error.toString();
+    // The raw error (URLs, errno) is for the log, not the screen.
+    debugPrint('[soup] sign-in error: ${redactSecrets(raw)}');
     if (raw.contains('SocketException') ||
         raw.contains('ClientException') ||
         raw.contains('Failed host lookup') ||
         raw.contains('Connection refused') ||
-        raw.contains('Connection timed out')) {
-      return 'Could not reach Soup Identity at the configured URL. '
-          'Check Wi‑Fi/VPN and SOUP_IDENTITY_BASE_URL. (${redactSecrets(raw)})';
+        raw.contains('Connection reset') ||
+        raw.contains('timed out') ||
+        raw.contains('TimeoutException')) {
+      // The Jellyfin exchange goes to the media server; the rest of sign-in
+      // to Soup Identity. Name whichever one didn't answer.
+      final server = _selectedServer;
+      final base = Uri.tryParse(server?.baseUrl ?? '');
+      final toServer =
+          raw.contains('/SoupAuth/') ||
+          (base != null && base.host.isNotEmpty && raw.contains(base.host));
+      if (toServer) {
+        final name = server?.name ?? 'your server';
+        return "Can't reach $name. Make sure it's turned on and connected "
+            'to your network, then try again.';
+      }
+      return "Can't reach Soup's sign-in service. Check your internet "
+          'connection, then try again.';
     }
-    return 'Something went wrong talking to Soup Identity. '
-        '${redactSecrets(raw)}';
+    return 'Something went wrong signing in. Try again in a moment.';
   }
 
   void _notify() {

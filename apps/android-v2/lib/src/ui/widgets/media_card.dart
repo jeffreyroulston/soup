@@ -19,6 +19,7 @@ class MediaCard extends StatelessWidget {
     this.detail,
     this.showPlay = false,
     this.autofocus = false,
+    this.focusNode,
     this.onTap,
     this.titleOverride,
     super.key,
@@ -31,6 +32,7 @@ class MediaCard extends StatelessWidget {
   final String? detail;
   final bool showPlay;
   final bool autofocus;
+  final FocusNode? focusNode;
   final VoidCallback? onTap;
   final String? titleOverride;
 
@@ -60,6 +62,7 @@ class MediaCard extends StatelessWidget {
         children: [
           Focusable(
             autofocus: autofocus,
+            focusNode: focusNode,
             onActivate: onTap ?? () => openItem(context, item),
             builder: (context, focused) => AspectRatio(
               aspectRatio: poster ? 2 / 3 : 16 / 9,

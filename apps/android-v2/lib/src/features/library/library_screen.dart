@@ -1,8 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../data/models.dart';
 import '../../form_factor.dart';
-import '../../ui/soup_focus_policy.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/catalog_builder.dart';
 import '../../ui/widgets/focusable.dart';
@@ -37,10 +39,13 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  static const _cardWidth = 176.0;
+  static const _minCardWidth = 176.0;
   static const _gap = 20.0;
   static const _rowGap = 28.0;
   static const _captionHeight = 62.0;
+
+  /// Right of the grid: the A–Z strip (40 wide, 16 from the edge) plus a gap.
+  static const _stripReserve = 80.0;
 
   final _scroll = ScrollController();
   final _headerKey = GlobalKey();
@@ -48,40 +53,90 @@ class _LibraryScreenState extends State<LibraryScreen> {
   LibrarySort _sort = LibrarySort.title;
   String? _genre;
 
+  /// One node per A–Z letter, so the grid can hand focus to its letter.
+  final _letterNodes = <String, FocusNode>{};
+
+  /// The card a letter sends focus to (the first title under it).
+  final _letterTarget = FocusNode(debugLabel: 'letter target');
+  int? _letterTargetIndex;
+
+  FocusNode _letterNode(String letter) => _letterNodes.putIfAbsent(
+    letter,
+    () => FocusNode(debugLabel: 'letter $letter'),
+  );
+
   @override
   void dispose() {
     _scroll.dispose();
+    _letterTarget.dispose();
+    for (final node in _letterNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
   List<CatalogItem> _apply(List<CatalogItem> items) =>
       applyLibraryFilter(items, _filter, _genre);
 
-  int _columns(double width) {
-    final avail = width - SoupSpacing.gutter * 2 - 70; // A–Z strip
-    return ((avail + _gap) / (_cardWidth + _gap)).floor().clamp(2, 12);
+  /// As many columns of at least [_minCardWidth] as fit, then the cards
+  /// stretch so the rows span the whole width up to the A–Z strip.
+  static ({int columns, double cardWidth}) _grid(double width) {
+    final avail = width - SoupSpacing.gutter - _stripReserve;
+    final columns = ((avail + _gap) / (_minCardWidth + _gap)).floor().clamp(
+      2,
+      12,
+    );
+    return (
+      columns: columns,
+      cardWidth: (avail - _gap * (columns - 1)) / columns,
+    );
   }
 
-  void _jump(String letter, List<CatalogItem> items, int columns) {
+  static double _rowHeight(double cardWidth) =>
+      cardWidth * 1.5 + _captionHeight;
+
+  Future<void> _jump(
+    String letter,
+    List<CatalogItem> items,
+    ({int columns, double cardWidth}) grid,
+  ) async {
     final index = items.indexWhere((i) => sortLetter(i) == letter);
     if (index < 0 || !_scroll.hasClients) return;
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     final header = box?.size.height ?? 300;
-    final rowExtent = _cardWidth * 1.5 + _captionHeight + _rowGap;
-    final target = header + (index ~/ columns) * rowExtent;
-    _scroll.animateTo(
+    final rowExtent = _rowHeight(grid.cardWidth) + _rowGap;
+    final target = header + (index ~/ grid.columns) * rowExtent;
+    await _scroll.animateTo(
       target.clamp(0, _scroll.position.maxScrollExtent),
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
     );
   }
 
+  /// Left/OK on a letter: into the grid at its first title.
+  Future<void> _enterLetter(
+    String letter,
+    List<CatalogItem> items,
+    ({int columns, double cardWidth}) grid,
+  ) async {
+    final index = items.indexWhere((i) => sortLetter(i) == letter);
+    if (index < 0) return;
+    setState(() => _letterTargetIndex = index);
+    await _jump(letter, items, grid);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _letterTarget.context != null) {
+        _letterTarget.requestFocus();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (context.isTouch) return TouchLibraryScreen(library: widget.library);
     final lib = widget.library;
-    final width = MediaQuery.sizeOf(context).width;
-    final columns = _columns(width);
+    final grid = _grid(MediaQuery.sizeOf(context).width);
+    final columns = grid.columns;
+    final cardWidth = grid.cardWidth;
     return CatalogBuilder<List<CatalogItem>>(
       load: (c) => c.libraryItems(lib, _sort),
       keys: [lib.id, _sort],
@@ -102,7 +157,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: Center(
                     child: _AzStrip(
                       letters: letters,
-                      onJump: (l) => _jump(l, items, columns),
+                      focusNodeFor: _letterNode,
+                      onFocus: (l) => unawaited(_jump(l, items, grid)),
+                      onEnter: (l) => unawaited(_enterLetter(l, items, grid)),
                     ),
                   ),
                 ),
@@ -136,28 +193,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
               SliverPadding(
                 padding: const EdgeInsets.only(
                   left: SoupSpacing.gutter,
-                  right: SoupSpacing.gutter + 70,
+                  right: _stripReserve,
                 ),
                 sliver: SliverList.builder(
                   itemCount: all == null ? 3 : rows,
                   itemBuilder: (context, row) => Padding(
                     padding: const EdgeInsets.only(bottom: _rowGap),
                     child: SizedBox(
-                      height: _cardWidth * 1.5 + _captionHeight,
+                      height: _rowHeight(cardWidth),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           for (var c = 0; c < columns; c++) ...[
                             if (all == null)
-                              const MediaCardSkeleton(width: _cardWidth)
+                              MediaCardSkeleton(width: cardWidth)
                             else if (row * columns + c < items.length)
-                              MediaCard(
-                                item: items[row * columns + c],
-                                width: _cardWidth,
-                                autofocus: row == 0 && c == 0,
+                              _card(
+                                items,
+                                row * columns + c,
+                                cardWidth,
+                                // The row's last card hands Right to the
+                                // strip, at its own letter.
+                                rowEnd:
+                                    c == columns - 1 ||
+                                    row * columns + c == items.length - 1,
                               )
                             else
-                              const SizedBox(width: _cardWidth),
+                              SizedBox(width: cardWidth),
                             if (c < columns - 1) const SizedBox(width: _gap),
                           ],
                         ],
@@ -181,6 +243,35 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _card(
+    List<CatalogItem> items,
+    int index,
+    double width, {
+    required bool rowEnd,
+  }) {
+    final item = items[index];
+    final card = MediaCard(
+      item: item,
+      width: width,
+      autofocus: index == 0,
+      focusNode: index == _letterTargetIndex ? _letterTarget : null,
+    );
+    if (!rowEnd) return card;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyUpEvent ||
+            event.logicalKey != LogicalKeyboardKey.arrowRight) {
+          return KeyEventResult.ignored;
+        }
+        _letterNode(sortLetter(item)).requestFocus();
+        return KeyEventResult.handled;
+      },
+      child: card,
     );
   }
 }
@@ -341,10 +432,20 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// A–Z jump strip. Up/Down step through the letters that have titles and
+/// stop at the ends; landing on a letter scrolls the grid to it, and Left/OK
+/// moves into the grid at its first title.
 class _AzStrip extends StatelessWidget {
-  const _AzStrip({required this.letters, required this.onJump});
+  const _AzStrip({
+    required this.letters,
+    required this.focusNodeFor,
+    required this.onFocus,
+    required this.onEnter,
+  });
   final Set<String> letters;
-  final ValueChanged<String> onJump;
+  final FocusNode Function(String letter) focusNodeFor;
+  final ValueChanged<String> onFocus;
+  final ValueChanged<String> onEnter;
 
   static const _all = [
     '#',
@@ -376,6 +477,34 @@ class _AzStrip extends StatelessWidget {
     'Z',
   ];
 
+  List<String> get _available => [
+    for (final l in _all)
+      if (letters.contains(l)) l,
+  ];
+
+  KeyEventResult _key(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final available = _available;
+    final current = available.indexWhere((l) => focusNodeFor(l).hasFocus);
+    if (current < 0) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown) {
+      final next = current + (key == LogicalKeyboardKey.arrowUp ? -1 : 1);
+      if (next >= 0 && next < available.length) {
+        focusNodeFor(available[next]).requestFocus();
+      }
+      // Stop at the ends rather than falling out into the grid or nav.
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft && event is KeyDownEvent) {
+      onEnter(available[current]);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) return KeyEventResult.handled;
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) => Container(
     width: 40,
@@ -385,17 +514,23 @@ class _AzStrip extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       border: Border.all(color: const Color(0x1AFFFFFF)),
     ),
-    child: FocusTraversalGroup(
-      policy: SoupFocusPolicy(),
+    child: Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _key,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           for (final l in _all)
             if (letters.contains(l))
               Focusable(
+                focusNode: focusNodeFor(l),
                 scale: 1.0,
                 radius: 10,
-                onActivate: () => onJump(l),
+                onFocusChange: (focused) {
+                  if (focused) onFocus(l);
+                },
+                onActivate: () => onEnter(l),
                 builder: (context, focused) => Container(
                   width: 32,
                   height: 21,

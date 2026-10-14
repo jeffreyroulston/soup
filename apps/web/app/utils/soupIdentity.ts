@@ -68,6 +68,11 @@ export function startDeviceLink(baseUrl: string): Promise<DeviceLinkStart> {
   return identityFetch<DeviceLinkStart>(baseUrl, '/auth/device/link', { method: 'POST' })
 }
 
+/** Google sign-in for a device code, skipping the /link page the QR code opens. */
+export function googleSignInUrl(baseUrl: string, userCode: string): string {
+  return `${baseUrl}/auth/google/start?user_code=${encodeURIComponent(userCode)}`
+}
+
 export async function pollDeviceLink(baseUrl: string, deviceCode: string): Promise<DeviceLinkPoll> {
   const response = await identityRequest(
     baseUrl,

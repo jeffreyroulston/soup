@@ -67,17 +67,16 @@ function panelClip(i: number, count: number) {
     </div>
   </section>
 
-  <NuxtLink
+  <section
     v-else-if="curated || spotlight"
-    :to="to"
     :aria-label="`${title} collection`"
-    class="group relative mx-4 block h-[420px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
+    class="relative mx-4 block h-[420px] overflow-hidden rounded-[28px] bg-surface sm:mx-8 sm:h-[400px] lg:mx-12"
   >
     <img
       v-if="backdrop"
       :src="backdrop"
       alt=""
-      class="absolute inset-0 size-full object-cover object-top transition-transform duration-1000 group-hover:scale-[1.015]"
+      class="absolute inset-0 size-full object-cover object-top"
       loading="lazy"
     >
     <!-- Same scrims as the hero -->
@@ -88,21 +87,22 @@ function panelClip(i: number, count: number) {
       Full-bleed posters cut on a diagonal, side by side. Phones get them as a
       strip across the top that fades into the backdrop; wider screens get them
       down the right side, narrower until there's room for the copy beside them.
+      Each poster opens its film; the clip path is also its hit area.
     -->
     <div
-      class="pointer-events-none absolute inset-x-0 top-0 flex h-[42%] [mask-image:linear-gradient(to_bottom,#000_45%,transparent)] sm:inset-y-0 sm:left-auto sm:h-auto sm:w-[42%] sm:[mask-image:none] xl:w-[52%]"
-      aria-hidden="true"
+      class="absolute inset-x-0 top-0 flex h-[42%] [mask-image:linear-gradient(to_bottom,#000_45%,transparent)] sm:inset-y-0 sm:left-auto sm:h-auto sm:w-[42%] sm:[mask-image:none] xl:w-[52%]"
     >
-      <img
+      <NuxtLink
         v-for="(poster, i) in posters"
         :key="poster.id"
-        :src="poster.src!"
-        alt=""
-        class="h-full min-w-0 flex-1 object-cover opacity-90 transition-opacity duration-500 group-hover:opacity-100"
+        :to="`/item/${poster.id}`"
+        :aria-label="poster.name"
+        class="h-full min-w-0 flex-1 opacity-90 transition-opacity duration-500 hover:opacity-100 focus-visible:opacity-100"
         :class="i > 0 && '-ml-[3.5%]'"
         :style="{ clipPath: panelClip(i, posters.length) }"
-        loading="lazy"
       >
+        <img :src="poster.src!" alt="" class="size-full object-cover" loading="lazy">
+      </NuxtLink>
     </div>
 
     <!-- Copy stops short of the posters so it never runs over them -->
@@ -116,9 +116,12 @@ function panelClip(i: number, count: number) {
       <p v-if="description" class="line-clamp-3 text-base leading-relaxed text-white/80 xl:line-clamp-2">
         {{ description }}
       </p>
-      <span class="mt-1 inline-flex h-[46px] items-center self-start rounded-full bg-white px-6 text-base font-extrabold text-black transition group-hover:bg-white/90">
+      <NuxtLink
+        :to="to"
+        class="mt-1 inline-flex h-[46px] items-center self-start rounded-full bg-white px-6 text-base font-extrabold text-black transition hover:bg-white/90"
+      >
         Watch the collection
-      </span>
+      </NuxtLink>
     </div>
-  </NuxtLink>
+  </section>
 </template>

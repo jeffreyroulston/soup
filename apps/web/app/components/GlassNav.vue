@@ -52,6 +52,9 @@ function isActive(path: string) {
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 
+/** My Stuff opens on Favourites; its other tabs keep the nav item lit. */
+const myStuffActive = computed(() => isActive('/favourites') || isActive('/history'))
+
 const {
   entries: servers,
   currentKey,
@@ -110,6 +113,14 @@ async function onLogout() {
         :class="isActive(`/library/${lib.id}`) ? 'bg-ink font-bold text-canvas' : 'font-semibold text-ink-2 hover:text-ink'"
       >
         {{ lib.name }}
+      </NuxtLink>
+      <NuxtLink
+        to="/favourites"
+        :aria-current="myStuffActive ? 'page' : undefined"
+        class="inline-flex h-[38px] shrink-0 items-center whitespace-nowrap rounded-full px-[18px] text-[15px] transition"
+        :class="myStuffActive ? 'bg-ink font-bold text-canvas' : 'font-semibold text-ink-2 hover:text-ink'"
+      >
+        My Stuff
       </NuxtLink>
     </nav>
 
@@ -240,6 +251,17 @@ async function onLogout() {
         <path d="M4 4h16v16H4zM8 4v16M16 4v16" />
       </svg>
       <span class="max-w-full truncate px-1">{{ lib.name }}</span>
+    </NuxtLink>
+    <NuxtLink
+      to="/favourites"
+      :aria-current="myStuffActive ? 'page' : undefined"
+      class="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[26px] text-[11px] font-bold"
+      :class="myStuffActive ? 'bg-white/15 text-ink' : 'text-muted'"
+    >
+      <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />
+      </svg>
+      My Stuff
     </NuxtLink>
     <NuxtLink
       to="/search"

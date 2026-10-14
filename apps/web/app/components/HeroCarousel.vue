@@ -3,8 +3,6 @@ import type { JellyfinItem } from '~/types/jellyfin'
 
 const props = defineProps<{
   items: JellyfinItem[]
-  /** Item ids that came from Continue Watching. */
-  resumeIds?: Set<string>
   /** Placeholder in the same box while the home rows load. */
   loading?: boolean
 }>()
@@ -20,15 +18,19 @@ let timer: ReturnType<typeof setInterval> | null = null
 const current = computed(() => props.items[index.value] ?? null)
 const backdrop = computed(() => (current.value ? imageUrl(current.value, 'Backdrop', 1920) : null))
 
-const kicker = computed(() => {
+const title = computed(() => current.value?.seriesName || current.value?.name || '')
+
+/** Title art when the item (or an episode's show) has it; a failed load falls back to text. */
+const failedLogos = ref(new Set<string>())
+const logo = computed(() => {
   const item = current.value
-  if (!item) return ''
-  const lead = props.resumeIds?.has(item.id) ? 'Continue Watching' : 'Recently Added'
-  const genre = item.genres?.[0]
-  return genre ? `${lead} · ${genre}` : lead
+  if (!item || failedLogos.value.has(item.id)) return null
+  return imageUrl(item, 'Logo', 800)
 })
 
-const title = computed(() => current.value?.seriesName || current.value?.name || '')
+function onLogoError() {
+  if (current.value) failedLogos.value = new Set(failedLogos.value).add(current.value.id)
+}
 
 const metaBits = computed(() => {
   const item = current.value
@@ -46,10 +48,13 @@ const chips = computed(() => {
 const primaryAction = computed(() => {
   const item = current.value
   if (!item) return null
-  if (!isPlayable(item)) return { label: 'View', to: itemRoute(item) }
+  if (!isPlayable(item)) return { label: 'View', detail: null, progress: 0, to: itemRoute(item) }
   const left = timeLeftLabel(item)
+  const resume = Boolean(left && canResume(item))
   return {
-    label: left && canResume(item) ? `Resume · ${left}` : 'Play',
+    label: resume ? 'Resume' : 'Play',
+    detail: resume ? left : null,
+    progress: resume && isInProgress(item) ? item.playedPercentage ?? 0 : 0,
     to: watchRoute(item),
   }
 })
@@ -152,8 +157,17 @@ onBeforeUnmount(() => {
 
     <div class="absolute inset-x-4 bottom-10 flex flex-wrap items-end justify-between gap-6 sm:inset-x-8 sm:bottom-16 lg:inset-x-12 lg:bottom-[72px]">
       <div :key="current.id" class="flex max-w-[600px] flex-col gap-4">
-        <span class="text-sm font-bold text-ink-2">{{ kicker }}</span>
-        <h1 class="text-balance font-extrabold tracking-[-0.04em]" :class="heroTitleClass(title)">
+        <h1 v-if="logo" class="leading-none">
+          <NuxtLink :to="`/item/${current.seriesId || current.id}`" class="inline-block">
+            <img
+              :src="logo"
+              :alt="title"
+              class="max-h-[clamp(5rem,14vw,10rem)] w-auto max-w-[min(100%,28rem)] lg:max-h-[clamp(10rem,16vw,15rem)] lg:max-w-[min(100%,36rem)] object-contain object-left drop-shadow-[0_6px_24px_rgba(0,0,0,0.5)]"
+              @error="onLogoError"
+            >
+          </NuxtLink>
+        </h1>
+        <h1 v-else class="text-balance font-extrabold tracking-[-0.04em]" :class="heroTitleClass(title)">
           <!-- TitleLink's underline reveal, sized in em to suit the display type -->
           <NuxtLink
             :to="`/item/${current.seriesId || current.id}`"
@@ -163,13 +177,10 @@ onBeforeUnmount(() => {
           </NuxtLink>
         </h1>
         <p v-if="current.type === 'Episode'" class="text-lg font-bold text-ink-2">
-          <EpisodeLinks :item="current" /><template v-if="episodeCode(current)"> · </template>{{ current.name }}
+          <EpisodeLinks :item="current" /><template v-if="episodeCode(current)">, </template>{{ current.name }}
         </p>
-        <div class="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink-2">
-          <template v-for="(bit, i) in metaBits" :key="bit">
-            <span v-if="i" aria-hidden="true">·</span>
-            <span>{{ bit }}</span>
-          </template>
+        <div class="flex flex-wrap items-center gap-x-[18px] gap-y-2 text-[15px] font-semibold text-ink-2">
+          <span v-for="bit in metaBits" :key="bit">{{ bit }}</span>
           <span
             v-for="chip in chips"
             :key="chip"
@@ -180,14 +191,13 @@ onBeforeUnmount(() => {
           {{ current.overview }}
         </p>
         <div class="mt-1 flex items-center gap-3">
-          <NuxtLink
+          <PlayButton
             v-if="primaryAction"
             :to="primaryAction.to"
-            class="inline-flex h-[52px] items-center gap-2.5 whitespace-nowrap rounded-btn bg-ink px-5 text-[17px] font-extrabold text-canvas transition hover:bg-ink/80 sm:px-[30px]"
-          >
-            <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z" /></svg>
-            {{ primaryAction.label }}
-          </NuxtLink>
+            :label="primaryAction.label"
+            :detail="primaryAction.detail"
+            :progress="primaryAction.progress"
+          />
           <NuxtLink
             :to="itemRoute(current)"
             class="glass hidden h-[52px] items-center rounded-btn px-6 text-[17px] font-bold text-ink sm:inline-flex"
@@ -200,8 +210,7 @@ onBeforeUnmount(() => {
             :aria-pressed="isFavorite"
             @click="toggleFavorite"
           >
-            <svg v-if="isFavorite" class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-            <svg v-else class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            <svg class="size-5" :class="isFavorite && 'text-accent'" viewBox="0 0 24 24" :fill="isFavorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
             Favourite
           </button>
         </div>

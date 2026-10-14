@@ -90,6 +90,16 @@ export function useJellyfinQueries() {
       queryKey: queryKeys.libraryGenres(id),
       queryFn: () => api.getLibraryGenreCounts(id, collectionType),
     }),
+    favorites: (sort: LibrarySort = 'SortName') => queryOptions({
+      queryKey: queryKeys.favorites(sort),
+      queryFn: () => api.getFavorites(sort),
+    }),
+    history: () => queryOptions({
+      queryKey: queryKeys.history(),
+      queryFn: api.getHistory,
+      // Something may have finished playing elsewhere.
+      refetchOnWindowFocus: true,
+    }),
     search: (term: string) => queryOptions({
       queryKey: queryKeys.search(term),
       queryFn: () => api.search(term),

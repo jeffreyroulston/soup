@@ -39,7 +39,7 @@ const nextEpisode = computed(() => {
 })
 
 /**
- * Starts with the tracks picked on the detail page, else the ones Settings prefers.
+ * Starts with the tracks and quality picked on the detail page, else the ones Settings prefers.
  * A non-default audio track, an image subtitle or a quality cap needs Jellyfin to
  * transcode; text subtitles load in the player.
  */
@@ -54,7 +54,7 @@ async function loadPlan(value: JellyfinItem, startTicks: number): Promise<Jellyf
   initialSubtitleIndex.value = subtitle?.isTextSubtitle ? subtitle.index : null
   const audioIndex = audio && audio.index !== defaultAudioStream(value)?.index ? audio.index : null
   const burnedIndex = subtitle && !subtitle.isTextSubtitle ? subtitle.index : null
-  const maxBitrate = prefs.value.maxBitrate
+  const maxBitrate = tracks.maxBitrate !== undefined ? tracks.maxBitrate : prefs.value.maxBitrate
   if (audioIndex == null && burnedIndex == null && maxBitrate == null) return getPlaybackPlan(value.id, startTicks)
   try {
     return await getHlsPlaybackPlan(value.id, startTicks, {

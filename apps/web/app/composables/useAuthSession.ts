@@ -4,6 +4,7 @@ import { isMockMode } from '~/utils/mockMode'
 import { exchangeForJellyfin, fetchServers, pickServer } from '~/utils/soupExchange'
 import {
   fetchRoster,
+  googleSignInUrl,
   IdentityError,
   pollDeviceLink,
   refreshSoupSession,
@@ -393,6 +394,7 @@ export function useAuthSession() {
       return {
         userCode: 'MOCK-0001',
         verificationUrl: '/login',
+        googleUrl: '/login',
         interval: 1,
         expiresIn: 600,
       }
@@ -408,6 +410,7 @@ export function useAuthSession() {
     return {
       userCode: started.user_code,
       verificationUrl: started.verification_uri_complete || started.verification_uri,
+      googleUrl: googleSignInUrl(identityBaseUrl, started.user_code),
       interval,
       expiresIn: started.expires_in,
     }

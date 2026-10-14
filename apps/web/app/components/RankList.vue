@@ -20,7 +20,7 @@ function detail(item: JellyfinItem) {
     item.productionYear,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(', ')
 }
 
 function numeralClass(i: number) {
@@ -63,6 +63,7 @@ function numeralClass(i: number) {
             variant="landscape"
             :detail="detail(item)"
             :zoom="false"
+            :favorite-button="false"
           >
             <!-- Knockout: the same numeral in the page colour with a halo, offset back by the
                  slide padding, so the image looks cut away around the numeral above. -->

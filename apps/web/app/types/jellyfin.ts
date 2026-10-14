@@ -88,11 +88,15 @@ export type JellyfinItem = {
   seasonId?: string | null
   premiereDate?: string | null
   endDate?: string | null
+  /** When the item (or, for a series, its newest episode) reached the server. */
+  dateAdded?: string | null
   childCount?: number | null
   /** Everything under a folder item (a series' seasons and episodes); only requested where needed. */
   recursiveItemCount?: number | null
   path?: string | null
   mediaSourceId?: string | null
+  /** Total bitrate of the first media source in bits/s, when Jellyfin knows it. */
+  sourceBitrate?: number | null
   mediaStreams?: JellyfinMediaStream[]
   chapters?: JellyfinChapter[]
   /** Thumbnails for the first media source, at the size closest to the seek-bar preview. */
@@ -121,12 +125,18 @@ export type JellyfinItem = {
   backdropImageTag?: string | null
   parentBackdropItemId?: string | null
   parentBackdropImageTag?: string | null
+  /** Transparent title art; episodes borrow their series' through the parent fields. */
+  logoImageTag?: string | null
+  parentLogoItemId?: string | null
+  parentLogoImageTag?: string | null
   seriesName?: string | null
   seriesPrimaryImageTag?: string | null
   indexNumber?: number | null
   parentIndexNumber?: number | null
   playedPercentage?: number | null
   playbackPositionTicks?: number | null
+  /** When the user last played it (ISO). */
+  lastPlayedDate?: string | null
 }
 
 export type JellyfinCollection = {
@@ -145,8 +155,12 @@ export type JellyfinShelf = {
 export type JellyfinHome = {
   resume: JellyfinItem[]
   nextUp: JellyfinItem[]
+  /** `resume` and `nextUp` merged, most recently watched show or film first. */
+  keepWatching: JellyfinItem[]
   /** Recently Added for each video library (titled with the library's name), in the server's order. */
   recentlyAdded: JellyfinShelf[]
+  /** Random movies and shows with backdrops; fills out the hero. */
+  random?: JellyfinItem[]
 }
 
 /** A Soup-curated pack matched against this library (hard-coded ids, not a Jellyfin BoxSet). */

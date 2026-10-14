@@ -1,5 +1,6 @@
 import type {
   JellyfinChapter,
+  JellyfinHome,
   JellyfinItem,
   JellyfinMediaSegment,
   JellyfinMediaStream,
@@ -59,6 +60,8 @@ export function canResume(item: JellyfinItem): boolean {
 export type TrackChoice = {
   audioStreamIndex?: number | null
   subtitleStreamIndex?: number | null
+  /** Quality cap in bits/s; null is Auto (no cap), undefined leaves it to Settings. */
+  maxBitrate?: number | null
 }
 
 /** Route to an item's page; a season opens its show with that season selected. */
@@ -74,6 +77,8 @@ export function watchRoute(item: JellyfinItem, fromStart = false, tracks: TrackC
   if (tracks.audioStreamIndex != null) query.audio = String(tracks.audioStreamIndex)
   if (tracks.subtitleStreamIndex === null) query.sub = 'off'
   else if (tracks.subtitleStreamIndex != null) query.sub = String(tracks.subtitleStreamIndex)
+  if (tracks.maxBitrate === null) query.q = 'auto'
+  else if (tracks.maxBitrate != null) query.q = String(tracks.maxBitrate)
   return { path: `/watch/${item.id}`, query }
 }
 
@@ -86,6 +91,7 @@ export function trackChoiceFromQuery(query: Record<string, unknown>): TrackChoic
   return {
     audioStreamIndex: parse(query.audio),
     subtitleStreamIndex: query.sub === 'off' ? null : parse(query.sub),
+    maxBitrate: query.q === 'auto' ? null : QUALITY_CAPS.find(q => String(q.bitrate) === query.q)?.bitrate,
   }
 }
 
@@ -122,12 +128,30 @@ export function preferredSubtitleStream(item: JellyfinItem, language: string | n
 
 /** Quality caps offered in the player and Settings; Jellyfin picks the resolution to fit the bitrate. */
 export const QUALITY_CAPS: { bitrate: number, height: number, label: string, detail: string }[] = [
+  { bitrate: 120_000_000, height: 2160, label: '4K', detail: '120 Mbps' },
+  { bitrate: 80_000_000, height: 2160, label: '4K', detail: '80 Mbps' },
+  { bitrate: 60_000_000, height: 2160, label: '4K', detail: '60 Mbps' },
+  { bitrate: 40_000_000, height: 2160, label: '4K', detail: '40 Mbps' },
   { bitrate: 20_000_000, height: 1080, label: '1080p', detail: '20 Mbps' },
+  { bitrate: 15_000_000, height: 1080, label: '1080p', detail: '15 Mbps' },
   { bitrate: 10_000_000, height: 1080, label: '1080p', detail: '10 Mbps' },
+  { bitrate: 8_000_000, height: 1080, label: '1080p', detail: '8 Mbps' },
   { bitrate: 6_000_000, height: 720, label: '720p', detail: '6 Mbps' },
+  { bitrate: 4_000_000, height: 720, label: '720p', detail: '4 Mbps' },
   { bitrate: 3_000_000, height: 480, label: '480p', detail: '3 Mbps' },
+  { bitrate: 1_500_000, height: 480, label: '480p', detail: '1.5 Mbps' },
   { bitrate: 1_000_000, height: 360, label: '360p', detail: '1 Mbps' },
 ]
+
+/**
+ * The caps that would actually lower this item's quality: no taller than the file and below its
+ * bitrate (a cap at or above it only forces a needless transcode). Unknown values don't filter.
+ */
+export function qualityCapsFor(item: JellyfinItem): typeof QUALITY_CAPS {
+  const height = resolutionClass(item.mediaStreams?.find(s => s.type === 'Video'))
+  const bitrate = item.sourceBitrate
+  return QUALITY_CAPS.filter(q => (!height || q.height <= height) && (!bitrate || q.bitrate < bitrate))
+}
 
 export function streamLabel(stream: JellyfinMediaStream): string {
   return stream.displayTitle || stream.language || stream.codec || `Track ${stream.index}`
@@ -215,6 +239,31 @@ export function collapseKeepWatching(
   return { resume: collapsed, nextUp: next }
 }
 
+/**
+ * The Keep Watching row: Continue Watching and Next Up in one list, ordered by when each show
+ * or film was last played. `activity` is everything with a play date (raw resume items and
+ * recently played episodes), since a Next Up episode is usually unplayed and has no date of
+ * its own. Items with no known date keep their order, after the dated ones.
+ */
+export function orderKeepWatching(
+  home: { resume: readonly JellyfinItem[], nextUp: readonly JellyfinItem[] },
+  activity: readonly JellyfinItem[] = [],
+): JellyfinItem[] {
+  const time = (date: string | null | undefined) => (date ? Date.parse(date) || 0 : 0)
+  const lastPlayedBySeries = new Map<string, number>()
+  for (const item of activity) {
+    if (!item.seriesId) continue
+    const played = time(item.lastPlayedDate)
+    if (played > (lastPlayedBySeries.get(item.seriesId) ?? 0)) lastPlayedBySeries.set(item.seriesId, played)
+  }
+  const lastActivity = (item: JellyfinItem) =>
+    Math.max(time(item.lastPlayedDate), item.seriesId ? lastPlayedBySeries.get(item.seriesId) ?? 0 : 0)
+  return [...home.resume, ...home.nextUp]
+    .map((item, index) => ({ item, index, at: lastActivity(item) }))
+    .sort((a, b) => b.at - a.at || a.index - b.index)
+    .map(entry => entry.item)
+}
+
 export function resolutionClass(stream: Pick<JellyfinMediaStream, 'width' | 'height'> | null | undefined): number | null {
   const width = stream?.width ?? 0
   const height = stream?.height ?? 0
@@ -224,6 +273,12 @@ export function resolutionClass(stream: Pick<JellyfinMediaStream, 'width' | 'hei
   if (width >= 1200 || height >= 700) return 720
   if (width >= 960 || height >= 560) return 576
   return 480
+}
+
+/** 8234000 → "8.2 Mbps", 640000 → "640 kbps". */
+export function bitrateLabel(bitsPerSecond: number): string {
+  if (bitsPerSecond < 1_000_000) return `${Math.round(bitsPerSecond / 1000)} kbps`
+  return `${Number((bitsPerSecond / 1_000_000).toFixed(1))} Mbps`
 }
 
 export function resolutionLabel(height: number): string {
@@ -311,6 +366,14 @@ export function initials(name: string): string {
 }
 
 /** Hero title size stepped down by length so long names don't run to five lines. */
+/** An episode's title steps down as it gets longer, so it fits the details column beside the still. */
+export function episodeTitleClass(title: string): string {
+  const length = title.length
+  if (length <= 20) return 'text-[clamp(2.25rem,4vw,3.5rem)] leading-none'
+  if (length <= 40) return 'text-[clamp(2rem,3.25vw,2.75rem)] leading-[1.05]'
+  return 'text-[clamp(1.75rem,2.6vw,2.25rem)] leading-[1.1]'
+}
+
 export function heroTitleClass(title: string): string {
   const length = title.length
   if (length <= 18) return 'text-[clamp(2.75rem,7.5vw,6.5rem)] leading-[0.9]'
@@ -401,4 +464,47 @@ export function skipRanges(
     }
   }
   return ranges.sort((a, b) => a.start - b.start)
+}
+
+/** Only things that reached the server this recently count as "new" in the hero. */
+export const HERO_RECENT_DAYS = 14
+
+/**
+ * Hero order: new seasons of shows you watch, then new episodes of them, then
+ * Continue Watching, then recently added, then random picks. One slide per show.
+ */
+export function pickHeroItems(
+  home: JellyfinHome,
+  hasBackdrop: (item: JellyfinItem) => boolean,
+  limit = 6,
+  now = Date.now(),
+): JellyfinItem[] {
+  const cutoff = now - HERO_RECENT_DAYS * 24 * 60 * 60 * 1000
+  const addedAt = (item: JellyfinItem) => (item.dateAdded ? Date.parse(item.dateAdded) : Number.NaN)
+  const isRecent = (item: JellyfinItem) => addedAt(item) > cutoff
+  // Next Up only lists shows you've already started.
+  const freshNextUp = home.nextUp.filter(isRecent)
+  const isSeasonPremiere = (item: JellyfinItem) => item.indexNumber === 1 && (item.parentIndexNumber ?? 0) > 1
+  // Newest first across every library, not library by library.
+  const added = home.recentlyAdded
+    .flatMap(shelf => shelf.items)
+    .filter(isRecent)
+    .sort((a, b) => addedAt(b) - addedAt(a))
+
+  const seen = new Set<string>()
+  const picks: JellyfinItem[] = []
+  for (const item of [
+    ...freshNextUp.filter(isSeasonPremiere),
+    ...freshNextUp,
+    ...home.resume,
+    ...added,
+    ...(home.random ?? []),
+  ]) {
+    const key = item.seriesId || item.id
+    if (seen.has(key) || !hasBackdrop(item)) continue
+    seen.add(key)
+    picks.push(item)
+    if (picks.length === limit) break
+  }
+  return picks
 }

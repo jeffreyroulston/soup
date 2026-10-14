@@ -12,7 +12,10 @@ const mock = isMockMode()
 
 const phase = ref<'idle' | 'waiting' | 'direct' | 'quickConnect' | 'server' | 'error'>('idle')
 const userCode = ref('')
+/** The QR code opens /link, where the phone picks a sign-in method. */
 const verificationUrl = ref('')
+/** "Continue with Google" skips /link and starts Google sign-in for the same code. */
+const googleUrl = ref('')
 const errorMessage = ref('')
 /** Couldn't start the device link that backs the QR code and the Google button. */
 const linkError = ref('')
@@ -110,6 +113,7 @@ function stopLink() {
   linkStarting = null
   userCode.value = ''
   verificationUrl.value = ''
+  googleUrl.value = ''
   void auth.cancelLogin()
 }
 
@@ -125,6 +129,7 @@ function ensureLink(): Promise<void> {
       if (run !== linkRun) return
       userCode.value = started.userCode
       verificationUrl.value = started.verificationUrl
+      googleUrl.value = started.googleUrl
       scheduleLinkPoll(started.interval || 5, run)
     }
     catch (error) {
@@ -263,11 +268,11 @@ async function beginLogin() {
   }
   errorMessage.value = ''
   // Opened from the click itself when the link is ready, so popup blockers let it through.
-  const popup = verificationUrl.value ? null : window.open('', '_blank')
-  if (verificationUrl.value) window.open(verificationUrl.value, '_blank', 'noopener,noreferrer')
+  const popup = googleUrl.value ? null : window.open('', '_blank')
+  if (googleUrl.value) window.open(googleUrl.value, '_blank', 'noopener,noreferrer')
   phase.value = 'waiting'
   await ensureLink()
-  if (!verificationUrl.value) {
+  if (!googleUrl.value) {
     popup?.close()
     phase.value = 'error'
     errorMessage.value = linkError.value || 'Could not start sign-in'
@@ -275,7 +280,7 @@ async function beginLogin() {
   }
   if (popup) {
     popup.opener = null
-    popup.location.href = verificationUrl.value
+    popup.location.href = googleUrl.value
   }
 }
 
@@ -291,6 +296,7 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
       }
       if (result.status === 'chooseServer') {
         verificationUrl.value = ''
+        googleUrl.value = ''
         phase.value = 'server'
         return
       }
@@ -633,13 +639,13 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
             Waiting for approval
           </div>
           <a
-            v-if="verificationUrl"
-            :href="verificationUrl"
+            v-if="googleUrl"
+            :href="googleUrl"
             target="_blank"
             rel="noopener noreferrer"
             class="inline-flex h-[52px] items-center justify-center rounded-btn bg-white/10 text-base font-bold text-ink hover:bg-white/15"
           >
-            Open verification page
+            Open Google sign-in again
           </a>
           <button
             type="button"

@@ -29,24 +29,13 @@ const loadError = computed(() => (home.value ? null : homeQuery.error.value))
 
 const resumeIds = computed(() => new Set(home.value?.resume.map(item => item.id) ?? []))
 
-const featured = computed<JellyfinItem[]>(() => {
-  if (!home.value) return []
-  const seen = new Set<string>()
-  const picks: JellyfinItem[] = []
-  for (const item of [...home.value.resume, ...home.value.recentlyAdded.flatMap(shelf => shelf.items)]) {
-    const key = item.seriesId || item.id
-    if (seen.has(key) || !imageUrl(item, 'Backdrop', 1920)) continue
-    seen.add(key)
-    picks.push(item)
-    if (picks.length === 6) break
-  }
-  return picks
-})
+const featured = computed<JellyfinItem[]>(() =>
+  home.value ? pickHeroItems(home.value, item => !!imageUrl(item, 'Backdrop', 1920)) : [])
 
 /** One collection, picked at random (stable for the day, like the other rotating rows). */
 const featuredCollection = computed(() => dailyShuffle(collection.value?.curated ?? [], 'collection')[0] ?? null)
 
-const upNext = computed(() => (home.value ? [...home.value.resume, ...home.value.nextUp] : []))
+const upNext = computed(() => home.value?.keepWatching ?? [])
 
 function upNextLead(item: JellyfinItem) {
   return resumeIds.value.has(item.id) ? 'Continue' : 'Next'
@@ -54,7 +43,7 @@ function upNextLead(item: JellyfinItem) {
 
 function upNextDetail(item: JellyfinItem) {
   const left = timeLeftLabel(item)
-  if (item.type === 'Episode') return left ? `${item.name} · ${left}` : item.name
+  if (item.type === 'Episode') return left ? `${item.name}, ${left}` : item.name
   return left ?? runtimeLabel(item.runTimeTicks)
 }
 
@@ -65,7 +54,7 @@ function upNextDetail(item: JellyfinItem) {
     <ErrorState v-if="loadError" class="pt-32" :error="loadError" :on-retry="homeQuery.refetch" />
     <template v-else>
       <!-- Every row brings its own skeleton, so the layout is in place before the data -->
-      <HeroCarousel v-if="loading || featured.length" :items="featured" :resume-ids="resumeIds" :loading="loading" />
+      <HeroCarousel v-if="loading || featured.length" :items="featured" :loading="loading" />
       <div v-else class="h-28" />
 
       <div class="flex flex-col gap-12">
@@ -79,6 +68,7 @@ function upNextDetail(item: JellyfinItem) {
                 :detail="upNextDetail(item)"
                 :to="isPlayable(item) ? watchRoute(item) : undefined"
                 :play="isPlayable(item)"
+                :favorite-button="false"
               />
             </div>
           </template>
@@ -106,7 +96,7 @@ function upNextDetail(item: JellyfinItem) {
         >
           <template #default="{ slideClass }">
             <div v-for="item in extras?.unwatchedTopRated ?? []" :key="item.id" :class="slideClass">
-              <MediaCard :item="item" />
+              <MediaCard :item="item" :favorite-button="false" />
             </div>
           </template>
         </MediaRow>

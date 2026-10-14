@@ -29,6 +29,8 @@ const props = withDefaults(defineProps<{
   bare?: boolean
   /** Scale the art up on hover. */
   zoom?: boolean
+  /** Heart over the art: always shown on favourites, on hover or focus for the rest. */
+  favoriteButton?: boolean
 }>(), {
   variant: 'poster',
   kicker: null,
@@ -41,6 +43,7 @@ const props = withDefaults(defineProps<{
   episodeLine: 'auto',
   bare: false,
   zoom: true,
+  favoriteButton: true,
 })
 
 const NuxtLinkComponent = resolveComponent('NuxtLink')
@@ -90,6 +93,14 @@ const secondary = computed(() => {
 const progress = computed(() => (isInProgress(props.item) ? Math.min(100, props.item.playedPercentage ?? 0) : 0))
 const href = computed(() => props.to ?? itemRoute(props.item))
 
+const FAVORITE_TYPES = new Set(['Movie', 'Series', 'Episode'])
+const favoriteMutation = useFavoriteMutation()
+const showFavorite = computed(() => props.favoriteButton && !props.bare && FAVORITE_TYPES.has(props.item.type))
+
+function toggleFavorite() {
+  favoriteMutation.mutate({ id: props.item.id, value: !props.item.isFavorite })
+}
+
 const prefetchItem = usePrefetchItem()
 
 /** The title an /item/:id or /watch/:id link opens; both pages start with that item's query. */
@@ -102,7 +113,7 @@ function prefetchTarget() {
 </script>
 
 <template>
-  <div class="block w-full">
+  <div class="group/card relative block w-full">
     <component
       :is="bare ? 'div' : NuxtLinkComponent"
       :to="bare ? undefined : href"
@@ -165,6 +176,21 @@ function prefetchTarget() {
       </span>
     </component>
 
+    <!-- A sibling of the link (buttons can't sit inside one), placed over the art's corner -->
+    <button
+      v-if="showFavorite"
+      type="button"
+      class="absolute left-1.5 top-1.5 z-10 grid size-10 place-items-center rounded-full bg-canvas/55 backdrop-blur-md transition focus-visible:opacity-100"
+      :class="item.isFavorite
+        ? 'text-accent'
+        : 'text-ink opacity-0 hover:bg-canvas/75 group-hover/card:opacity-100 group-focus-within/card:opacity-100'"
+      :aria-label="item.isFavorite ? `Remove ${item.name} from favourites` : `Add ${item.name} to favourites`"
+      :aria-pressed="Boolean(item.isFavorite)"
+      @click="toggleFavorite"
+    >
+      <svg class="size-[22px]" viewBox="0 0 24 24" :fill="item.isFavorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
+    </button>
+
     <div v-if="!bare" class="mt-2.5 flex min-w-0 flex-col gap-0.5">
       <span
         v-if="kicker || episodeIn === 'kicker'"
@@ -172,8 +198,8 @@ function prefetchTarget() {
       >
         <template v-if="kicker">{{ kicker }}</template>
         <template v-if="episodeIn === 'kicker'">
-          <template v-if="kicker"> · </template>
-          <template v-if="showSeriesLink"><NuxtLink :to="`/item/${item.seriesId}`" :class="linkClass">{{ item.seriesName }}</NuxtLink> · </template>
+          <span v-if="kicker" class="inline-block w-2.5" aria-hidden="true" />
+          <template v-if="showSeriesLink"><NuxtLink :to="`/item/${item.seriesId}`" :class="linkClass">{{ item.seriesName }}</NuxtLink><span class="inline-block w-2.5" aria-hidden="true" /></template>
           <EpisodeLinks :item="item" />
         </template>
       </span>
@@ -188,9 +214,9 @@ function prefetchTarget() {
         class="truncate text-[13px] font-semibold text-muted"
       >
         <template v-if="episodeIn === 'detail'">
-          <template v-if="showSeriesLink"><NuxtLink :to="`/item/${item.seriesId}`" :class="linkClass">{{ item.seriesName }}</NuxtLink> · </template>
+          <template v-if="showSeriesLink"><NuxtLink :to="`/item/${item.seriesId}`" :class="linkClass">{{ item.seriesName }}</NuxtLink><span class="inline-block w-2.5" aria-hidden="true" /></template>
           <EpisodeLinks :item="item" />
-          <template v-if="secondary"> · </template>
+          <span v-if="secondary" class="inline-block w-2.5" aria-hidden="true" />
         </template>{{ secondary }}
       </span>
     </div>

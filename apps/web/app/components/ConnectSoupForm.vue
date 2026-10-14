@@ -7,6 +7,8 @@ const auth = useAuthSession()
 
 const userCode = ref('')
 const verificationUrl = ref('')
+/** "Continue with Google" skips the /link page the QR code opens. */
+const googleUrl = ref('')
 const error = ref('')
 const qrSvg = computed(() => (verificationUrl.value
   ? renderSVG(verificationUrl.value, { border: 2, pixelSize: 8, blackColor: '#000', whiteColor: '#fff' })
@@ -31,11 +33,13 @@ async function start() {
   error.value = ''
   userCode.value = ''
   verificationUrl.value = ''
+  googleUrl.value = ''
   try {
     const started = await auth.startLogin()
     if (current !== run) return
     userCode.value = started.userCode
     verificationUrl.value = started.verificationUrl
+    googleUrl.value = started.googleUrl
     schedulePoll(started.interval || 5, current)
   }
   catch (err) {
@@ -65,8 +69,8 @@ function schedulePoll(intervalSec: number, current: number) {
   }, Math.max(2, intervalSec) * 1000)
 }
 
-function openVerification() {
-  if (verificationUrl.value) window.open(verificationUrl.value, '_blank', 'noopener,noreferrer')
+function openGoogle() {
+  if (googleUrl.value) window.open(googleUrl.value, '_blank', 'noopener,noreferrer')
 }
 </script>
 
@@ -108,9 +112,9 @@ function openVerification() {
     <div class="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        :disabled="!verificationUrl"
+        :disabled="!googleUrl"
         class="h-11 rounded-btn bg-ink px-5 text-[15px] font-extrabold text-canvas transition enabled:hover:bg-ink/80 disabled:opacity-50"
-        @click="openVerification"
+        @click="openGoogle"
       >
         Continue with Google
       </button>

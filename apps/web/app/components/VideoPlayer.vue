@@ -9,7 +9,7 @@ import type {
 } from '~/types/jellyfin'
 import type { StreamSelection } from '~/composables/usePlayback'
 import type { SkipRange } from '~/utils/media'
-import { QUALITY_CAPS, SKIP_LABELS, skipRanges } from '~/utils/media'
+import { QUALITY_CAPS, SKIP_LABELS, qualityCapsFor, skipRanges } from '~/utils/media'
 
 const props = defineProps<{
   plan: JellyfinPlaybackPlan
@@ -176,11 +176,8 @@ const mediaSourceId = computed(() => activePlan.value.mediaSourceId || props.ite
 /** Source resolution class (1080, 720…), not raw height: cropped widescreen is often e.g. 1280×536. */
 const sourceHeight = computed(() => resolutionClass(videoStream.value))
 
-/** Quality options no taller than the source (all of them if its resolution is unknown). */
-const qualityOptions = computed(() => {
-  const source = sourceHeight.value
-  return source ? QUALITY_CAPS.filter(q => q.height <= source) : QUALITY_CAPS
-})
+/** Quality options that would lower the source's resolution or bitrate. */
+const qualityOptions = computed(() => qualityCapsFor(props.item))
 
 const methodLabel = computed(() => {
   const method = playMethod.value
@@ -361,37 +358,50 @@ async function attachSource(url: string, method: JellyfinPlayMethod, isHls: bool
   ensureCurrent()
 
   if (isHls) {
-    const canNative = Boolean(video.canPlayType('application/vnd.apple.mpegurl'))
-    if (canNative) {
-      video.src = url
-      await waitForVideo(video)
-    }
-    else if (Hls.isSupported()) {
+    // hls.js first: Chrome now reports native HLS ("maybe") but its player
+    // rejects Jellyfin's TS segments with code 4. Native is for browsers
+    // without MSE (older iOS Safari).
+    if (Hls.isSupported()) {
+      const start = startSeconds.value
       const instance = new Hls({
         enableWorker: true,
         maxBufferLength: 30,
+        // Load the resume point's segment first rather than segment 0.
+        startPosition: start > 0 && Number.isFinite(start) ? start : -1,
+        // A segment error means Jellyfin's transcode failed; slow transcodes
+        // are timeouts, which keep the default policy. Fail in seconds, not a minute.
+        fragLoadPolicy: {
+          default: {
+            ...Hls.DefaultConfig.fragLoadPolicy.default,
+            errorRetry: { maxNumRetry: 2, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+          },
+        },
         xhrSetup(xhr) {
           xhr.withCredentials = false
         },
       })
       hls = instance
+      // Settles on the first decoded frame, not the manifest: a transcode that
+      // dies (missing file, ffmpeg error) only shows up as failing segments.
       await new Promise<void>((resolve, reject) => {
+        let recovered = false
         const onError = (_event: unknown, data: {
           fatal?: boolean
           type?: string
           details?: string
+          response?: { code?: number }
         }) => {
           if (!data.fatal) return
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            instance.startLoad()
-            return
-          }
-          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          if (!recovered && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            recovered = true
             instance.recoverMediaError()
             return
           }
           cleanup()
-          reject(new Error(`HLS error: ${data.type ?? 'fatal'}${data.details ? ` (${data.details})` : ''}`))
+          const status = data.response?.code
+          reject(new Error(status && status >= 500
+            ? `Jellyfin couldn't stream this file (HTTP ${status}). Check the server can read it.`
+            : `HLS error: ${data.type ?? 'fatal'}${data.details ? ` (${data.details})` : ''}`))
         }
         const onReady = () => {
           cleanup()
@@ -402,16 +412,20 @@ async function attachSource(url: string, method: JellyfinPlayMethod, isHls: bool
           reject(new PlaybackCancelled())
         }
         const cleanup = () => {
-          instance.off(Hls.Events.MANIFEST_PARSED, onReady)
+          video.removeEventListener('loadeddata', onReady)
           instance.off(Hls.Events.ERROR, onError)
           instance.off(Hls.Events.DESTROYING, onDestroying)
         }
-        instance.on(Hls.Events.MANIFEST_PARSED, onReady)
+        video.addEventListener('loadeddata', onReady)
         instance.on(Hls.Events.ERROR, onError)
         instance.on(Hls.Events.DESTROYING, onDestroying)
         instance.loadSource(url)
         instance.attachMedia(video)
       })
+    }
+    else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = url
+      await waitForVideo(video)
     }
     else {
       throw new Error('HLS is not supported in this browser')

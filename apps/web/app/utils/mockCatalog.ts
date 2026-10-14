@@ -217,6 +217,8 @@ const personHues: Record<string, number> = {
 
 const favorites = new Set<string>()
 const played = new Set<string>(['ep-signal-1-1'])
+/** When each played item was last watched, for History. */
+const playedAt = new Map<string, string>([['ep-signal-1-1', new Date(Date.now() - 26 * 3_600_000).toISOString()]])
 
 function movie(
   id: string,
@@ -405,11 +407,19 @@ function defaultStreams() {
   ]
 }
 
+/** A season or series' episodes, or [] for anything else. */
+function childEpisodes(itemId: string): JellyfinItem[] {
+  return episodes.filter(episodeItem => episodeItem.seasonId === itemId || episodeItem.seriesId === itemId)
+}
+
 function withUserFlags<T extends JellyfinItem>(item: T): T {
+  // Like Jellyfin, a season or series is played once all of its episodes are.
+  const children = item.type === 'Season' || item.type === 'Series' ? childEpisodes(item.id) : []
   return {
     ...item,
     isFavorite: favorites.has(item.id),
-    played: played.has(item.id),
+    played: children.length ? children.every(child => played.has(child.id)) : played.has(item.id),
+    lastPlayedDate: playedAt.get(item.id) ?? null,
   }
 }
 
@@ -468,10 +478,12 @@ function hueFor(item: { id: string, _hue?: number }): number {
 
 export function mockImageUrl(
   itemId: string,
-  type: 'Primary' | 'Backdrop',
+  type: 'Primary' | 'Backdrop' | 'Logo',
   _tag: string | null | undefined,
   _maxWidth: number,
 ): string | null {
+  // No title art in the mock catalogue; pages fall back to the text title.
+  if (type === 'Logo') return null
   if (itemId.startsWith('person-')) {
     return personUri(
       people.find(person => person.id === itemId)?.name ?? '?',
@@ -502,6 +514,7 @@ export function mockGetHome(): JellyfinHome {
   return {
     resume,
     nextUp,
+    keepWatching: [...resume, ...nextUp],
     recentlyAdded: [
       { title: 'Movies', items: movies.slice(0, 6).map(withUserFlags), seeAllTo: '/library/lib-movies' },
       {
@@ -510,6 +523,7 @@ export function mockGetHome(): JellyfinHome {
         seeAllTo: '/library/lib-tv',
       },
     ],
+    random: [...movies, ...seriesList].map(withUserFlags).sort(() => Math.random() - 0.5),
   }
 }
 
@@ -559,6 +573,10 @@ export function mockGetLibraryItems(libraryId: string, sortBy: LibrarySort = 'So
       ? [withUserFlags(spotlightCollection)]
       : movies.map(withUserFlags)
   return sortItems(items, sortBy)
+}
+
+export function mockGetFavorites(sortBy: LibrarySort = 'SortName'): JellyfinItem[] {
+  return sortItems(allCatalogItems().filter(item => item.isFavorite), sortBy)
 }
 
 export function mockGetLibraryTotal(libraryId: string): number {
@@ -636,8 +654,23 @@ export function mockSetFavorite(itemId: string, favorite: boolean) {
 }
 
 export function mockSetPlayed(itemId: string, value: boolean) {
-  if (value) played.add(itemId)
-  else played.delete(itemId)
+  // Marking a season or series marks its episodes, as Jellyfin does.
+  const children = childEpisodes(itemId)
+  for (const id of children.length ? children.map(child => child.id) : [itemId]) {
+    if (value) {
+      played.add(id)
+      playedAt.set(id, new Date().toISOString())
+    }
+    else {
+      played.delete(id)
+    }
+  }
+}
+
+export function mockGetHistory(): JellyfinItem[] {
+  return allCatalogItems()
+    .filter(item => item.played && item.type !== 'Series')
+    .sort((a, b) => (b.lastPlayedDate ?? '').localeCompare(a.lastPlayedDate ?? ''))
 }
 
 export function mockPlaybackPlan(itemId: string, startPositionTicks = 0): JellyfinPlaybackPlan {

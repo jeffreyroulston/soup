@@ -23,6 +23,8 @@ export const queryKeys = {
   libraryItems: (id: string, sort: LibrarySort) => [...root, 'library', id, 'items', sort] as const,
   libraryTotal: (id: string) => [...root, 'library', id, 'total'] as const,
   libraryGenres: (id: string) => [...root, 'library', id, 'genres'] as const,
+  favorites: (sort: LibrarySort) => [...root, 'favorites', sort] as const,
+  history: () => [...root, 'history'] as const,
   search: (term: string) => [...root, 'search', term] as const,
   personItems: (personId: string) => [...root, 'person', personId] as const,
 }

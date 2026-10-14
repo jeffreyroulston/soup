@@ -184,7 +184,7 @@ onBeforeUnmount(() => {
             <MediaCard
               :item="item"
               variant="landscape"
-              :kicker="[item.type === 'Series' ? 'Series' : 'Movie', item.productionYear].filter(Boolean).join(' · ')"
+              :kicker="[item.type === 'Series' ? 'Series' : 'Movie', item.productionYear].filter(Boolean).join(', ')"
               :caption="item.name"
             />
           </div>
@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
           <div v-for="item in titles" :key="item.id" :class="slideClass">
             <MediaCard
               :item="item"
-              :detail="[item.type === 'Series' ? 'Series' : 'Movie', item.productionYear].filter(Boolean).join(' · ')"
+              :detail="[item.type === 'Series' ? 'Series' : 'Movie', item.productionYear].filter(Boolean).join(', ')"
             />
           </div>
         </template>

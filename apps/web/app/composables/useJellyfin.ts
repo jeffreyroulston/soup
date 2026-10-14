@@ -17,6 +17,8 @@ import {
   mockGetEpisodes,
   mockGetBecauseYouWatched,
   mockGetExtras,
+  mockGetFavorites,
+  mockGetHistory,
   mockGetGenreShelves,
   mockGetHome,
   mockGetHomeCollection,
@@ -40,7 +42,7 @@ import {
   mockTrickplayTileUrl,
 } from '~/utils/mockCatalog'
 import { isMockMode } from '~/utils/mockMode'
-import { collapseKeepWatching, countGenres, dailyShuffle, type GenreCount } from '~/utils/media'
+import { collapseKeepWatching, countGenres, orderKeepWatching, dailyShuffle, type GenreCount } from '~/utils/media'
 import {
   getCuratedPack,
   matchCuratedCollections,
@@ -54,7 +56,7 @@ const DETAIL_FIELDS =
   'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,CriticRating,MediaSources,MediaStreams,Genres,Studios,Networks,People,Path,Chapters,SortName,ChildCount,Trickplay,RemoteTrailers,LocalTrailerCount,SpecialFeatureCount,OriginalTitle,ProductionLocations,Tags,ProviderIds,Status'
 
 const LIST_FIELDS =
-  'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,Genres,SortName,ChildCount,MediaStreams'
+  'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,Genres,SortName,ChildCount,MediaStreams,DateCreated,DateLastMediaAdded'
 
 /** Lean fields for matching Soup curated packs against the whole library. */
 const CURATED_MATCH_FIELDS = 'ProviderIds,ProductionYear,SortName'
@@ -76,7 +78,7 @@ const TEXT_SUBTITLE_CODECS = new Set([
 
 export type LibrarySort = 'SortName' | 'DateCreated' | 'ProductionYear' | 'CommunityRating'
 
-type ImageKind = 'Primary' | 'Backdrop'
+type ImageKind = 'Primary' | 'Backdrop' | 'Logo'
 
 /** Libraries whose recent additions are worth a home row (not collections, playlists, music…). */
 const NON_VIDEO_LIBRARIES = new Set(['boxsets', 'playlists', 'music', 'books', 'photos', 'livetv'])
@@ -284,6 +286,9 @@ function mapItem(raw: unknown): JellyfinItem | null {
       Array.isArray(parentBackdropTags) && parentBackdropTags.length
         ? String(parentBackdropTags[0])
         : null,
+    logoImageTag: imageTags.Logo ?? null,
+    parentLogoItemId: (json.ParentLogoItemId as string | undefined) ?? null,
+    parentLogoImageTag: (json.ParentLogoImageTag as string | undefined) ?? null,
     seriesName: (json.SeriesName as string | undefined) ?? null,
     seriesPrimaryImageTag: (json.SeriesPrimaryImageTag as string | undefined) ?? null,
     seriesId: (json.SeriesId as string | undefined) ?? null,
@@ -292,6 +297,7 @@ function mapItem(raw: unknown): JellyfinItem | null {
     parentIndexNumber: typeof json.ParentIndexNumber === 'number' ? json.ParentIndexNumber : null,
     premiereDate: (json.PremiereDate as string | undefined) ?? null,
     endDate: (json.EndDate as string | undefined) ?? null,
+    dateAdded: ((json.DateLastMediaAdded ?? json.DateCreated) as string | undefined) ?? null,
     childCount: typeof json.ChildCount === 'number' ? json.ChildCount : null,
     recursiveItemCount: typeof json.RecursiveItemCount === 'number' ? json.RecursiveItemCount : null,
     path: (json.Path as string | undefined) ?? null,
@@ -299,6 +305,7 @@ function mapItem(raw: unknown): JellyfinItem | null {
     studios: asStrings(json.Studios),
     people: asPeople(json.People),
     mediaSourceId,
+    sourceBitrate: typeof firstSource?.Bitrate === 'number' && firstSource.Bitrate > 0 ? firstSource.Bitrate : null,
     mediaStreams: Array.isArray(rawStreams)
       ? rawStreams.map(mapStream).filter((s): s is JellyfinMediaStream => s !== null)
       : [],
@@ -316,6 +323,7 @@ function mapItem(raw: unknown): JellyfinItem | null {
       typeof userData?.PlaybackPositionTicks === 'number'
         ? userData.PlaybackPositionTicks
         : null,
+    lastPlayedDate: (userData?.LastPlayedDate as string | undefined) ?? null,
   }
 }
 
@@ -368,6 +376,12 @@ function createJellyfin() {
       return imageUrlFor(item.id, 'Backdrop', item.backdropImageTag, maxWidth)
         ?? (item.parentBackdropItemId
           ? imageUrlFor(item.parentBackdropItemId, 'Backdrop', item.parentBackdropImageTag, maxWidth)
+          : null)
+    }
+    if (type === 'Logo') {
+      return imageUrlFor(item.id, 'Logo', item.logoImageTag, maxWidth)
+        ?? (item.parentLogoItemId
+          ? imageUrlFor(item.parentLogoItemId, 'Logo', item.parentLogoImageTag, maxWidth)
           : null)
     }
     return imageUrlFor(item.id, 'Primary', item.primaryImageTag, maxWidth)
@@ -435,21 +449,49 @@ function createJellyfin() {
   async function getHome(): Promise<JellyfinHome> {
     if (mock) {
       const home = mockGetHome()
-      return { ...home, ...collapseKeepWatching(home.resume, home.nextUp) }
+      const collapsed = collapseKeepWatching(home.resume, home.nextUp)
+      return { ...home, ...collapsed, keepWatching: orderKeepWatching(collapsed, home.resume) }
     }
     const { userId } = requireSession()
-    const images = 'Primary,Backdrop'
-    const [resume, nextUp, recentlyAdded] = await Promise.all([
+    // Logo: the hero shows title art over the backdrop when the item has it.
+    const images = 'Primary,Backdrop,Logo'
+    const [resume, nextUp, recentlyAdded, random, played] = await Promise.all([
       // Generous limit so a show's earlier part-watched episodes aren't cut off before collapsing.
       get(`Users/${userId}/Items/Resume`, listQuery(images, { Limit: '50', MediaTypes: 'Video' })),
-      get('Shows/NextUp', listQuery(images, { UserId: userId, Limit: '12' })).catch(() => null),
+      // Room for shows last watched a while ago, so their new seasons can reach the hero.
+      get('Shows/NextUp', listQuery(images, { UserId: userId, Limit: '30' })).catch(() => null),
       getLibraries().then(libraries => Promise.all(
         libraries.filter(isVideoLibrary).map(library => getLatestShelf(library, images)),
       )),
+      userItems(listQuery(images, {
+        IncludeItemTypes: 'Movie,Series',
+        Recursive: 'true',
+        SortBy: 'Random',
+        ImageTypes: 'Backdrop',
+        Limit: '12',
+      })).catch(() => null),
+      // Play dates for Keep Watching's order: a Next Up episode is unplayed, so its show's
+      // last watched episode says when you were last on it.
+      userItems({
+        IncludeItemTypes: 'Episode',
+        Recursive: 'true',
+        Filters: 'IsPlayed',
+        SortBy: 'DatePlayed',
+        SortOrder: 'Descending',
+        Limit: '200',
+        EnableImages: 'false',
+      }).catch(() => null),
     ])
+    const resumeItems = asItems(resume)
+    // A show's first episode isn't "up next" until you've started it (Jellyfin 12 dropped
+    // the server-side DisableFirstEpisode option, so filter here).
+    const started = asItems(nextUp).filter(item => !(item.parentIndexNumber === 1 && item.indexNumber === 1))
+    const collapsed = collapseKeepWatching(resumeItems, started)
     return {
-      ...collapseKeepWatching(asItems(resume), asItems(nextUp)),
+      ...collapsed,
+      keepWatching: orderKeepWatching(collapsed, [...resumeItems, ...asItems(played)]),
       recentlyAdded: recentlyAdded.filter(shelf => shelf.items.length),
+      random: asItems(random),
     }
   }
 
@@ -678,6 +720,35 @@ function createJellyfin() {
     return asItems(raw)
   }
 
+  /**
+   * The user's favourite movies, shows and episodes. Jellyfin doesn't record when something
+   * was favourited, so "recent" sorts by when it was added to the library.
+   */
+  async function getFavorites(sortBy: LibrarySort = 'SortName'): Promise<JellyfinItem[]> {
+    if (mock) return mockGetFavorites(sortBy)
+    const descending = sortBy === 'DateCreated' || sortBy === 'CommunityRating' || sortBy === 'ProductionYear'
+    return asItems(await userItems(listQuery('Primary,Backdrop', {
+      Filters: 'IsFavorite',
+      Recursive: 'true',
+      IncludeItemTypes: 'Movie,Series,Episode',
+      SortBy: sortBy === 'SortName' ? 'SortName' : `${sortBy},SortName`,
+      SortOrder: descending ? 'Descending' : 'Ascending',
+    })))
+  }
+
+  /** Movies and episodes the user has finished, most recently watched first. */
+  async function getHistory(): Promise<JellyfinItem[]> {
+    if (mock) return mockGetHistory()
+    return asItems(await userItems(listQuery('Primary,Backdrop', {
+      Filters: 'IsPlayed',
+      Recursive: 'true',
+      IncludeItemTypes: 'Movie,Episode',
+      SortBy: 'DatePlayed',
+      SortOrder: 'Descending',
+      Limit: '200',
+    })))
+  }
+
   async function getItem(itemId: string): Promise<JellyfinItem> {
     if (mock) return mockGetItem(itemId)
     const raw = await get(`Users/${requireSession().userId}/Items/${itemId}`, { Fields: DETAIL_FIELDS })
@@ -828,6 +899,8 @@ function createJellyfin() {
     getLibraryItems,
     getLibraryTotal,
     getLibraryGenreCounts,
+    getFavorites,
+    getHistory,
     getItem,
     getSimilar,
     getSeasons,

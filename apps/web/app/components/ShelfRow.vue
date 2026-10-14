@@ -24,6 +24,7 @@ withDefaults(defineProps<{
         <MediaCard
           :item="item"
           :to="item.type === 'Episode' && item.seriesId ? `/item/${item.seriesId}` : undefined"
+          :favorite-button="false"
         />
       </div>
     </template>

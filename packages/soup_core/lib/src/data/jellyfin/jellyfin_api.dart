@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:jellyfin_api/api.dart' as generated;
 
+import '../playback/device_profile.dart';
+
 class JellyfinServerInfo {
   const JellyfinServerInfo({
     required this.name,
@@ -180,6 +182,52 @@ class JellyfinImageResponse {
   final String mimeType;
 }
 
+/// The account-wide language choices Jellyfin keeps in each user's
+/// configuration, so every client (Soup or not) shares them.
+class JellyfinLanguagePreferences {
+  const JellyfinLanguagePreferences({
+    this.audioLanguage,
+    this.subtitleLanguage,
+  });
+
+  /// ISO 639-2 code; null plays the file's default track.
+  final String? audioLanguage;
+
+  /// ISO 639-2 code; null means subtitles off.
+  final String? subtitleLanguage;
+
+  /// Reads `AudioLanguagePreference`, `SubtitleLanguagePreference` and
+  /// `SubtitleMode` from a Jellyfin `UserConfiguration`.
+  factory JellyfinLanguagePreferences.fromConfiguration(
+    Map<String, Object?> config,
+  ) {
+    String? code(Object? value) {
+      final text = (value as String?)?.trim().toLowerCase();
+      return text == null || text.isEmpty ? null : text;
+    }
+
+    final subtitlesOff = config['SubtitleMode'] == 'None';
+    return JellyfinLanguagePreferences(
+      audioLanguage: code(config['AudioLanguagePreference']),
+      subtitleLanguage: subtitlesOff
+          ? null
+          : code(config['SubtitleLanguagePreference']),
+    );
+  }
+
+  /// [config] with these choices applied; every other setting is kept.
+  Map<String, Object?> applyTo(Map<String, Object?> config) => {
+    ...config,
+    'AudioLanguagePreference': audioLanguage ?? '',
+    'PlayDefaultAudioTrack': audioLanguage == null,
+    if (subtitleLanguage != null) ...{
+      'SubtitleLanguagePreference': subtitleLanguage,
+      'SubtitleMode': 'Always',
+    } else
+      'SubtitleMode': 'None',
+  };
+}
+
 class JellyfinSubtitleTrack {
   const JellyfinSubtitleTrack({
     required this.index,
@@ -221,10 +269,13 @@ class JellyfinPlaybackPlan {
 }
 
 abstract interface class JellyfinPlaybackSource {
+  /// [profile] describes what this device plays; a conservative Android
+  /// profile is used when it's omitted.
   Future<JellyfinPlaybackPlan> getPlaybackPlan(
     JellyfinSession session,
     JellyfinItem item, {
     required Duration startAt,
+    JellyfinDeviceProfile? profile,
   });
 
   Future<String> getSubtitle(
@@ -328,14 +379,28 @@ class JellyfinApi
   JellyfinApi(
     this._client, {
     required this.deviceId,
+    String deviceName = 'Soup',
     this.clientName = 'Soup',
     this.clientVersion = '0.1.0',
-  });
+  }) : deviceName = headerSafeDeviceName(deviceName);
 
   final http.Client _client;
   final String deviceId;
+
+  /// What Jellyfin's dashboard and "Now playing" call this install, e.g.
+  /// `Living room TV` or `LG OLED65C5`.
+  final String deviceName;
   final String clientName;
   final String clientVersion;
+
+  /// Keeps a device name inside the quoted `Device="…"` header value.
+  static String headerSafeDeviceName(String value) {
+    final cleaned = value
+        .replaceAll(RegExp(r'[^A-Za-z0-9 ._()\-]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return cleaned.isEmpty ? 'Soup' : cleaned;
+  }
 
   static Uri parseServerUrl(String value) {
     final trimmed = value.trim();
@@ -464,7 +529,7 @@ class JellyfinApi
   Future<JellyfinSession> exchangeSoupAuth({
     required Uri serverUrl,
     required String assertion,
-    String deviceName = 'Soup Android',
+    String? deviceName,
   }) async {
     final uri = serverUrl.resolve('SoupAuth/Exchange');
     final response = await _client
@@ -478,7 +543,7 @@ class JellyfinApi
           body: jsonEncode({
             'assertion': assertion,
             'deviceId': deviceId,
-            'deviceName': deviceName,
+            'deviceName': deviceName ?? this.deviceName,
             'app': clientName,
             'appVersion': clientVersion,
           }),
@@ -730,6 +795,64 @@ class JellyfinApi
     return JellyfinImageResponse(bytes: response.bodyBytes, mimeType: mimeType);
   }
 
+  Future<Map<String, Object?>> _userConfiguration(
+    JellyfinSession session,
+  ) async {
+    final user = await _getJson(session, 'Users/${session.userId}');
+    final config = user is Map<String, Object?> ? user['Configuration'] : null;
+    if (config is! Map) {
+      throw const JellyfinApiException(
+        'Jellyfin returned incomplete account settings.',
+      );
+    }
+    return Map<String, Object?>.from(config);
+  }
+
+  Future<JellyfinLanguagePreferences> getLanguagePreferences(
+    JellyfinSession session,
+  ) async => JellyfinLanguagePreferences.fromConfiguration(
+    await _userConfiguration(session),
+  );
+
+  /// Saves [preferences] to the signed-in user's Jellyfin configuration.
+  Future<void> updateLanguagePreferences(
+    JellyfinSession session,
+    JellyfinLanguagePreferences preferences,
+  ) async {
+    final body = jsonEncode(
+      preferences.applyTo(await _userConfiguration(session)),
+    );
+    Future<http.Response> post(Uri uri) => _client
+        .post(
+          uri,
+          headers: {
+            ..._sessionHeaders(session),
+            'Content-Type': 'application/json',
+          },
+          body: body,
+        )
+        .timeout(const Duration(seconds: 20));
+    // 10.9+ takes the user as a query parameter; older servers use the path.
+    var response = await post(
+      _sessionUri(
+        session,
+        'Users/Configuration',
+        query: {'userId': session.userId},
+      ),
+    );
+    if (response.statusCode == 404 || response.statusCode == 405) {
+      response = await post(
+        _sessionUri(session, 'Users/${session.userId}/Configuration'),
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw JellyfinApiException(
+        'Could not save your language settings. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   @override
   Future<JellyfinItem> getItem(JellyfinSession session, String itemId) async {
     final value = await _getJson(
@@ -809,7 +932,14 @@ class JellyfinApi
     JellyfinSession session,
     JellyfinItem item, {
     required Duration startAt,
+    JellyfinDeviceProfile? profile,
   }) async {
+    final deviceProfile =
+        profile ??
+        JellyfinDeviceProfile(
+          capabilities: DeviceCapabilities.fallback,
+          name: deviceName,
+        );
     final response = await _client
         .post(
           _sessionUri(session, 'Items/${item.id}/PlaybackInfo'),
@@ -827,8 +957,8 @@ class JellyfinApi
             'EnableTranscoding': true,
             'AllowVideoStreamCopy': true,
             'AllowAudioStreamCopy': true,
-            'MaxStreamingBitrate': 80000000,
-            'DeviceProfile': _androidDeviceProfile,
+            'MaxStreamingBitrate': deviceProfile.maxStreamingBitrate,
+            'DeviceProfile': deviceProfile.toJson(),
           }),
         )
         .timeout(const Duration(seconds: 30));
@@ -889,7 +1019,7 @@ class JellyfinApi
         : _resolvePlaybackUri(session, transcodingUrl);
     if (directUri == null && transcodeUri == null) {
       throw const JellyfinApiException(
-        'This item has no Android-compatible playback source.',
+        'This item has no playback source this device can use.',
       );
     }
 
@@ -1160,13 +1290,13 @@ class JellyfinApi
     'Accept': 'application/json',
     'X-Emby-Token': session.accessToken,
     'Authorization':
-        'MediaBrowser Client="$clientName", Device="Soup Android", DeviceId="$deviceId", Version="$clientVersion", Token="${session.accessToken}"',
+        'MediaBrowser Client="$clientName", Device="$deviceName", DeviceId="$deviceId", Version="$clientVersion", Token="${session.accessToken}"',
   };
 
   Map<String, String> _mediaBrowserHeaders() => {
     'Accept': 'application/json',
     'Authorization':
-        'MediaBrowser Client="$clientName", Device="Soup Android", DeviceId="$deviceId", Version="$clientVersion"',
+        'MediaBrowser Client="$clientName", Device="$deviceName", DeviceId="$deviceId", Version="$clientVersion"',
   };
 
   static List<JellyfinItem> _itemsFromResponse(Object? value) {
@@ -1196,78 +1326,13 @@ class JellyfinApi
 
   static int _ticks(Duration value) => value.inMicroseconds * 10;
 
-  static const _androidDeviceProfile = <String, Object?>{
-    'Name': 'Soup Android',
-    'MaxStreamingBitrate': 80000000,
-    'MaxStaticBitrate': 100000000,
-    'MusicStreamingTranscodingBitrate': 384000,
-    'DirectPlayProfiles': [
-      {
-        'Container': 'mp4,m4v',
-        'Type': 'Video',
-        'VideoCodec': 'h264,hevc,vp9,av1',
-        'AudioCodec': 'aac,mp3,ac3,eac3,opus,flac',
-      },
-      {
-        'Container': 'webm',
-        'Type': 'Video',
-        'VideoCodec': 'vp8,vp9,av1',
-        'AudioCodec': 'vorbis,opus',
-      },
-    ],
-    'TranscodingProfiles': [
-      {
-        'Container': 'ts',
-        'Type': 'Video',
-        'VideoCodec': 'h264',
-        'AudioCodec': 'aac',
-        'Protocol': 'hls',
-        'Context': 'Streaming',
-        'EnableSubtitlesInManifest': false,
-        'MaxAudioChannels': '6',
-        'MinSegments': 1,
-        'SegmentLength': 6,
-        'BreakOnNonKeyFrames': true,
-      },
-    ],
-    // Hardware H.264 decoders (webOS, most Android TV) only handle 8-bit
-    // High/Main/Baseline. Without this Jellyfin stream-copies High 10 (common
-    // in anime encodes) into HLS, and the TV fails to decode it.
-    'CodecProfiles': [
-      {
-        'Type': 'Video',
-        'Codec': 'h264',
-        'Conditions': [
-          {
-            'Condition': 'LessThanEqual',
-            'Property': 'VideoBitDepth',
-            'Value': '8',
-            'IsRequired': false,
-          },
-          {
-            'Condition': 'EqualsAny',
-            'Property': 'VideoProfile',
-            'Value': 'high|main|baseline|constrained baseline',
-            'IsRequired': false,
-          },
-        ],
-      },
-    ],
-    'SubtitleProfiles': [
-      {'Format': 'vtt', 'Method': 'External'},
-      {'Format': 'srt', 'Method': 'External'},
-      {'Format': 'ass', 'Method': 'External'},
-      {'Format': 'ssa', 'Method': 'External'},
-    ],
-  };
-
   generated.ApiClient _generatedClient(Uri serverUrl) {
     final basePath = serverUrl.toString().replaceFirst(RegExp(r'/$'), '');
     final client = generated.ApiClient(basePath: basePath)
       ..client = _client
       ..addDefaultHeader(
         'Authorization',
-        'MediaBrowser Client="$clientName", Device="Soup Android", DeviceId="$deviceId", Version="$clientVersion"',
+        'MediaBrowser Client="$clientName", Device="$deviceName", DeviceId="$deviceId", Version="$clientVersion"',
       )
       ..addDefaultHeader('Accept', 'application/json');
     return client;

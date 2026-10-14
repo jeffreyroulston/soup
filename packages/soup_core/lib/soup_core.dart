@@ -9,6 +9,7 @@ export 'src/data/jellyfin/jellyfin_client_factory.dart';
 export 'src/data/jellyfin/jellyfin_discovery.dart';
 export 'src/data/jellyfin/jellyfin_metadata_repository.dart';
 export 'src/data/jellyfin/lan_discovery.dart';
+export 'src/data/playback/device_profile.dart';
 export 'src/data/playback/playback_bridge.dart';
 export 'src/data/session/auth_path_preferences_store.dart';
 export 'src/data/session/connection_preferences_store.dart';

@@ -122,7 +122,11 @@ void main() {
         return http.Response('[]', 200);
       });
       addTearDown(client.close);
-      final api = JellyfinApi(client, deviceId: 'soup-device');
+      final api = JellyfinApi(
+        client,
+        deviceId: 'soup-device',
+        deviceName: 'Living room TV',
+      );
 
       final session = await api.authenticate(
         serverUrl: Uri.parse('http://jellyfin:8096/'),
@@ -139,7 +143,7 @@ void main() {
       expect(headers['X-Emby-Token'], 'plugin-minted-token');
       expect(
         headers['Authorization'],
-        'MediaBrowser Client="Soup", Device="Soup Android", '
+        'MediaBrowser Client="Soup", Device="Living room TV", '
         'DeviceId="soup-device", Version="0.1.0", Token="plugin-minted-token"',
       );
 
@@ -174,7 +178,11 @@ void main() {
         );
       });
       addTearDown(client.close);
-      final api = JellyfinApi(client, deviceId: 'soup-device');
+      final api = JellyfinApi(
+        client,
+        deviceId: 'soup-device',
+        deviceName: 'LG OLED65C5',
+      );
 
       final session = await api.exchangeSoupAuth(
         serverUrl: Uri.parse('http://jellyfin:8096/'),
@@ -186,7 +194,7 @@ void main() {
       expect(jsonDecode(captured.body), {
         'assertion': 'jwt.assertion',
         'deviceId': 'soup-device',
-        'deviceName': 'Soup Android',
+        'deviceName': 'LG OLED65C5',
         'app': 'Soup',
         'appVersion': '0.1.0',
       });

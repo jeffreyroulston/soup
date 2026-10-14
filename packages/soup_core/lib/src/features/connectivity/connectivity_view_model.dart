@@ -30,7 +30,12 @@ class ConnectivityViewModel extends ChangeNotifier {
     required this.sessionStore,
     required this.connectionStore,
     this.discoveryService,
+    this.deviceName,
   });
+
+  /// This install's name for Jellyfin (read each time a client is made, so a
+  /// rename in Settings applies to the next request batch).
+  final String Function()? deviceName;
 
   final TailscaleClient _tailscaleClient;
   final JellyfinClientFactory jellyfinClientFactory;
@@ -777,7 +782,11 @@ class ConnectivityViewModel extends ChangeNotifier {
       mode: mode,
       proxy: tailscaleEnabled ? _status.proxy : null,
     );
-    return JellyfinApi(_httpClient!, deviceId: await sessionStore.deviceId());
+    return JellyfinApi(
+      _httpClient!,
+      deviceId: await sessionStore.deviceId(),
+      deviceName: deviceName?.call() ?? 'Soup',
+    );
   }
 
   void _setTailscaleStatus(TailscaleStatus value) {

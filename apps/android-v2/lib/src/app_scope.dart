@@ -3,6 +3,7 @@ import 'package:soup_core/soup_core.dart';
 
 import 'data/catalog.dart';
 import 'data/connection_status.dart';
+import 'data/device_settings.dart';
 import 'data/playback_prefs.dart';
 
 /// Per-account dependencies for everything below the auth gate.
@@ -21,6 +22,7 @@ class SoupScope extends InheritedWidget {
     this.soupAuth,
     this.onSelectServer,
     this.connection,
+    this.device,
     super.key,
   });
 
@@ -41,6 +43,14 @@ class SoupScope extends InheritedWidget {
   /// Whether the server is answering; null in mock mode and tests.
   final ConnectionStatus? connection;
 
+  /// This device's name, capabilities and audio setting; null in tests, where
+  /// playback uses a conservative Android profile.
+  final DeviceSettings? device;
+
+  JellyfinDeviceProfile get deviceProfile =>
+      device?.profile() ??
+      JellyfinDeviceProfile(capabilities: DeviceCapabilities.fallback);
+
   bool get isMock => api == null;
 
   /// A copy of this scope around [child], for routes pushed on a navigator
@@ -55,6 +65,7 @@ class SoupScope extends InheritedWidget {
     soupAuth: soupAuth,
     onSelectServer: onSelectServer,
     connection: connection,
+    device: device,
     child: child,
   );
 
@@ -73,5 +84,6 @@ class SoupScope extends InheritedWidget {
       catalog != old.catalog ||
       session != old.session ||
       api != old.api ||
-      connection != old.connection;
+      connection != old.connection ||
+      device != old.device;
 }

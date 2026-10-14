@@ -16,6 +16,7 @@ class MainActivity : FlutterActivity() {
     private val tvTextInput = TvTextInput(this)
     private var textInputChannel: MethodChannel? = null
     private var networkChannel: MethodChannel? = null
+    private var mediaChannel: MethodChannel? = null
 
     override fun provideFlutterEngine(context: Context): FlutterEngine {
         // libtailscale lives for the Android process. Reuse its owning Dart
@@ -56,6 +57,21 @@ class MainActivity : FlutterActivity() {
                 result.error("network_interfaces", error.message, null)
             }
         }
+        mediaChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "dev.michaelishri.soup/media_capabilities",
+        )
+        mediaChannel?.setMethodCallHandler { call, result ->
+            if (call.method != "getCapabilities") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            try {
+                result.success(MediaCapabilities.detect(this))
+            } catch (error: Exception) {
+                result.error("media_capabilities", error.message, null)
+            }
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -63,8 +79,10 @@ class MainActivity : FlutterActivity() {
         tvTextInput.dismiss()
         textInputChannel?.setMethodCallHandler(null)
         networkChannel?.setMethodCallHandler(null)
+        mediaChannel?.setMethodCallHandler(null)
         textInputChannel = null
         networkChannel = null
+        mediaChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 

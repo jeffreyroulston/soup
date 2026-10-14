@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:soup_core/soup_core.dart';
 
 import '../../app_scope.dart';
+import '../../data/device_settings.dart';
 import '../../data/playback_prefs.dart';
 import '../../form_factor.dart';
 import '../../ui/theme/soup_tokens.dart';
@@ -10,6 +14,7 @@ import '../../ui/widgets/glass_nav.dart';
 import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/select_menu.dart';
 import '../../ui/widgets/soup_button.dart';
+import '../../ui/widgets/soup_text_field.dart';
 
 /// Web `pages/settings.vue`: account, playback preferences, sign out.
 class SettingsScreen extends StatelessWidget {
@@ -111,7 +116,7 @@ class SettingsScreen extends StatelessWidget {
                 options: [
                   const SelectOption(null, 'Auto', detail: 'Best available'),
                   for (final q in PlaybackPrefs.qualityCaps)
-                    SelectOption(q.$1, q.$2, detail: q.$3),
+                    SelectOption(q.bitrate, q.label, detail: q.detail),
                 ],
                 onChanged: (v) => prefs.update(maxBitrate: v),
               ),
@@ -139,6 +144,10 @@ class SettingsScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (scope.device case final device?) ...[
+            const SizedBox(height: 20),
+            _DeviceSection(device: device),
+          ],
           const SizedBox(height: 28),
           SoupButton(label: 'Sign out', onPressed: scope.onSignOut),
           const SizedBox(height: 40),
@@ -229,6 +238,101 @@ class _ServersState extends State<_Servers> {
       },
     );
   }
+}
+
+/// Name, audio output and detected capabilities for this device only.
+class _DeviceSection extends StatefulWidget {
+  const _DeviceSection({required this.device});
+  final DeviceSettings device;
+
+  @override
+  State<_DeviceSection> createState() => _DeviceSectionState();
+}
+
+class _DeviceSectionState extends State<_DeviceSection> {
+  late final _name = TextEditingController(text: widget.device.name);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _saveName() {
+    final value = _name.text.trim();
+    final device = widget.device;
+    final custom = value.isEmpty || value == device.device.detectedName
+        ? null
+        : value;
+    if (custom == device.customName) return;
+    unawaited(device.update(customName: custom));
+    if (custom == null) _name.text = device.device.detectedName;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final device = widget.device;
+    final caps = device.device.capabilities;
+    return ListenableBuilder(
+      listenable: device,
+      builder: (context, _) => _Section(
+        title: 'This device',
+        children: [
+          SoupTextField(
+            controller: _name,
+            label: 'Device name',
+            hint: device.device.detectedName,
+            onSubmitted: _saveName,
+          ),
+          const SizedBox(height: 6),
+          _Detail(
+            'How this device appears in Jellyfin. Applies after Soup restarts.',
+          ),
+          const SizedBox(height: 18),
+          _Picker<AudioOutputMode>(
+            label: 'Audio output',
+            value: device.audioOutput,
+            options: [
+              for (final o in DeviceSettings.audioOutputOptions)
+                SelectOption(o.$1, o.$2, detail: o.$3),
+            ],
+            onChanged: (v) => device.update(audioOutput: v),
+          ),
+          const SizedBox(height: 6),
+          _Detail(switch (device.audioOutput) {
+            AudioOutputMode.auto =>
+              'Plays what this device decodes or passes through; converts the rest to 5.1 Dolby Digital, or stereo when the output is stereo.',
+            AudioOutputMode.stereo =>
+              'The server downmixes every track to two channels.',
+            AudioOutputMode.surround =>
+              'For soundbars and streamers that take Dolby Digital 5.1. Other surround formats are converted to it, keeping the subwoofer channel.',
+            AudioOutputMode.passthrough =>
+              'For receivers that decode TrueHD and DTS. Soup sends them untouched.',
+          }),
+          const SizedBox(height: 18),
+          _Detail('Detected: ${caps.platform}'),
+          if (device.device.detectionError case final error?)
+            _Detail('Using defaults; detection failed: $error'),
+          if (caps.summary.isNotEmpty) _Detail('Video: ${caps.summary}'),
+          _Detail('Audio passthrough: ${caps.passthroughSummary}'),
+        ],
+      ),
+    );
+  }
+}
+
+class _Detail extends StatelessWidget {
+  const _Detail(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 2),
+    child: Text(
+      text,
+      style: SoupType.style(size: 14, color: SoupColors.muted, height: 1.35),
+    ),
+  );
 }
 
 class _Section extends StatelessWidget {

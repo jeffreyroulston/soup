@@ -7,6 +7,8 @@ environment:
   sdk: ^3.10.0
 
 dependencies:
+  device_info_plus: ^12.4.0
+  device_info_plus_platform_interface: ^7.0.3
   flutter:
     sdk: flutter
   path_provider: ^2.1.6
@@ -28,6 +30,11 @@ dependencies:
     git:
       url: https://github.com/lg-flutter-webos/plugins.git
       path: packages/flutter_secure_storage
+      ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
+  device_info_plus_webos:
+    git:
+      url: https://github.com/lg-flutter-webos/plugins.git
+      path: packages/device_info_plus
       ref: 3a742bb86b04e261044f0864f9b1f71acf0bbad3
   path_provider_webos:
     git:

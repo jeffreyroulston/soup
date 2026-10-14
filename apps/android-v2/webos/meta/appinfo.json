@@ -18,6 +18,7 @@
     "transparent": true,
     "uiRevision": 2,
     "requiredACG": [
-        "securitykey.operation"
+        "securitykey.operation",
+        "systemconfig.query"
     ]
 }

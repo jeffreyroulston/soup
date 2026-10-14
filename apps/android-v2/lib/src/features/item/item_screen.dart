@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app_scope.dart';
@@ -5,6 +7,7 @@ import '../../data/models.dart';
 import '../../form_factor.dart';
 import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
+import '../../ui/widgets/action_menu.dart';
 import '../../ui/widgets/catalog_builder.dart';
 import '../../ui/widgets/catalog_image.dart';
 import '../../ui/widgets/expandable_overview.dart';
@@ -13,16 +16,29 @@ import '../../ui/widgets/glass_nav.dart';
 import '../../ui/widgets/hero_carousel.dart';
 import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/media_row.dart';
+import '../../ui/widgets/meta_line.dart';
 import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
-import '../../ui/widgets/select_menu.dart';
+import '../../ui/widgets/play_button.dart';
+import '../../ui/widgets/title_art.dart';
 import '../../ui/widgets/error_state.dart';
 import '../../utils/media.dart';
+import 'episode_parts.dart';
 import 'item_screen_touch.dart';
 
+/// The big button's label: Resume, the series' next episode, or Play.
+String playLabel(CatalogItem item, CatalogItem target) {
+  if (canResume(target)) return 'Resume';
+  if (item.type == 'Series' && target.indexNumber != null) {
+    return 'Play S${target.parentIndexNumber ?? 1}:E${target.indexNumber}';
+  }
+  return 'Play';
+}
+
 /// Web `pages/item/[id].vue`: hero, play controls, seasons/episodes, cast,
-/// information and related titles.
+/// information and related titles. An episode leads with its own still and
+/// keeps the show to a small card.
 class ItemScreen extends StatefulWidget {
   const ItemScreen({required this.itemId, super.key});
   final String itemId;
@@ -35,6 +51,8 @@ class _ItemScreenState extends State<ItemScreen> {
   int? _audio; // null = default
   int? _subtitle; // null = per settings, -1 = off
   String? _seasonId;
+  int? _quality; // bitrate cap, null = Auto; only once picked here
+  bool _qualityPicked = false;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +82,9 @@ class _ItemScreenState extends State<ItemScreen> {
           section: NavSection.none,
           slivers: [
             SliverToBoxAdapter(
-              child: _Hero(item: item, state: this),
+              child: item.type == 'Episode'
+                  ? _EpisodeHero(item: item, state: this)
+                  : _Hero(item: item, state: this),
             ),
             SliverToBoxAdapter(
               child: _Body(item: item, state: this),
@@ -78,7 +98,15 @@ class _ItemScreenState extends State<ItemScreen> {
   void setAudio(int? v) => setState(() => _audio = v);
   void setSubtitle(int? v) => setState(() => _subtitle = v);
   void setSeason(String? v) => setState(() => _seasonId = v);
+  void setQuality(int? v) => setState(() {
+    _quality = v;
+    _qualityPicked = true;
+  });
   int? get audio => _audio;
+
+  /// The picked cap, else the one Settings prefers.
+  int? get quality =>
+      _qualityPicked ? _quality : SoupScope.of(context).prefs.maxBitrate;
   int? get subtitle => _subtitle;
   String? get seasonId => _seasonId;
 }
@@ -101,12 +129,17 @@ class _Hero extends StatelessWidget {
         '★ ${item.communityRating!.toStringAsFixed(1)}',
     ];
     final chips = <String>[?item.officialRating, ...qualityBadges(item)];
-    final audio = item.streamsOf(StreamKind.audio);
-    final subs = item.streamsOf(StreamKind.subtitle);
-    final left = timeLeftLabel(item);
-    final progress = isInProgress(item)
-        ? (item.playedPercentage ?? 0) / 100
-        : 0.0;
+    final title = Text(
+      item.name,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      style: SoupType.style(
+        size: heroTitleSize(item.name, size.width).clamp(40, 80),
+        weight: 800,
+        letterSpacing: -2.5,
+        height: 0.95,
+      ),
+    );
 
     return SizedBox(
       height: minHeight < 520 ? 520 : minHeight,
@@ -119,182 +152,214 @@ class _Hero extends StatelessWidget {
             alignment: Alignment.topCenter,
           ),
           const ArtScrims(),
-          // Extra dark fade so the title, meta and overview read over bright art.
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.bottomLeft,
-                end: Alignment.topRight,
-                colors: [
-                  Color(0xCC0A0A0B),
-                  Color(0x660A0A0B),
-                  Color(0x000A0A0B),
-                ],
-                stops: [0.0, 0.45, 0.8],
-              ),
-            ),
-          ),
           Positioned(
             left: SoupSpacing.gutter,
             right: SoupSpacing.gutter,
-            bottom: 48,
+            bottom: 24,
             child: Align(
               alignment: Alignment.bottomLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 820),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isEpisode) ...[
-                      Text(
-                        item.seriesName ?? '',
-                        style: SoupType.style(size: 24, weight: 800),
-                      ),
-                      if (episodeCode(item) != null)
-                        Text(
-                          episodeCode(item)!,
-                          style: SoupType.style(
-                            size: 17,
-                            weight: 700,
-                            color: SoupColors.ink2,
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                    ],
-                    Text(
-                      item.name,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: SoupType.style(
-                        size: heroTitleSize(
-                          item.name,
-                          size.width,
-                        ).clamp(40, 80),
-                        weight: 800,
-                        letterSpacing: -2.5,
-                        height: 0.95,
-                      ),
-                    ),
-                    // Meta and overview sit under the title, as in the home hero.
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 820),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          meta.join(' · '),
-                          style: SoupType.style(
-                            size: 15,
-                            weight: 600,
-                            color: SoupColors.ink2,
+                        if (isEpisode) ...[
+                          Text(
+                            item.seriesName ?? '',
+                            style: SoupType.style(size: 24, weight: 800),
                           ),
-                        ),
-                        for (final c in chips)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
+                          if (episodeCode(item) case final label?)
+                            Text(
+                              label,
+                              style: SoupType.style(
+                                size: 17,
+                                weight: 700,
+                                color: SoupColors.ink2,
+                              ),
                             ),
-                            decoration: BoxDecoration(
-                              color: const Color(0x33FFFFFF),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              c,
-                              style: SoupType.style(size: 12, weight: 800),
-                            ),
+                          const SizedBox(height: 8),
+                          title,
+                        ] else
+                          // Episodes keep the text: the show's logo would read as
+                          // the show rather than this episode.
+                          TitleArt(
+                            logo: item.logo,
+                            maxWidth: 560,
+                            maxHeight: 210,
+                            fallback: title,
                           ),
+                        const SizedBox(height: 14),
+                        MetaLine(bits: meta, chips: chips),
                       ],
                     ),
-                    if (item.overview != null && item.overview!.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 640),
-                        child: ExpandableOverview(
-                          text: item.overview!,
-                          style: SoupType.style(
-                            size: 17,
-                            color: SoupColors.ink2,
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    _Actions(item: item, state: state),
-                    if (audio.length > 1 || subs.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          if (audio.length > 1)
-                            SelectMenu<int?>(
-                              prefix: 'Audio',
-                              icon: Icons.volume_up_rounded,
-                              value: state.audio,
-                              options: [
-                                const SelectOption(null, 'Default'),
-                                for (final a in audio)
-                                  SelectOption(a.index, a.label),
-                              ],
-                              onChanged: state.setAudio,
-                            ),
-                          if (subs.isNotEmpty)
-                            SelectMenu<int?>(
-                              prefix: 'Subtitles',
-                              icon: Icons.subtitles_outlined,
-                              value: state.subtitle,
-                              options: [
-                                const SelectOption(null, 'Default'),
-                                const SelectOption(-1, 'Off'),
-                                for (final s in subs)
-                                  SelectOption(s.index, s.label),
-                              ],
-                              onChanged: state.setSubtitle,
-                            ),
-                        ],
-                      ),
-                    ],
-                    if (progress > 0) ...[
-                      const SizedBox(height: 18),
-                      SizedBox(
-                        width: 320,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(2),
-                              child: LinearProgressIndicator(
-                                value: progress.clamp(0, 1),
-                                minHeight: 4,
-                                color: SoupColors.accent,
-                                backgroundColor: const Color(0x33FFFFFF),
-                              ),
-                            ),
-                            if (left != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 6),
-                                child: Text(
-                                  left,
-                                  style: SoupType.style(
-                                    size: 13,
-                                    weight: 600,
-                                    color: SoupColors.muted,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Full width: the buttons outgrow the text column.
+                  _Actions(item: item, state: state),
+                ],
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Still with prev/next under it on the left; title, actions, pickers,
+/// overview (clamped) and credits on the right.
+class _EpisodeHero extends StatelessWidget {
+  const _EpisodeHero({required this.item, required this.state});
+  final CatalogItem item;
+  final _ItemScreenState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = episodeLabel(item);
+    final chips = <String>[?item.officialRating, ...qualityBadges(item)];
+    final overview = item.overview;
+    final (titleSize, titleHeight) = episodeTitleSize(item.name);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        SoupSpacing.gutter,
+        112,
+        SoupSpacing.gutter,
+        0,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 14,
+            child: Column(
+              children: [
+                EpisodeStill(item: item),
+                const SizedBox(height: 14),
+                AdjacentEpisodes(item: item),
+              ],
+            ),
+          ),
+          const SizedBox(width: 48),
+          Expanded(
+            flex: 10,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (label != null) ...[
+                  Text(
+                    label.toUpperCase(),
+                    style: SoupType.style(
+                      size: 15,
+                      weight: 800,
+                      color: SoupColors.accent,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                Text(
+                  item.name,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: SoupType.style(
+                    size: titleSize,
+                    weight: 800,
+                    letterSpacing: -1.5,
+                    height: titleHeight,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                MetaLine(bits: episodeMeta(item), chips: chips),
+                const SizedBox(height: 24),
+                _Actions(item: item, state: state),
+                const SizedBox(height: 20),
+                TrackPickers(
+                  item: item,
+                  audio: state.audio,
+                  subtitle: state.subtitle,
+                  quality: state.quality,
+                  onAudio: state.setAudio,
+                  onSubtitle: state.setSubtitle,
+                  onQuality: state.setQuality,
+                ),
+                if (overview != null && overview.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  ExpandableOverview(
+                    text: overview,
+                    maxLines: 4,
+                    style: SoupType.style(
+                      size: 17,
+                      color: SoupColors.ink2,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                EpisodeCredits(item: item),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Track pickers and overview, under the hero so a long overview never
+/// pushes the title up (web item page).
+class _Details extends StatelessWidget {
+  const _Details({required this.item, required this.state});
+  final CatalogItem item;
+  final _ItemScreenState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final overview = item.overview;
+    // Pickers only apply when Play starts this item (not a series' episode).
+    final tracks = item.isPlayable && item.mediaStreams.isNotEmpty;
+    if (!tracks && (overview == null || overview.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        SoupSpacing.gutter,
+        16,
+        SoupSpacing.gutter,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (tracks)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: TrackPickers(
+                item: item,
+                audio: state.audio,
+                subtitle: state.subtitle,
+                quality: state.quality,
+                onAudio: state.setAudio,
+                onSubtitle: state.setSubtitle,
+                onQuality: state.setQuality,
+              ),
+            ),
+          if (overview != null && overview.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: ExpandableOverview(
+                text: overview,
+                style: SoupType.style(
+                  size: 17,
+                  color: SoupColors.ink2,
+                  height: 1.4,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -308,145 +373,170 @@ class _Actions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scope = SoupScope.of(context);
     if (item.type == 'Series') {
       // Wrapped in a record so "still loading" (null) differs from "no next
-      // episode" ((null,)): nothing should grab focus until we know which.
-      return CatalogBuilder<(CatalogItem?,)>(
-        load: (c) async => (await c.seriesNextUp(item.id),),
+      // episode" ((null, …)): nothing should grab focus until we know which.
+      return CatalogBuilder<(CatalogItem?, List<CatalogItem>)>(
+        load: (c) async =>
+            (await c.seriesNextUp(item.id), await c.seasons(item.id)),
         keys: [item.id],
-        builder: (context, next, error) => _row(
-          context,
-          scope,
-          playTarget: next?.$1,
-          loading: next == null && error == null,
-        ),
+        builder: (context, data, error) {
+          final seasons = data?.$2 ?? const <CatalogItem>[];
+          return _row(
+            context,
+            playTarget: data?.$1,
+            loading: data == null && error == null,
+            // With several seasons, Watched covers the one on screen.
+            season: seasons.length > 1
+                ? pickSeason(seasons, state.seasonId)
+                : null,
+          );
+        },
       );
     }
-    return _row(context, scope, playTarget: item.isPlayable ? item : null);
+    return _row(context, playTarget: item.isPlayable ? item : null);
   }
 
   Widget _row(
-    BuildContext context,
-    SoupScope scope, {
+    BuildContext context, {
     CatalogItem? playTarget,
     bool loading = false,
+    CatalogItem? season,
   }) {
-    String label = 'Play';
-    if (playTarget != null) {
-      if (canResume(playTarget)) {
-        label = 'Resume';
-      } else if (item.type == 'Series' && playTarget.indexNumber != null) {
-        label =
-            'Play S${playTarget.parentIndexNumber ?? 1}:E${playTarget.indexNumber}';
-      }
-    }
-    return Row(
+    final scope = SoupScope.of(context);
+    final watchTarget = season ?? item;
+    final resumable = playTarget != null && canResume(playTarget);
+    final watchable = item.type != 'BoxSet';
+    final isEpisode = item.type == 'Episode';
+    // With nothing to play, the first button takes focus once loading ends;
+    // keyed on [loading] so its autofocus can still fire then.
+    final fallbackFocus = !loading && playTarget == null;
+    // Wraps rather than overflowing in an episode's narrower details column.
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      runSpacing: 16,
       children: [
-        if (playTarget != null)
-          Focusable(
+        if (playTarget != null) ...[
+          PlayButton(
             autofocus: true,
-            radius: SoupRadii.button,
+            label: playLabel(item, playTarget),
+            detail: resumable ? timeLeftLabel(playTarget) : null,
+            progress: isInProgress(playTarget)
+                ? (playTarget.playedPercentage ?? 0) / 100
+                : 0,
             onActivate: () => openWatch(
               context,
               playTarget,
               audioIndex: playTarget.id == item.id ? state.audio : null,
               subtitleIndex: playTarget.id == item.id ? state.subtitle : null,
-            ),
-            builder: (context, _) => Container(
-              height: 56,
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              decoration: BoxDecoration(
-                color: SoupColors.ink,
-                borderRadius: BorderRadius.circular(SoupRadii.button),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.play_arrow_rounded,
-                    color: SoupColors.canvas,
-                    size: 26,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: SoupType.style(
-                      size: 18,
-                      weight: 800,
-                      color: SoupColors.canvas,
-                    ),
-                  ),
-                ],
-              ),
+              maxBitrate: playTarget.id == item.id
+                  ? (state.quality ?? 0)
+                  : null,
             ),
           ),
-        if (playTarget != null && canResume(playTarget)) ...[
-          const SizedBox(width: 12),
-          Focusable(
-            radius: SoupRadii.button,
-            onActivate: () => openWatch(context, playTarget, fromStart: true),
-            builder: (context, focused) => Container(
-              height: 56,
-              padding: const EdgeInsets.symmetric(horizontal: 22),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: focused
-                    ? const Color(0xBF48484E)
-                    : const Color(0x99282828),
-                borderRadius: BorderRadius.circular(SoupRadii.button),
-                border: Border.all(color: const Color(0x1AFFFFFF)),
-              ),
-              child: Text(
-                'Play from start',
-                style: SoupType.style(size: 16, weight: 700),
-              ),
-            ),
-          ),
+          const SizedBox(width: 16),
         ],
-        if (item.type != 'Series' && item.type != 'BoxSet') ...[
-          const SizedBox(width: 12),
-          _RoundAction(
-            icon: Icons.check_rounded,
-            filled: item.played,
-            onTap: () => scope.catalog.setPlayed(item.id, !item.played),
-          ),
+        // Episodes use round icon buttons so the row fits beside the still.
+        if (resumable) ...[
+          if (isEpisode)
+            _RoundAction(
+              icon: Icons.replay_rounded,
+              semanticsLabel: 'Play from start',
+              onTap: () => openWatch(context, playTarget, fromStart: true),
+            )
+          else
+            _PillAction(
+              icon: Icons.replay_rounded,
+              label: 'Play from start',
+              onTap: () => openWatch(context, playTarget, fromStart: true),
+            ),
+          const SizedBox(width: 16),
         ],
-        const SizedBox(width: 12),
-        ValueListenableBuilder(
-          valueListenable: scope.catalog.favoriteOverrides,
-          builder: (context, _, _) {
-            final favorite = scope.catalog.isFavorite(item);
-            return _RoundAction(
-              // Re-created once loading ends so its autofocus can still fire.
-              key: ValueKey(loading),
-              icon: favorite
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              color: favorite ? SoupColors.accent : SoupColors.ink,
-              autofocus: !loading && playTarget == null,
-              onTap: () => scope.catalog.setFavorite(item.id, !favorite),
-            );
-          },
+        if (watchable) ...[
+          if (isEpisode)
+            _RoundAction(
+              key: ValueKey(('watched', loading)),
+              icon: Icons.check_rounded,
+              semanticsLabel: item.played ? 'Watched' : 'Mark as watched',
+              filled: item.played,
+              autofocus: fallbackFocus,
+              onTap: () => scope.catalog.setPlayed(item.id, !item.played),
+            )
+          else
+            _PillAction(
+              key: ValueKey(('watched', loading)),
+              icon: Icons.check_rounded,
+              label: watchTarget.played ? 'Watched' : 'Mark as watched',
+              filled: watchTarget.played,
+              autofocus: fallbackFocus,
+              onTap: () =>
+                  scope.catalog.setPlayed(watchTarget.id, !watchTarget.played),
+            ),
+          const SizedBox(width: 16),
+        ],
+        _RoundAction(
+          key: ValueKey(('more', loading)),
+          icon: Icons.more_horiz_rounded,
+          semanticsLabel: 'More actions',
+          autofocus: fallbackFocus && !watchable,
+          onTap: () => _more(context, scope, allEpisodes: season != null),
         ),
       ],
     );
   }
+
+  /// [allEpisodes]: offer marking the whole series, when Watched covers
+  /// only a season.
+  void _more(
+    BuildContext context,
+    SoupScope scope, {
+    bool allEpisodes = false,
+  }) {
+    final favorite = scope.catalog.isFavorite(item);
+    final seriesId = item.seriesId;
+    unawaited(
+      showActionMenu(context, [
+        MenuAction(
+          label: favorite ? 'Remove from Favourites' : 'Add to Favourites',
+          icon: favorite
+              ? Icons.favorite_rounded
+              : Icons.favorite_border_rounded,
+          iconColor: favorite ? SoupColors.accent : SoupColors.ink,
+          onSelected: () => scope.catalog.setFavorite(item.id, !favorite),
+        ),
+        if (allEpisodes)
+          MenuAction(
+            label: item.played
+                ? 'Mark all episodes as unwatched'
+                : 'Mark all episodes as watched',
+            icon: Icons.done_all_rounded,
+            iconColor: item.played ? SoupColors.accent : SoupColors.ink,
+            onSelected: () => scope.catalog.setPlayed(item.id, !item.played),
+          ),
+        if (item.type == 'Episode' && seriesId != null)
+          MenuAction(
+            label: 'Go to series',
+            icon: Icons.chevron_right_rounded,
+            onSelected: () => openItemId(context, seriesId),
+          ),
+      ]),
+    );
+  }
 }
 
-class _RoundAction extends StatelessWidget {
-  const _RoundAction({
+class _PillAction extends StatelessWidget {
+  const _PillAction({
     required this.icon,
+    required this.label,
     required this.onTap,
     this.filled = false,
-    this.color = SoupColors.ink,
     this.autofocus = false,
     super.key,
   });
   final IconData icon;
+  final String label;
   final VoidCallback onTap;
   final bool filled;
-  final Color color;
   final bool autofocus;
 
   @override
@@ -455,16 +545,77 @@ class _RoundAction extends StatelessWidget {
     radius: 28,
     onActivate: onTap,
     builder: (context, focused) => Container(
-      width: 56,
       height: 56,
+      padding: const EdgeInsets.only(left: 18, right: 22),
       decoration: BoxDecoration(
         color: filled
             ? SoupColors.ink
             : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
-        shape: BoxShape.circle,
-        border: Border.all(color: const Color(0x1AFFFFFF)),
+        borderRadius: BorderRadius.circular(28),
+        border: filled ? null : Border.all(color: const Color(0x1AFFFFFF)),
       ),
-      child: Icon(icon, size: 26, color: filled ? SoupColors.canvas : color),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 24,
+            color: filled ? SoupColors.canvas : SoupColors.ink,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: SoupType.style(
+              size: 17,
+              weight: 800,
+              color: filled ? SoupColors.canvas : SoupColors.ink,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _RoundAction extends StatelessWidget {
+  const _RoundAction({
+    required this.icon,
+    required this.onTap,
+    required this.semanticsLabel,
+    this.filled = false,
+    this.autofocus = false,
+    super.key,
+  });
+  final IconData icon;
+  final VoidCallback onTap;
+  final String semanticsLabel;
+  final bool filled;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: semanticsLabel,
+    child: Focusable(
+      autofocus: autofocus,
+      radius: 28,
+      onActivate: onTap,
+      builder: (context, focused) => Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: filled
+              ? SoupColors.ink
+              : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+          shape: BoxShape.circle,
+          border: filled ? null : Border.all(color: const Color(0x1AFFFFFF)),
+        ),
+        child: Icon(
+          icon,
+          size: 26,
+          color: filled ? SoupColors.canvas : SoupColors.ink,
+        ),
+      ),
     ),
   );
 }
@@ -481,9 +632,27 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (item.type == 'Episode') {
+      // The show stays a small card; no cast rail or Related for one episode.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _gap(
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: SoupSpacing.gutter,
+              ),
+              child: ShowCard(item: item),
+            ),
+          ),
+          _gap(_Information(item: item)),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _Details(item: item, state: state),
         if (item.type == 'Series') _gap(_Seasons(series: item, state: state)),
         if (item.type == 'BoxSet') _gap(_Collection(item: item)),
         CatalogBuilder<List<CatalogItem>>(
@@ -540,13 +709,7 @@ class _Seasons extends StatelessWidget {
       keys: [series.id],
       builder: (context, seasons, _) {
         if (seasons == null || seasons.isEmpty) return const SizedBox.shrink();
-        final selected = seasons.firstWhere(
-          (s) => s.id == state.seasonId,
-          orElse: () => seasons.firstWhere(
-            (s) => (s.indexNumber ?? 0) > 0,
-            orElse: () => seasons.first,
-          ),
-        );
+        final selected = pickSeason(seasons, state.seasonId);
         return CatalogBuilder<List<CatalogItem>>(
           load: (c) => c.episodes(series.id, selected.id),
           keys: [series.id, selected.id],
@@ -570,6 +733,8 @@ class _Seasons extends StatelessWidget {
                             value: selected.id,
                             labelOf: (id) =>
                                 seasons.firstWhere((s) => s.id == id).name,
+                            checkedOf: (id) =>
+                                seasons.firstWhere((s) => s.id == id).played,
                             onChanged: state.setSeason,
                             height: 44,
                           ),
@@ -624,12 +789,11 @@ class _EpisodeCard extends StatelessWidget {
             item: episode,
             shape: CardShape.landscape,
             width: 340,
-            showPlay: true,
             titleOverride:
                 '${episode.indexNumber != null ? '${episode.indexNumber}. ' : ''}${episode.name}',
             detail: runtime,
             kicker: isNext ? 'Up next' : null,
-            onTap: () => openWatch(context, episode),
+            onTap: () => openItem(context, episode),
           ),
           if (episode.overview != null)
             Padding(
@@ -768,6 +932,7 @@ class _Information extends StatelessWidget {
 
 /// "Information" label/value pairs shared by the TV and touch item screens.
 List<(String, String)> itemInformation(CatalogItem item) {
+  if (item.type == 'Episode') return episodeInformation(item);
   String? names(String type) {
     final list = [
       for (final p in item.people)
@@ -788,6 +953,8 @@ List<(String, String)> itemInformation(CatalogItem item) {
     if (item.officialRating != null) ('Rated', item.officialRating!),
     if (item.criticRating != null)
       ('Critic score', '${item.criticRating!.round()}%'),
+    if (item.sourceBitrate case final bitrate?)
+      ('Bitrate', bitrateLabel(bitrate)),
     if (item.tags.isNotEmpty) ('Tags', item.tags.take(6).join(', ')),
   ];
   return rows;

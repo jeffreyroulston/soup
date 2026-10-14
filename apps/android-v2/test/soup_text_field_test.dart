@@ -122,4 +122,106 @@ void main() {
     // Obscured on screen.
     expect(find.text('•••••'), findsOneWidget);
   });
+
+  group('editing in place (webOS)', () {
+    setUp(() => SoupTextField.editInPlace = true);
+    tearDown(() => SoupTextField.editInPlace = false);
+
+    Future<TextEditingController> pumpField(WidgetTester tester) async {
+      final controller = TextEditingController();
+      await tester.pumpWidget(
+        _host(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(onPressed: () {}, child: const Text('above')),
+              SoupTextField(
+                controller: controller,
+                label: 'Search',
+                autofocus: true,
+              ),
+              TextButton(onPressed: () {}, child: const Text('below')),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return controller;
+    }
+
+    String? focused() => FocusManager.instance.primaryFocus?.context
+        ?.findAncestorWidgetOfExactType<TextButton>()
+        ?.child
+        .toString();
+
+    testWidgets('select opens a live field; Up and Down leave it', (
+      tester,
+    ) async {
+      final controller = await pumpField(tester);
+      // Focused, but no keyboard until selected.
+      expect(find.byType(TextField), findsNothing);
+      expect(tester.testTextInput.isVisible, isFalse);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+      expect(tester.testTextInput.isVisible, isTrue);
+      tester.testTextInput.enterText('dune');
+      expect(controller.text, 'dune');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(focused(), contains('below'));
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('dune'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(focused(), contains('above'));
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('Back moving focus away ends editing for good', (tester) async {
+      await pumpField(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      // The window losing focus to the keyboard parks focus on the root;
+      // that alone doesn't end editing.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+
+      // What PageScaffold's Back does: focus the nav.
+      final below = find.text('below');
+      Focus.of(tester.element(below)).requestFocus();
+      await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(focused(), contains('below'));
+      expect(find.byType(TextField), findsNothing);
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets('Done returns to the field without the keyboard', (
+      tester,
+    ) async {
+      await pumpField(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      expect(FocusManager.instance.primaryFocus, isNot(isA<FocusScopeNode>()));
+      // Still on the field: select edits again.
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+    });
+  });
 }

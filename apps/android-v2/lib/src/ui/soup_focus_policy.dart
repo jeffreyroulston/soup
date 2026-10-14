@@ -63,16 +63,26 @@ class SoupFocusPolicy extends ReadingOrderTraversalPolicy {
     return found;
   }
 
-  /// Off-screen items are only reachable by scrolling the list they share
-  /// with the current item. Fixed chrome (the top nav) must not dive into
-  /// content scrolled up behind it.
+  /// Off-screen items are only reachable by scrolling a list they share
+  /// with the current item, along the axis they're off-screen on. Fixed
+  /// chrome (the top nav) must not dive into content scrolled up behind it,
+  /// and Right must not reach a card off the edge of another row (both rows
+  /// share the page's vertical scroll, but only the row's own list scrolls
+  /// sideways).
   static bool _reachable(
     FocusNode node,
     Rect screen,
     Set<ScrollableState> currentScrollables,
   ) {
-    if (screen.contains(node.rect.center)) return true;
-    return _scrollablesOf(node.context).any(currentScrollables.contains);
+    final c = node.rect.center;
+    final offX = c.dx < screen.left || c.dx > screen.right;
+    final offY = c.dy < screen.top || c.dy > screen.bottom;
+    if (!offX && !offY) return true;
+    final shared = _scrollablesOf(
+      node.context,
+    ).where(currentScrollables.contains).map((s) => s.position.axis);
+    return (!offX || shared.contains(Axis.horizontal)) &&
+        (!offY || shared.contains(Axis.vertical));
   }
 
   static bool _vertical(TraversalDirection d) =>
@@ -99,25 +109,23 @@ class SoupFocusPolicy extends ReadingOrderTraversalPolicy {
           to.center.dx < from.center.dx - 1 && to.left < from.left,
       };
 
-  /// Overlap across the direction of travel: same column for up/down, same
-  /// row for left/right. [slack] widens our band on both sides.
-  static bool _inBeam(
-    Rect from,
-    Rect to,
-    TraversalDirection d, {
-    double slack = 0,
-  }) => _vertical(d)
-      ? to.right > from.left - slack && to.left < from.right + slack
-      : to.bottom > from.top - slack && to.top < from.bottom + slack;
+  /// Overlap across the direction of travel (up/down only: same column).
+  static bool _inBeam(Rect from, Rect to) =>
+      to.right > from.left && to.left < from.right;
 
-  /// 0: in our row/column. 1 (left/right only): within half our height of
-  /// the row, so slightly offset controls (hero buttons + carousel arrows)
-  /// still read as one row. 2 (up/down only): anywhere below/above.
+  /// 0: in our row/column. 1 (left/right only): centred within half our
+  /// height of the row, so slightly offset controls (hero buttons + carousel
+  /// arrows) still read as one row. 2 (up/down only): anywhere below/above.
   /// Left/right never leaves the row, so returns null past tier 1.
+  ///
+  /// Tier 0 for left/right needs the candidate's centre inside our band too:
+  /// a tall card's band otherwise overlaps the bottom of the row above.
   static int? _tier(Rect from, Rect to, TraversalDirection d) {
-    if (_inBeam(from, to, d)) return 0;
-    if (_vertical(d)) return 2;
-    return _inBeam(from, to, d, slack: from.height / 2) ? 1 : null;
+    if (_vertical(d)) return _inBeam(from, to) ? 0 : 2;
+    final y = to.center.dy;
+    if (y >= from.top && y <= from.bottom) return 0;
+    final slack = from.height / 2;
+    return y >= from.top - slack && y <= from.bottom + slack ? 1 : null;
   }
 
   /// Gap between the facing edges along the direction of travel.

@@ -28,6 +28,9 @@ class MockCatalog extends Catalog {
 
   static const _min = 10000000 * 60;
 
+  static String _hoursAgo(int hours) =>
+      DateTime.now().toUtc().subtract(Duration(hours: hours)).toIso8601String();
+
   void _build() {
     final libs = [
       const CatalogItem(
@@ -253,6 +256,15 @@ class MockCatalog extends Catalog {
       movieIds.add(m.$1);
     }
     _libraryMembers['lib-movies'] = movieIds;
+    // A few finished films for History.
+    for (final (i, hours) in [(1, 26), (3, 30), (5, 24 * 40)]) {
+      if (i >= movieIds.length) continue;
+      final id = movieIds[i];
+      _items[id] = _items[id]!.copyWith(
+        played: true,
+        lastPlayedDate: _hoursAgo(hours),
+      );
+    }
 
     final seriesIds = <String>[];
     void series(
@@ -315,6 +327,9 @@ class MockCatalog extends Catalog {
             parentBackdropItemId: id,
             parentBackdropImageTag: 'mock',
             played: s == 1 && e <= 2,
+            lastPlayedDate: s == 1 && e <= 2
+                ? _hoursAgo(seriesIds.length * 30 + 3 - e)
+                : null,
             playedPercentage: s == 1 && e == 3 ? 35 : null,
             playbackPositionTicks: s == 1 && e == 3 ? 15 * _min : 0,
             mediaStreams: _items['m1']!.mediaStreams,
@@ -379,6 +394,7 @@ class MockCatalog extends Catalog {
     return HomeData(
       resume: collapsed.resume,
       nextUp: collapsed.nextUp,
+      keepWatching: orderKeepWatching(collapsed, resume),
       recentlyAdded: [
         Shelf(
           title: 'Movies',
@@ -387,6 +403,7 @@ class MockCatalog extends Catalog {
         ),
         Shelf(title: 'TV Shows', items: _seriesItems, libraryId: 'lib-tv'),
       ],
+      random: [..._movieItems, ..._seriesItems]..shuffle(),
     );
   }
 
@@ -491,23 +508,45 @@ class MockCatalog extends Catalog {
     const MediaSegment(SegmentKind.intro, 30 * 10000000, 75 * 10000000),
   ];
 
+  static int Function(CatalogItem, CatalogItem) _compare(LibrarySort sort) =>
+      (a, b) => switch (sort) {
+        LibrarySort.title => sortTitle(a).compareTo(sortTitle(b)),
+        LibrarySort.recentlyAdded => b.id.compareTo(a.id),
+        LibrarySort.year => (b.productionYear ?? 0).compareTo(
+          a.productionYear ?? 0,
+        ),
+        LibrarySort.rating => (b.communityRating ?? 0).compareTo(
+          a.communityRating ?? 0,
+        ),
+      };
+
   @override
   Future<List<CatalogItem>> libraryItems(
     CatalogItem library,
     LibrarySort sort,
   ) async {
     final list = _byIds(_libraryMembers[library.id] ?? const []);
-    int cmp(CatalogItem a, CatalogItem b) => switch (sort) {
-      LibrarySort.title => sortTitle(a).compareTo(sortTitle(b)),
-      LibrarySort.recentlyAdded => b.id.compareTo(a.id),
-      LibrarySort.year => (b.productionYear ?? 0).compareTo(
-        a.productionYear ?? 0,
-      ),
-      LibrarySort.rating => (b.communityRating ?? 0).compareTo(
-        a.communityRating ?? 0,
-      ),
-    };
-    return list..sort(cmp);
+    return list..sort(_compare(sort));
+  }
+
+  @override
+  Future<List<CatalogItem>> favorites(LibrarySort sort) async {
+    return [
+      for (final i in _items.values)
+        if (i.isFavorite &&
+            (i.type == 'Movie' || i.type == 'Series' || i.type == 'Episode'))
+          i,
+    ]..sort(_compare(sort));
+  }
+
+  @override
+  Future<List<CatalogItem>> history() async {
+    return [
+      for (final i in _items.values)
+        if (i.played && (i.type == 'Movie' || i.type == 'Episode')) i,
+    ]..sort(
+      (a, b) => (b.lastPlayedDate ?? '').compareTo(a.lastPlayedDate ?? ''),
+    );
   }
 
   @override
@@ -553,13 +592,41 @@ class MockCatalog extends Catalog {
 
   @override
   Future<void> setPlayed(String itemId, bool value) async {
-    _items[itemId] = _items[itemId]!.copyWith(played: value);
+    // Like Jellyfin, marking a season or series marks every episode in it,
+    // and a season or series counts as played once all of its episodes are.
+    void mark(String id) {
+      _items[id] = _items[id]!.copyWith(
+        played: value,
+        lastPlayedDate: value ? _hoursAgo(0) : null,
+      );
+      _children[id]?.forEach(mark);
+    }
+
+    mark(itemId);
+    for (final parentId in [
+      _items[itemId]!.seasonId,
+      _items[itemId]!.seriesId,
+    ]) {
+      final kids = _children[parentId];
+      if (parentId == null || kids == null) continue;
+      _items[parentId] = _items[parentId]!.copyWith(
+        played: kids.every((id) => _items[id]!.played),
+      );
+    }
     _revision++;
     notifyListeners();
   }
 
   // ── generated artwork ────────────────────────────────────────────────────
   final _images = <String, Future<Uint8List?>>{};
+
+  @override
+  Future<Uint8List?> trickplaySheet(
+    String itemId,
+    String? mediaSourceId,
+    int width,
+    int index,
+  ) async => null;
 
   @override
   Future<Uint8List?> image(ImageRef ref, {int maxWidth = 480}) {

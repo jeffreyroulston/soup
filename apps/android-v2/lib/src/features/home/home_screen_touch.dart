@@ -7,7 +7,7 @@ import '../../ui/touch/touch_scaffold.dart';
 import '../../ui/touch/touch_widgets.dart';
 import '../../ui/widgets/catalog_builder.dart';
 import '../../ui/widgets/catalog_image.dart';
-import '../../ui/widgets/focusable.dart';
+import '../../ui/widgets/collection_spotlight.dart' show CollectionPosterStrip;
 import '../../ui/widgets/glass_nav.dart' show NavSection;
 import '../../ui/widgets/hero_carousel.dart' show ArtScrims;
 import '../../ui/widgets/media_card.dart';
@@ -62,6 +62,7 @@ class _Rows extends StatelessWidget {
     items: shelf.items,
     cardBuilder: (context, item, _) => MediaCard(
       item: item,
+      favoriteButton: false,
       width: TouchSpacing.posterWidth,
       onTap: () => _openShelfItem(context, item),
     ),
@@ -69,7 +70,7 @@ class _Rows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final keepWatching = [...home.resume, ...home.nextUp];
+    final keepWatching = home.keepWatching;
     final resumeIds = {for (final i in home.resume) i.id};
     return CatalogBuilder<HomeExtras>(
       load: (c) => c.homeExtras(),
@@ -93,6 +94,7 @@ class _Rows extends StatelessWidget {
                         shape: CardShape.landscape,
                         cardBuilder: (context, item, _) => MediaCard(
                           item: item,
+                          favoriteButton: false,
                           shape: CardShape.landscape,
                           width: TouchSpacing.landscapeWidth,
                           kicker: resumeIds.contains(item.id)
@@ -114,6 +116,7 @@ class _Rows extends StatelessWidget {
                         shape: CardShape.landscape,
                         cardBuilder: (context, item, i) => MediaCard(
                           item: item,
+                          favoriteButton: false,
                           shape: CardShape.landscape,
                           width: TouchSpacing.landscapeWidth,
                           kicker: '#${i + 1}',
@@ -122,7 +125,7 @@ class _Rows extends StatelessWidget {
                               '★ ${item.communityRating!.toStringAsFixed(1)}',
                             ?item.genres.firstOrNull,
                             ?yearLabel(item),
-                          ].join(' · '),
+                          ].join(', '),
                         ),
                       ),
                     ),
@@ -210,6 +213,7 @@ class _RecentlyAddedState extends State<_RecentlyAdded> {
           : null,
       cardBuilder: (context, item, _) => MediaCard(
         item: item,
+        favoriteButton: false,
         width: TouchSpacing.posterWidth,
         onTap: () => _Rows._openShelfItem(context, item),
       ),
@@ -239,89 +243,97 @@ class _Spotlight extends StatelessWidget {
       (i) => i.hasBackdrop,
       orElse: () => items.first,
     );
+    // Each poster opens its film; the button opens the collection.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: TouchSpacing.gutter),
-      child: Focusable(
-        radius: SoupRadii.panel,
-        onActivate: onOpen,
-        builder: (context, _) => ClipRRect(
-          borderRadius: BorderRadius.circular(SoupRadii.panel),
-          child: AspectRatio(
-            aspectRatio: 4 / 3,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CatalogImage(
-                  image: art.backdrop,
-                  maxWidth: 900,
-                  alignment: Alignment.topCenter,
-                ),
-                const ArtScrims(),
-                Positioned(
-                  left: 18,
-                  right: 18,
-                  bottom: 18,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Collection · $countLabel',
-                        style: SoupType.style(
-                          size: 12,
-                          weight: 700,
-                          color: SoupColors.ink2,
-                        ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(SoupRadii.panel),
+        child: AspectRatio(
+          aspectRatio: 3 / 4,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CatalogImage(
+                image: art.backdrop,
+                maxWidth: 900,
+                alignment: Alignment.topCenter,
+              ),
+              const ArtScrims(),
+              // A strip across the top that fades into the backdrop.
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: FractionallySizedBox(
+                  widthFactor: 1,
+                  child: AspectRatio(
+                    aspectRatio: 1.6,
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xFF000000), Color(0x00000000)],
+                        stops: [0.45, 1],
+                      ).createShader(rect),
+                      child: CollectionPosterStrip(
+                        posters: items.take(4).toList(),
                       ),
-                      const SizedBox(height: 4),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 18,
+                right: 18,
+                bottom: 18,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Collection · $countLabel',
+                      style: SoupType.style(
+                        size: 12,
+                        weight: 700,
+                        color: SoupColors.ink2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: SoupType.style(
+                        size: 28,
+                        weight: 800,
+                        letterSpacing: -1,
+                        height: 1,
+                      ),
+                    ),
+                    if (description != null) ...[
+                      const SizedBox(height: 6),
                       Text(
-                        title,
+                        description!,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: SoupType.style(
-                          size: 28,
-                          weight: 800,
-                          letterSpacing: -1,
-                          height: 1,
-                        ),
-                      ),
-                      if (description != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          description!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: SoupType.style(
-                            size: 13,
-                            color: SoupColors.ink2,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: SoupColors.ink,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'Watch the collection',
-                          style: SoupType.style(
-                            size: 14,
-                            weight: 800,
-                            color: SoupColors.canvas,
-                          ),
+                          size: 13,
+                          color: SoupColors.ink2,
+                          height: 1.35,
                         ),
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 12),
+                    TouchButton(
+                      label: 'Watch the collection',
+                      height: 44,
+                      onPressed: onOpen,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

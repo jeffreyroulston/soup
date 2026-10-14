@@ -22,23 +22,38 @@ import 'home_screen_touch.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  static List<HeroSlide> heroSlides(HomeData home) {
+  /// Only things that reached the server this recently count as "new" in the
+  /// hero (new seasons, new episodes, recently added).
+  static const heroRecentWindow = Duration(days: 14);
+
+  /// Hero order: new seasons of shows you watch, then new episodes of them,
+  /// then Continue Watching, then recently added, then random picks.
+  static List<HeroSlide> heroSlides(HomeData home, {DateTime? now}) {
+    final cutoff = (now ?? DateTime.now()).subtract(heroRecentWindow);
+    bool isRecent(CatalogItem i) =>
+        i.dateAdded != null && i.dateAdded!.isAfter(cutoff);
+    // Next Up only lists shows you've already started.
+    final freshNextUp = home.nextUp.where(isRecent).toList();
+    bool isSeasonPremiere(CatalogItem i) =>
+        i.indexNumber == 1 && (i.parentIndexNumber ?? 0) > 1;
+
     final seen = <String>{};
     final slides = <HeroSlide>[];
-    void add(CatalogItem item, String kicker) {
+    void add(CatalogItem item) {
       if (slides.length >= 6 || !item.hasBackdrop) return;
       if (!seen.add(item.seriesId ?? item.id)) return;
-      slides.add(HeroSlide(item, kicker));
+      slides.add(HeroSlide(item));
     }
 
-    for (final i in home.resume) {
-      add(i, 'Continue Watching');
-    }
-    for (final shelf in home.recentlyAdded) {
-      for (final i in shelf.items) {
-        add(i, 'Recently Added');
-      }
-    }
+    freshNextUp.where(isSeasonPremiere).forEach(add);
+    freshNextUp.forEach(add);
+    home.resume.forEach(add);
+    // Newest first across every library, not library by library.
+    final added = [
+      for (final shelf in home.recentlyAdded) ...shelf.items.where(isRecent),
+    ]..sort((a, b) => b.dateAdded!.compareTo(a.dateAdded!));
+    added.forEach(add);
+    home.random.forEach(add);
     return slides;
   }
 
@@ -82,7 +97,7 @@ class _Rows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final keepWatching = [...home.resume, ...home.nextUp];
+    final keepWatching = home.keepWatching;
     final resumeIds = {for (final i in home.resume) i.id};
     return CatalogBuilder<HomeExtras>(
       load: (c) => c.homeExtras(),
@@ -106,6 +121,7 @@ class _Rows extends StatelessWidget {
                         shape: CardShape.landscape,
                         cardBuilder: (context, item, _) => MediaCard(
                           item: item,
+                          favoriteButton: false,
                           shape: CardShape.landscape,
                           width: 400,
                           kicker: resumeIds.contains(item.id)

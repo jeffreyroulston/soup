@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../app_scope.dart';
 import '../../data/models.dart';
+import '../../form_factor.dart';
 import '../../navigation.dart';
 import '../../utils/media.dart';
 import '../theme/soup_tokens.dart';
@@ -22,6 +24,7 @@ class MediaCard extends StatelessWidget {
     this.focusNode,
     this.onTap,
     this.titleOverride,
+    this.favoriteButton = true,
     super.key,
   });
 
@@ -35,6 +38,13 @@ class MediaCard extends StatelessWidget {
   final FocusNode? focusNode;
   final VoidCallback? onTap;
   final String? titleOverride;
+
+  /// Heart over the art's corner on favourites (web MediaCard). Home rows
+  /// turn it off. On TV it's a badge only: a second focus target inside the
+  /// card would fight the card's own focus ring.
+  final bool favoriteButton;
+
+  static const _favoriteTypes = {'Movie', 'Series', 'Episode'};
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +105,12 @@ class MediaCard extends StatelessWidget {
                           top: 8,
                           right: 8,
                           child: _WatchedBadge(),
+                        ),
+                      if (favoriteButton && _favoriteTypes.contains(item.type))
+                        Positioned(
+                          top: 6,
+                          left: 6,
+                          child: _FavoriteBadge(item: item),
                         ),
                       if (showPlay && focused)
                         const Center(child: _PlayBadge()),
@@ -173,6 +189,45 @@ class MediaCard extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _FavoriteBadge extends StatelessWidget {
+  const _FavoriteBadge({required this.item});
+  final CatalogItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final catalog = SoupScope.of(context).catalog;
+    return ValueListenableBuilder(
+      valueListenable: catalog.favoriteOverrides,
+      builder: (context, _, _) {
+        if (!catalog.isFavorite(item)) return const SizedBox.shrink();
+        final badge = Container(
+          width: 34,
+          height: 34,
+          decoration: const BoxDecoration(
+            color: Color(0x8C0A0A0B),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.favorite_rounded,
+            size: 19,
+            color: SoupColors.accent,
+          ),
+        );
+        if (!context.isTouch) return badge;
+        return Semantics(
+          button: true,
+          label: 'Remove ${item.name} from favourites',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => catalog.setFavorite(item.id, false),
+            child: Padding(padding: const EdgeInsets.all(2), child: badge),
+          ),
+        );
+      },
     );
   }
 }

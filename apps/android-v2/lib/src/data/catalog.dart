@@ -28,6 +28,13 @@ abstract class Catalog extends ChangeNotifier {
   Future<int> libraryTotal(CatalogItem library);
   Future<List<GenreCount>> libraryGenres(CatalogItem library);
 
+  /// The user's favourite movies, shows and episodes. Jellyfin keeps no
+  /// "favourited on" date, so [LibrarySort.recentlyAdded] is library order.
+  Future<List<CatalogItem>> favorites(LibrarySort sort);
+
+  /// Movies and episodes the user has finished, most recently watched first.
+  Future<List<CatalogItem>> history();
+
   Future<SearchResults> search(String term);
   Future<List<CatalogItem>> personItems(String personId);
 
@@ -67,6 +74,15 @@ abstract class Catalog extends ChangeNotifier {
   /// Artwork bytes, or null when the server has none. Goes through the
   /// Tailscale-aware HTTP client in live mode.
   Future<Uint8List?> image(ImageRef ref, {int maxWidth = 480});
+
+  /// One trickplay sprite sheet (see [Trickplay]), or null when it can't be
+  /// loaded. Uncached; the player keeps the sheets it has fetched.
+  Future<Uint8List?> trickplaySheet(
+    String itemId,
+    String? mediaSourceId,
+    int width,
+    int index,
+  );
 
   /// Bumped (and listeners notified) whenever cached data was invalidated, e.g.
   /// after a favourite or watched toggle, so screens can refetch.

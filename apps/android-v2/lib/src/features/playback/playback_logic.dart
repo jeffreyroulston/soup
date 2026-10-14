@@ -147,11 +147,14 @@ List<SkipRange> skipRanges(
 
 // ── transcode URL ──────────────────────────────────────────────────────────
 /// HLS master playlist for forced transcoding when the plan has none (Jellyfin
-/// omits `TranscodingUrl` when direct play is possible).
+/// omits `TranscodingUrl` when direct play is possible). [profile] keeps it
+/// matched to the device, so a track or quality switch copies the video when
+/// it can instead of re-encoding it to H.264.
 Uri manualTranscodeUri(
   JellyfinApi api,
   JellyfinSession session,
   JellyfinPlaybackPlan plan,
+  JellyfinDeviceProfile profile,
 ) {
   final relative = Uri(
     path: 'Videos/${plan.itemId}/master.m3u8',
@@ -159,13 +162,7 @@ Uri manualTranscodeUri(
       'MediaSourceId': plan.mediaSourceId,
       'PlaySessionId': plan.playSessionId,
       'DeviceId': api.deviceId,
-      'VideoCodec': 'h264',
-      'AudioCodec': 'aac',
-      'TranscodingMaxAudioChannels': '6',
-      'SegmentContainer': 'ts',
-      'MinSegments': '1',
-      'BreakOnNonKeyFrames': 'true',
-      'RequireAvc': 'false',
+      ...profile.transcodeQuery(),
     },
   );
   return api.resolvePlaybackUri(session, relative.toString());

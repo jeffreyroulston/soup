@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'app_scope.dart';
 import 'data/models.dart';
 import 'features/collection/collection_screen.dart';
+import 'features/favourites/favourites_screen.dart';
+import 'features/favourites/history_screen.dart';
 import 'features/item/item_screen.dart';
 import 'features/library/library_screen.dart';
 import 'features/playback/playback_screen.dart';
@@ -44,6 +46,13 @@ void openHome(BuildContext context) =>
 void openLibrary(BuildContext context, CatalogItem library) =>
     _goTop(context, LibraryScreen(library: library));
 
+/// My Stuff opens on Favourites; History is its other tab.
+void openFavourites(BuildContext context) =>
+    _goTop(context, const FavouritesScreen());
+
+void openHistory(BuildContext context) =>
+    _goTop(context, const HistoryScreen());
+
 void openSearch(BuildContext context, {String? query, Person? person}) =>
     _goTop(context, SearchScreen(initialQuery: query, initialPerson: person));
 
@@ -65,13 +74,15 @@ void openCollection(BuildContext context, String id) => Navigator.of(
   context,
 ).push(_route<void>(context, CollectionScreen(packId: id)));
 
-/// [subtitleIndex]: null = preference, -1 = off.
+/// [subtitleIndex]: null = preference, -1 = off. [maxBitrate]: null =
+/// preference, 0 = Auto (no cap).
 Future<void> openWatch(
   BuildContext context,
   CatalogItem item, {
   bool fromStart = false,
   int? audioIndex,
   int? subtitleIndex,
+  int? maxBitrate,
 }) {
   final resume = !fromStart && item.playbackPositionTicks >= 100000000;
   return Navigator.of(context).push(
@@ -82,6 +93,7 @@ Future<void> openWatch(
         startTicks: resume ? item.playbackPositionTicks : 0,
         audioIndex: audioIndex,
         subtitleIndex: subtitleIndex,
+        maxBitrate: maxBitrate,
       ),
     ),
   );

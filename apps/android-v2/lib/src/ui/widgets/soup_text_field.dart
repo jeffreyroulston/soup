@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../platform.dart';
 import '../theme/soup_tokens.dart';
 import 'focusable.dart';
 
@@ -68,9 +69,11 @@ class TvTextInput {
 
 /// Web-style input (white/10 fill, 12 radius, ink focus ring).
 ///
-/// On Android TV, selecting the field opens the native editor dialog; on
-/// phones, tests and anything without the channel it is a normal text field.
-/// [onSubmitted] fires when the user confirms (Done/Next or the IME action).
+/// On Android TV, selecting the field opens the native editor dialog. On
+/// webOS, selecting it swaps in a live text field (and the system keyboard)
+/// until focus moves away. On phones, tests and anything else it is a normal
+/// text field. [onSubmitted] fires when the user confirms (Done/Next or the
+/// IME action).
 class SoupTextField extends StatefulWidget {
   const SoupTextField({
     required this.controller,
@@ -103,6 +106,12 @@ class SoupTextField extends StatefulWidget {
   final bool enabled;
   final TvTextInput tvTextInput;
 
+  /// Edit in place only while selected, as on webOS. A live field that keeps
+  /// focus there gets it back (keyboard and all) when the window regains
+  /// focus after the keyboard closes, so Back could never leave it.
+  @visibleForTesting
+  static bool editInPlace = isWebos;
+
   @override
   State<SoupTextField> createState() => _SoupTextFieldState();
 }
@@ -114,6 +123,9 @@ class _SoupTextFieldState extends State<SoupTextField> {
   bool _focused = false;
 
   FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
+
+  /// The live field's node while editing in place.
+  FocusNode? _inPlace;
 
   @override
   void initState() {
@@ -128,6 +140,7 @@ class _SoupTextFieldState extends State<SoupTextField> {
   @override
   void dispose() {
     if (_editing) unawaited(widget.tvTextInput.dismiss());
+    _inPlace?.dispose();
     _ownFocus?.dispose();
     super.dispose();
   }
@@ -160,18 +173,78 @@ class _SoupTextFieldState extends State<SoupTextField> {
     if (result.submitted) widget.onSubmitted?.call();
   }
 
+  void _editInPlace() {
+    if (_inPlace != null || !widget.enabled) return;
+    final node = FocusNode(debugLabel: 'in-place edit')
+      ..addListener(_inPlaceFocusChanged);
+    setState(() => _inPlace = node);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_inPlace == node) node.requestFocus();
+    });
+  }
+
+  void _inPlaceFocusChanged() {
+    final node = _inPlace;
+    if (node == null || node.hasFocus) return;
+    final now = FocusManager.instance.primaryFocus;
+    // Focus parked on the root while the app is inactive; it comes back.
+    if (now == null || now == FocusManager.instance.rootScope) return;
+    setState(() => _inPlace = null);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      node.dispose();
+      // Unfocused onto the page scope (Done, or the keyboard closing):
+      // land on the field rather than nowhere.
+      if (mounted && FocusManager.instance.primaryFocus is FocusScopeNode) {
+        _focus.requestFocus();
+      }
+    });
+  }
+
+  /// Up/Down leave the field like any other D-pad move.
+  KeyEventResult _inPlaceKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final direction = switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowUp => TraversalDirection.up,
+      LogicalKeyboardKey.arrowDown => TraversalDirection.down,
+      _ => null,
+    };
+    if (direction == null) return KeyEventResult.ignored;
+    _inPlace?.focusInDirection(direction);
+    return KeyEventResult.handled;
+  }
+
   static const _fill = Color(0x1AFFFFFF);
 
   @override
   Widget build(BuildContext context) {
-    if (_tv == true) return _tvField();
-    return _touchField();
+    // Android TV swaps in this field once the probe answers, after a frame
+    // of the touch field; a node of its own keeps autofocus working across
+    // that swap.
+    if (_tv == true) {
+      return _tvField(focusNode: widget.focusNode, onActivate: _edit);
+    }
+    if (SoupTextField.editInPlace) {
+      final node = _inPlace;
+      if (node == null) {
+        return _tvField(focusNode: _focus, onActivate: _editInPlace);
+      }
+      return Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _inPlaceKey,
+        child: _touchField(focusNode: node, autofocus: false),
+      );
+    }
+    return _touchField(focusNode: _focus, autofocus: widget.autofocus);
   }
 
-  Widget _tvField() => Focusable(
-    focusNode: widget.focusNode,
+  Widget _tvField({
+    required FocusNode? focusNode,
+    required VoidCallback onActivate,
+  }) => Focusable(
+    focusNode: focusNode,
     autofocus: widget.autofocus,
-    onActivate: widget.enabled ? _edit : null,
+    onActivate: widget.enabled ? onActivate : null,
     radius: SoupRadii.button,
     scale: 1.0,
     builder: (context, focused) => ListenableBuilder(
@@ -228,56 +301,57 @@ class _SoupTextFieldState extends State<SoupTextField> {
     ),
   );
 
-  Widget _touchField() => Container(
-    constraints: const BoxConstraints(minHeight: 60),
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    decoration: BoxDecoration(
-      color: _fill,
-      borderRadius: BorderRadius.circular(SoupRadii.button),
-      border: Border.all(
-        color: _focused ? SoupColors.ink : Colors.transparent,
-        width: 3,
-      ),
-    ),
-    alignment: Alignment.center,
-    child: Focus(
-      onFocusChange: (v) => setState(() => _focused = v),
-      skipTraversal: true,
-      child: TextField(
-        controller: widget.controller,
-        focusNode: _focus,
-        autofocus: widget.autofocus,
-        enabled: widget.enabled,
-        obscureText: widget.obscure,
-        enableSuggestions: !widget.obscure,
-        autocorrect: false,
-        keyboardType: widget.url ? TextInputType.url : TextInputType.text,
-        textInputAction: widget.action ?? TextInputAction.done,
-        onChanged: widget.onChanged,
-        onSubmitted: (_) => widget.onSubmitted?.call(),
-        cursorColor: SoupColors.accent,
-        style: SoupType.style(size: 18, weight: 600),
-        decoration: InputDecoration(
-          labelText: widget.label,
-          hintText: widget.hint,
-          border: InputBorder.none,
-          labelStyle: SoupType.style(
-            size: 16,
-            weight: 600,
-            color: SoupColors.muted,
-          ),
-          floatingLabelStyle: SoupType.style(
-            size: 14,
-            weight: 700,
-            color: SoupColors.muted,
-          ),
-          hintStyle: SoupType.style(
-            size: 18,
-            weight: 600,
-            color: SoupColors.muted.withValues(alpha: .6),
+  Widget _touchField({required FocusNode focusNode, required bool autofocus}) =>
+      Container(
+        constraints: const BoxConstraints(minHeight: 60),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: _fill,
+          borderRadius: BorderRadius.circular(SoupRadii.button),
+          border: Border.all(
+            color: _focused ? SoupColors.ink : Colors.transparent,
+            width: 3,
           ),
         ),
-      ),
-    ),
-  );
+        alignment: Alignment.center,
+        child: Focus(
+          onFocusChange: (v) => setState(() => _focused = v),
+          skipTraversal: true,
+          child: TextField(
+            controller: widget.controller,
+            focusNode: focusNode,
+            autofocus: autofocus,
+            enabled: widget.enabled,
+            obscureText: widget.obscure,
+            enableSuggestions: !widget.obscure,
+            autocorrect: false,
+            keyboardType: widget.url ? TextInputType.url : TextInputType.text,
+            textInputAction: widget.action ?? TextInputAction.done,
+            onChanged: widget.onChanged,
+            onSubmitted: (_) => widget.onSubmitted?.call(),
+            cursorColor: SoupColors.accent,
+            style: SoupType.style(size: 18, weight: 600),
+            decoration: InputDecoration(
+              labelText: widget.label,
+              hintText: widget.hint,
+              border: InputBorder.none,
+              labelStyle: SoupType.style(
+                size: 16,
+                weight: 600,
+                color: SoupColors.muted,
+              ),
+              floatingLabelStyle: SoupType.style(
+                size: 14,
+                weight: 700,
+                color: SoupColors.muted,
+              ),
+              hintStyle: SoupType.style(
+                size: 18,
+                weight: 600,
+                color: SoupColors.muted.withValues(alpha: .6),
+              ),
+            ),
+          ),
+        ),
+      );
 }

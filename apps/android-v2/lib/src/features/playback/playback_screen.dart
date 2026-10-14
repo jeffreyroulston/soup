@@ -11,6 +11,7 @@ import '../../form_factor.dart';
 import '../../platform.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/glass.dart';
+import '../../utils/media.dart';
 import 'playback_logic.dart';
 import 'playback_panels.dart';
 import 'playback_widgets.dart';
@@ -28,7 +29,8 @@ enum _Panel { settings, chapters, episodes }
 /// on double-tap and scrubs by dragging the seek bar.
 ///
 /// [subtitleIndex]: null = use saved preference, -1 = off, otherwise a stream
-/// index. [audioIndex]: null = default/preference.
+/// index. [audioIndex]: null = default/preference. [maxBitrate]: null = saved
+/// preference, 0 = Auto (no cap), otherwise a cap in bits/s.
 ///
 /// Needs a [SoupScope] above it. Routes pushed from a screen do not inherit
 /// the scope, so wrap them (see [PlaybackScreen.route]).
@@ -38,6 +40,7 @@ class PlaybackScreen extends StatefulWidget {
     this.startTicks = 0,
     this.audioIndex,
     this.subtitleIndex,
+    this.maxBitrate,
     this.controllerFactory = const SpeedVideoControllerFactory(),
     super.key,
   });
@@ -46,6 +49,7 @@ class PlaybackScreen extends StatefulWidget {
   final int startTicks;
   final int? audioIndex;
   final int? subtitleIndex;
+  final int? maxBitrate;
   final SoupVideoControllerFactory controllerFactory;
 
   /// A route that carries [scope] so the player can find its dependencies.
@@ -55,6 +59,7 @@ class PlaybackScreen extends StatefulWidget {
     int startTicks = 0,
     int? audioIndex,
     int? subtitleIndex,
+    int? maxBitrate,
     SoupVideoControllerFactory controllerFactory =
         const SpeedVideoControllerFactory(),
   }) => PageRouteBuilder<void>(
@@ -71,6 +76,7 @@ class PlaybackScreen extends StatefulWidget {
         startTicks: startTicks,
         audioIndex: audioIndex,
         subtitleIndex: subtitleIndex,
+        maxBitrate: maxBitrate,
         controllerFactory: controllerFactory,
       ),
     ),
@@ -136,6 +142,11 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   Duration _lastReported = Duration.zero;
   Timer? _reportDebounce;
 
+  // trickplay
+  final _sheets = <int, Future<Uint8List?>>{};
+  bool _seekPreview = false; // TV: thumbnail above the seek bar after a seek
+  Timer? _seekPreviewTimer;
+
   // next episode
   bool _nextActive = false;
   bool _nextDismissed = false;
@@ -193,6 +204,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         session,
         toJellyfinItem(_item),
         startAt: startAt,
+        profile: _scope.deviceProfile,
       );
       await _bridge!.start();
       _plan = plan;
@@ -238,7 +250,11 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     if (_optionsResolved) return;
     _optionsResolved = true;
     final prefs = _scope.prefs;
-    _maxBitrate = prefs.maxBitrate;
+    _maxBitrate = switch (widget.maxBitrate) {
+      null => prefs.maxBitrate,
+      0 => null,
+      final cap => cap,
+    };
     if (widget.audioIndex != null) {
       _audioIndex = widget.audioIndex;
     } else {
@@ -261,7 +277,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   Uri _transcodeUri() {
     final plan = _plan!;
     final base =
-        plan.transcodeUri ?? manualTranscodeUri(_api!, _session!, plan);
+        plan.transcodeUri ??
+        manualTranscodeUri(_api!, _session!, plan, _scope.deviceProfile);
     return withTranscodeOptions(
       base,
       audioIndex: _audioIndex,
@@ -572,6 +589,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     if (target < Duration.zero) target = Duration.zero;
     if (duration > Duration.zero && target > duration) target = duration;
     _pendingSeek = target;
+    if (!_touch) _flashSeekPreview();
     setState(() {});
     unawaited(
       c.seekTo(target).whenComplete(() {
@@ -587,6 +605,79 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       () => unawaited(_report(paused: !c.value.playing)),
     );
     _restartHide();
+  }
+
+  ({String sourceId, Trickplay info})? get _trickplay =>
+      _mock ? null : _item.trickplayFor(_plan?.mediaSourceId);
+
+  /// Sprite sheets fetched this session (a few, each ~1 MB); failures retry.
+  Future<Uint8List?> _trickplaySheet(int index) {
+    final cached = _sheets.remove(index);
+    if (cached != null) return _sheets[index] = cached;
+    final trickplay = _trickplay;
+    if (trickplay == null) return Future.value(null);
+    final future = _scope.catalog.trickplaySheet(
+      _item.id,
+      trickplay.sourceId,
+      trickplay.info.width,
+      index,
+    );
+    _sheets[index] = future;
+    if (_sheets.length > 6) _sheets.remove(_sheets.keys.first);
+    unawaited(
+      future.then((bytes) {
+        if (bytes == null && identical(_sheets[index], future)) {
+          _sheets.remove(index);
+        }
+      }),
+    );
+    return future;
+  }
+
+  /// TV: show the thumbnail above the seek bar until seeking pauses.
+  void _flashSeekPreview() {
+    if (_trickplay == null) return;
+    _seekPreview = true;
+    _seekPreviewTimer?.cancel();
+    _seekPreviewTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _seekPreview = false);
+    });
+  }
+
+  /// [panel] (the TV seek glass) with the trickplay thumbnail floating above
+  /// the seek bar's thumb while seeking.
+  Widget _withSeekPreview(SoupVideoValue v, Duration position, Widget panel) {
+    final trickplay = _trickplay;
+    if (trickplay == null || !_seekPreview) return panel;
+    const width = 200.0;
+    const inset = 20.0; // the glass's horizontal padding
+    final info = trickplay.info;
+    final height = info.height * width / info.width;
+    final total = v.duration.inMilliseconds;
+    final fraction = total <= 0
+        ? 0.0
+        : (position.inMilliseconds / total).clamp(0.0, 1.0);
+    return LayoutBuilder(
+      builder: (context, c) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          panel,
+          Positioned(
+            left: (inset + (c.maxWidth - inset * 2) * fraction - width / 2)
+                .clamp(0.0, c.maxWidth - width),
+            top: -(height + 12),
+            child: IgnorePointer(
+              child: TrickplayPreview(
+                info: info,
+                position: position,
+                loadSheet: _trickplaySheet,
+                width: width,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _skipTo(SkipRange range) async {
@@ -895,6 +986,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     _hideTimer?.cancel();
     _countdownTimer?.cancel();
     _reportDebounce?.cancel();
+    _seekPreviewTimer?.cancel();
     unawaited(_shutdown());
     for (final n in [
       _rootFocus,
@@ -1271,6 +1363,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       color: SoupColors.ink2,
     );
     final delta = scrubbing ? position - scrubFrom : Duration.zero;
+    final trickplay = _trickplay;
 
     Widget fade(Widget child) => AnimatedOpacity(
       opacity: scrubbing ? 0 : 1,
@@ -1386,7 +1479,18 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             onScrub: _onScrub,
             onScrubEnd: _onScrubEnd,
             scrubFrom: scrubbing ? scrubFrom : null,
-            bubble: ScrubBubble(time: formatTime(position), chapter: chapter),
+            bubble: ScrubBubble(
+              time: formatTime(position),
+              chapter: chapter,
+              preview: trickplay == null
+                  ? null
+                  : TrickplayPreview(
+                      info: trickplay.info,
+                      position: position,
+                      loadSheet: _trickplaySheet,
+                      width: TouchSeekBar.bubbleWidth,
+                    ),
+            ),
           ),
           const SizedBox(height: 2),
           fade(
@@ -1473,111 +1577,115 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             ],
           ),
           Expanded(child: Center(child: _transport(v))),
-          Glass(
-            strong: true,
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SeekBar(
-                  focusNode: _seekFocus,
-                  position: position,
-                  duration: v.duration,
-                  chapterFractions: fractions,
-                  onSeekBy: _seekBy,
-                  onScrub: _touch ? _onScrub : null,
-                  onScrubEnd: _touch ? _onScrubEnd : null,
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      formatTime(position),
-                      key: const ValueKey('playback-position'),
-                      style: SoupType.style(
-                        size: 12,
-                        weight: 600,
-                        color: SoupColors.ink2,
+          _withSeekPreview(
+            v,
+            position,
+            Glass(
+              strong: true,
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SeekBar(
+                    focusNode: _seekFocus,
+                    position: position,
+                    duration: v.duration,
+                    chapterFractions: fractions,
+                    onSeekBy: _seekBy,
+                    onScrub: _touch ? _onScrub : null,
+                    onScrubEnd: _touch ? _onScrubEnd : null,
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        formatTime(position),
+                        key: const ValueKey('playback-position'),
+                        style: SoupType.style(
+                          size: 12,
+                          weight: 600,
+                          color: SoupColors.ink2,
+                        ),
                       ),
-                    ),
-                    Text(
-                      formatTime(v.duration),
-                      style: SoupType.style(
-                        size: 12,
-                        weight: 600,
-                        color: SoupColors.ink2,
+                      Text(
+                        formatTime(v.duration),
+                        style: SoupType.style(
+                          size: 12,
+                          weight: 600,
+                          color: SoupColors.ink2,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            key: const ValueKey('playback-title'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: SoupType.style(
-                              size: 20,
-                              weight: 800,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          if (subtitle.isNotEmpty)
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              subtitle,
+                              title,
+                              key: const ValueKey('playback-title'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: SoupType.style(
-                                size: 13,
-                                color: SoupColors.muted,
+                                size: 20,
+                                weight: 800,
+                                letterSpacing: -0.5,
                               ),
                             ),
-                        ],
+                            if (subtitle.isNotEmpty)
+                              Text(
+                                subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: SoupType.style(
+                                  size: 13,
+                                  color: SoupColors.muted,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    if (_next != null)
-                      ChromeButton(
-                        icon: PhosphorIconsRegular.skipForward,
-                        label: 'Next episode',
-                        onPressed: _playNext,
-                      ),
-                    if (_item.chapters.isNotEmpty) ...[
+                      if (_next != null)
+                        ChromeButton(
+                          icon: PhosphorIconsRegular.skipForward,
+                          label: 'Next episode',
+                          onPressed: _playNext,
+                        ),
+                      if (_item.chapters.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        ChromeButton(
+                          key: const ValueKey('chapters-button'),
+                          icon: PhosphorIconsRegular.listBullets,
+                          label: 'Chapters',
+                          focusNode: _chaptersFocus,
+                          onPressed: () => _openPanel(_Panel.chapters),
+                        ),
+                      ],
+                      if (_episodes.length > 1) ...[
+                        const SizedBox(width: 8),
+                        ChromeButton(
+                          key: const ValueKey('episodes-button'),
+                          icon: PhosphorIconsRegular.stackSimple,
+                          label: 'Episodes',
+                          focusNode: _episodesFocus,
+                          onPressed: () => _openPanel(_Panel.episodes),
+                        ),
+                      ],
                       const SizedBox(width: 8),
                       ChromeButton(
-                        key: const ValueKey('chapters-button'),
-                        icon: PhosphorIconsRegular.listBullets,
-                        label: 'Chapters',
-                        focusNode: _chaptersFocus,
-                        onPressed: () => _openPanel(_Panel.chapters),
+                        key: const ValueKey('settings-button'),
+                        icon: PhosphorIconsRegular.gear,
+                        label: 'Settings',
+                        focusNode: _settingsFocus,
+                        onPressed: () => _openPanel(_Panel.settings),
                       ),
                     ],
-                    if (_episodes.length > 1) ...[
-                      const SizedBox(width: 8),
-                      ChromeButton(
-                        key: const ValueKey('episodes-button'),
-                        icon: PhosphorIconsRegular.stackSimple,
-                        label: 'Episodes',
-                        focusNode: _episodesFocus,
-                        onPressed: () => _openPanel(_Panel.episodes),
-                      ),
-                    ],
-                    const SizedBox(width: 8),
-                    ChromeButton(
-                      key: const ValueKey('settings-button'),
-                      icon: PhosphorIconsRegular.gear,
-                      label: 'Settings',
-                      focusNode: _settingsFocus,
-                      onPressed: () => _openPanel(_Panel.settings),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -1666,26 +1774,18 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                 selected: _maxBitrate == null,
                 onSelect: () => _setQuality(null),
               ),
-              for (final q in _qualityCaps)
+              for (final q in qualityCapsFor(_item))
                 PanelOption(
-                  label: q.$2,
-                  detail: q.$3,
-                  selected: _maxBitrate == q.$1,
-                  onSelect: () => _setQuality(q.$1),
+                  label: q.label,
+                  detail: q.detail,
+                  selected: _maxBitrate == q.bitrate,
+                  onSelect: () => _setQuality(q.bitrate),
                 ),
             ],
           ),
       ],
     );
   }
-
-  static const _qualityCaps = [
-    (20000000, '1080p', '20 Mbps'),
-    (10000000, '1080p', '10 Mbps'),
-    (6000000, '720p', '6 Mbps'),
-    (3000000, '480p', '3 Mbps'),
-    (1000000, '360p', '1 Mbps'),
-  ];
 
   Widget _chaptersPanel() => SidePanel(
     title: 'Chapters',
@@ -1933,13 +2033,13 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
           onSelect: () => _setQuality(null),
         ),
       ),
-      for (final q in _qualityCaps)
+      for (final q in qualityCapsFor(_item))
         PanelRow(
           option: PanelOption(
-            label: q.$2,
-            detail: q.$3,
-            selected: _maxBitrate == q.$1,
-            onSelect: () => _setQuality(q.$1),
+            label: q.label,
+            detail: q.detail,
+            selected: _maxBitrate == q.bitrate,
+            onSelect: () => _setQuality(q.bitrate),
           ),
         ),
     ]);

@@ -17,6 +17,31 @@ CatalogItem _movie(String id, String name, int year, {String? imdb}) =>
 
 void main() {
   group('CatalogItem.fromJson', () {
+    test('title art: own logo, else the series\' through parent fields', () {
+      final movie = CatalogItem.fromJson({
+        'Id': 'm',
+        'Name': 'Film',
+        'Type': 'Movie',
+        'ImageTags': {'Primary': 'p', 'Logo': 'l'},
+      })!;
+      expect(movie.logo?.itemId, 'm');
+      expect(movie.logo?.type, 'Logo');
+      expect(movie.logo?.tag, 'l');
+      final episode = CatalogItem.fromJson({
+        'Id': 'e',
+        'Name': 'Pilot',
+        'Type': 'Episode',
+        'ParentLogoItemId': 's',
+        'ParentLogoImageTag': 'sl',
+      })!;
+      expect(episode.logo?.itemId, 's');
+      expect(episode.logo?.tag, 'sl');
+      expect(
+        CatalogItem.fromJson({'Id': 'x', 'Name': 'X', 'Type': 'Movie'})!.logo,
+        isNull,
+      );
+    });
+
     test('maps user data, images and streams', () {
       final item = CatalogItem.fromJson({
         'Id': 'e1',
@@ -63,6 +88,64 @@ void main() {
     });
   });
 
+  group('Trickplay', () {
+    Map<String, Object?> info(int width) => {
+      'Width': width,
+      'Height': width * 9 ~/ 16,
+      'TileWidth': 10,
+      'TileHeight': 10,
+      'ThumbnailCount': 250,
+      'Interval': 10000,
+    };
+
+    test('keeps the width closest to 320 for each source', () {
+      final item = CatalogItem.fromJson({
+        'Id': 'm1',
+        'Name': 'Movie',
+        'MediaSources': [
+          {'Id': 'a'},
+        ],
+        'Trickplay': {
+          'a': {'480': info(480), '320': info(320)},
+          'b': {
+            '640': info(640),
+            'bad': {'Width': 320},
+          },
+        },
+      })!;
+      expect(item.trickplay['a']!.width, 320);
+      expect(item.trickplay['b']!.width, 640);
+      expect(item.trickplayFor(null)!.sourceId, 'a');
+      expect(item.trickplayFor('b')!.info.width, 640);
+      expect(item.trickplayFor('gone')!.sourceId, 'a');
+    });
+
+    test('no Trickplay field means no thumbnails', () {
+      final item = CatalogItem.fromJson({'Id': 'm1', 'Name': 'Movie'})!;
+      expect(item.trickplay, isEmpty);
+      expect(item.trickplayFor('a'), isNull);
+    });
+
+    test('frameAt finds the sheet and cell, clamped to the last thumbnail', () {
+      final t = Trickplay.parse({
+        's': {'320': info(320)},
+      })['s']!;
+      expect(t.frameAt(Duration.zero), (sheet: 0, x: 0, y: 0));
+      // Thumbnail 123 → sheet 1, cell 23 → column 3, row 2.
+      expect(t.frameAt(const Duration(seconds: 1235)), (
+        sheet: 1,
+        x: 3 * 320,
+        y: 2 * 180,
+      ));
+      expect(t.frameAt(const Duration(hours: 5)), (
+        sheet: 2,
+        x: 9 * 320,
+        y: 4 * 180,
+      ));
+      expect(t.frameAt(const Duration(seconds: -5)).sheet, 0);
+    });
+  });
+
   group('media utils', () {
     test('runtime and time-left labels', () {
       expect(runtimeLabel(94 * 600000000), '1 hr 34 min');
@@ -100,6 +183,40 @@ void main() {
         expect([for (final i in out.nextUp) i.id], ['b1']); // A already shown
       },
     );
+
+    test('orderKeepWatching puts the most recently watched show first', () {
+      CatalogItem ep(
+        String id,
+        String series, {
+        int s = 1,
+        int e = 2,
+        String? at,
+      }) => CatalogItem(
+        id: id,
+        name: id,
+        type: 'Episode',
+        seriesId: series,
+        parentIndexNumber: s,
+        indexNumber: e,
+        lastPlayedDate: at,
+      );
+      final out = orderKeepWatching(
+        (
+          resume: [ep('death-note', 'DN', at: '2026-10-12T09:50:00Z')],
+          nextUp: [ep('archer', 'AR'), ep('dexter', 'DX'), ep('undated', 'UD')],
+        ),
+        [
+          ep('dexter-played', 'DX', at: '2026-10-13T10:27:00Z'),
+          ep('archer-played', 'AR', at: '2026-10-10T04:40:00Z'),
+        ],
+      );
+      expect(
+        [for (final i in out) i.id],
+        ['dexter', 'death-note', 'archer', 'undated'],
+      );
+      expect(isFirstEpisode(ep('pilot', 'TL', e: 1)), isTrue);
+      expect(isFirstEpisode(ep('premiere', 'TL', s: 2, e: 1)), isFalse);
+    });
 
     test('countGenres sorts by count then name', () {
       final counts = countGenres([
@@ -181,6 +298,46 @@ void main() {
       final data = await catalog.home();
       expect(data.resume, isNotEmpty);
       expect(data.recentlyAdded, isNotEmpty);
+    });
+  });
+
+  group('quality caps', () {
+    CatalogItem film({int? width, int? bitrate}) => CatalogItem.fromJson({
+      'Id': 'f',
+      'Name': 'Film',
+      'Type': 'Movie',
+      'MediaSources': [
+        {
+          'Id': 'src',
+          'Bitrate': ?bitrate,
+          'MediaStreams': [
+            {'Type': 'Video', 'Index': 0, 'Width': ?width},
+          ],
+        },
+      ],
+    })!;
+
+    test('reads the source bitrate', () {
+      expect(film(bitrate: 8234000).sourceBitrate, 8234000);
+      expect(film().sourceBitrate, isNull);
+    });
+
+    test('only offers caps below the file\'s resolution and bitrate', () {
+      final caps = qualityCapsFor(film(width: 1920, bitrate: 6000000));
+      expect(caps.first.bitrate, 4000000);
+      expect(caps.every((q) => q.height <= 1080 && q.bitrate < 6000000), true);
+      expect(
+        qualityCapsFor(film(width: 3840)).first.label,
+        '4K',
+        reason: 'unknown bitrate leaves every cap up to the resolution',
+      );
+      expect(qualityCapsFor(film(width: 1920)).first.bitrate, 20000000);
+    });
+
+    test('bitrate labels', () {
+      expect(bitrateLabel(8234000), '8.2 Mbps');
+      expect(bitrateLabel(24000000), '24 Mbps');
+      expect(bitrateLabel(640000), '640 kbps');
     });
   });
 }

@@ -18,6 +18,7 @@ class Focusable extends StatefulWidget {
     this.onFocusChange,
     this.scale = 1.03,
     this.radius = SoupRadii.card,
+    this.ring = true,
     super.key,
   });
 
@@ -28,6 +29,10 @@ class Focusable extends StatefulWidget {
   final ValueChanged<bool>? onFocusChange;
   final double scale;
   final double radius;
+
+  /// False when [builder] draws its own focus outline (shapes the rounded
+  /// ring doesn't fit, e.g. the spotlight's diagonal posters).
+  final bool ring;
 
   @override
   State<Focusable> createState() => _FocusableState();
@@ -129,7 +134,7 @@ class _FocusableState extends State<Focusable> {
             clipBehavior: Clip.none,
             children: [
               widget.builder(context, showFocus),
-              if (showFocus) _ring(),
+              if (showFocus && widget.ring) _ring(),
             ],
           ),
         ),

@@ -9,6 +9,9 @@ import '../../utils/media.dart';
 import '../theme/soup_tokens.dart';
 import 'catalog_image.dart';
 import 'focusable.dart';
+import 'meta_line.dart';
+import 'play_button.dart';
+import 'title_art.dart';
 
 /// The two scrims the web lays over hero/spotlight art.
 class ArtScrims extends StatelessWidget {
@@ -43,9 +46,8 @@ class ArtScrims extends StatelessWidget {
 }
 
 class HeroSlide {
-  const HeroSlide(this.item, this.kicker);
+  const HeroSlide(this.item);
   final CatalogItem item;
-  final String kicker; // "Continue Watching" | "Recently Added"
 }
 
 /// Auto-advancing featured carousel (web HeroCarousel).
@@ -189,13 +191,8 @@ class _Slide extends StatelessWidget {
     final width = MediaQuery.sizeOf(context).width;
     final isEpisode = item.type == 'Episode';
     final title = isEpisode ? (item.seriesName ?? item.name) : item.name;
-    final genre = item.genres.firstOrNull;
     final left = timeLeftLabel(item);
-    final playLabel = !item.isPlayable
-        ? 'View'
-        : canResume(item)
-        ? 'Resume${left != null ? ' · ${left.replaceAll(' left', '')}' : ''}'
-        : 'Play';
+    final resume = item.isPlayable && left != null && canResume(item);
     final meta = <String>[
       ...item.genres.take(2),
       ?yearLabel(item),
@@ -213,130 +210,83 @@ class _Slide extends StatelessWidget {
         const ArtScrims(),
         Positioned(
           left: SoupSpacing.gutter,
+          right: SoupSpacing.gutter + 120,
           bottom: 84,
-          width: 640,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                '${slide.kicker}${genre != null ? ' · $genre' : ''}',
-                style: SoupType.style(
-                  size: 15,
-                  weight: 700,
-                  color: SoupColors.ink2,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                title,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: SoupType.style(
-                  size: heroTitleSize(title, width).clamp(40, 84),
-                  weight: 800,
-                  letterSpacing: -2.5,
-                  height: 0.95,
-                ),
-              ),
-              if (isEpisode && episodeCode(item) != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '${episodeCode(item)} · ${item.name}',
-                  style: SoupType.style(
-                    size: 17,
-                    weight: 700,
-                    color: SoupColors.ink2,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      meta.join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: SoupType.style(
-                        size: 15,
-                        weight: 600,
-                        color: SoupColors.ink2,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TitleArt(
+                      logo: item.logo,
+                      maxWidth: 520,
+                      maxHeight: 190,
+                      fallback: Text(
+                        title,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: SoupType.style(
+                          size: heroTitleSize(title, width).clamp(40, 84),
+                          weight: 800,
+                          letterSpacing: -2.5,
+                          height: 0.95,
+                        ),
                       ),
                     ),
-                  ),
-                  for (final b in badges)
-                    Container(
-                      margin: const EdgeInsets.only(left: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
+                    if (isEpisode && episodeCode(item) != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        '${episodeCode(item)}, ${item.name}',
+                        style: SoupType.style(
+                          size: 17,
+                          weight: 700,
+                          color: SoupColors.ink2,
+                        ),
                       ),
-                      decoration: BoxDecoration(
-                        color: const Color(0x33FFFFFF),
-                        borderRadius: BorderRadius.circular(4),
+                    ],
+                    const SizedBox(height: 14),
+                    MetaLine(bits: meta, chips: badges),
+                    if (item.overview != null && item.overview!.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        item.overview!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: SoupType.style(
+                          size: 17,
+                          color: SoupColors.ink2,
+                          height: 1.4,
+                        ),
                       ),
-                      child: Text(
-                        b,
-                        style: SoupType.style(size: 12, weight: 800),
-                      ),
-                    ),
-                ],
-              ),
-              if (item.overview != null && item.overview!.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                Text(
-                  item.overview!,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: SoupType.style(
-                    size: 17,
-                    color: SoupColors.ink2,
-                    height: 1.4,
-                  ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
               const SizedBox(height: 24),
               Row(
                 children: [
-                  Focusable(
+                  PlayButton(
                     autofocus: first,
-                    radius: SoupRadii.button,
+                    label: !item.isPlayable
+                        ? 'View'
+                        : resume
+                        ? 'Resume'
+                        : 'Play',
+                    icon: item.isPlayable,
+                    detail: resume ? left : null,
+                    progress: resume && isInProgress(item)
+                        ? (item.playedPercentage ?? 0) / 100
+                        : 0,
                     onActivate: () => item.isPlayable
                         ? openWatch(context, item)
                         : openItem(context, item),
-                    builder: (context, _) => Container(
-                      height: 56,
-                      padding: const EdgeInsets.symmetric(horizontal: 30),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: SoupColors.ink,
-                        borderRadius: BorderRadius.circular(SoupRadii.button),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (item.isPlayable) ...[
-                            const Icon(
-                              Icons.play_arrow_rounded,
-                              color: SoupColors.canvas,
-                              size: 26,
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          Text(
-                            playLabel,
-                            style: SoupType.style(
-                              size: 18,
-                              weight: 800,
-                              color: SoupColors.canvas,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 16),
                   Focusable(
                     radius: SoupRadii.button,
                     onActivate: () => openItem(context, item),
@@ -348,21 +298,35 @@ class _Slide extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 16),
                   ValueListenableBuilder(
                     valueListenable: scope.catalog.favoriteOverrides,
                     builder: (context, _, _) {
                       final favorite = scope.catalog.isFavorite(item);
                       return Focusable(
-                        radius: 28,
+                        radius: SoupRadii.button,
                         onActivate: () =>
                             scope.catalog.setFavorite(item.id, !favorite),
                         builder: (context, focused) => _GlassPill(
                           focused: focused,
-                          round: true,
-                          child: Icon(
-                            favorite ? Icons.check_rounded : Icons.add_rounded,
-                            size: 26,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                favorite
+                                    ? Icons.favorite_rounded
+                                    : Icons.favorite_border_rounded,
+                                size: 24,
+                                color: favorite
+                                    ? SoupColors.accent
+                                    : SoupColors.ink,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Favourite',
+                                style: SoupType.style(size: 18, weight: 700),
+                              ),
+                            ],
                           ),
                         ),
                       );
@@ -379,24 +343,18 @@ class _Slide extends StatelessWidget {
 }
 
 class _GlassPill extends StatelessWidget {
-  const _GlassPill({
-    required this.child,
-    required this.focused,
-    this.round = false,
-  });
+  const _GlassPill({required this.child, required this.focused});
   final Widget child;
   final bool focused;
-  final bool round;
 
   @override
   Widget build(BuildContext context) => Container(
     height: 56,
-    width: round ? 56 : null,
-    padding: round ? null : const EdgeInsets.symmetric(horizontal: 28),
+    padding: const EdgeInsets.symmetric(horizontal: 28),
     alignment: Alignment.center,
     decoration: BoxDecoration(
       color: focused ? const Color(0xBF48484E) : const Color(0x99282828),
-      borderRadius: BorderRadius.circular(round ? 28 : SoupRadii.button),
+      borderRadius: BorderRadius.circular(SoupRadii.button),
       border: Border.all(color: const Color(0x1AFFFFFF)),
     ),
     child: child,

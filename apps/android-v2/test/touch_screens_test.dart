@@ -6,6 +6,7 @@ import 'package:soup_v2/src/data/playback_prefs.dart';
 import 'package:soup_v2/src/features/collection/collection_screen.dart';
 import 'package:soup_v2/src/features/home/home_screen.dart';
 import 'package:soup_v2/src/features/item/item_screen.dart';
+import 'package:soup_v2/src/features/library/library_filter.dart';
 import 'package:soup_v2/src/features/library/library_screen.dart';
 import 'package:soup_v2/src/features/search/search_screen.dart';
 import 'package:soup_v2/src/features/settings/settings_screen.dart';
@@ -13,6 +14,7 @@ import 'package:soup_v2/src/form_factor.dart';
 import 'package:soup_v2/src/ui/theme/soup_theme.dart';
 import 'package:soup_v2/src/ui/touch/touch_frame.dart';
 import 'package:soup_v2/src/ui/touch/touch_scaffold.dart';
+import 'package:soup_v2/src/ui/widgets/pill_tabs.dart';
 
 /// The touch UI on a phone-sized screen (Pixel 7: 412×915 dp).
 Future<void> _pump(
@@ -64,8 +66,13 @@ void main() {
     final lib = (await MockCatalog().libraries()).first;
     await _pump(tester, LibraryScreen(library: lib));
     expect(find.text('16 titles'), findsOneWidget);
-    await tester.ensureVisible(find.text('Favourites'));
-    await tester.tap(find.text('Favourites'));
+    // The filter pill, not the bottom nav's Favourites tab.
+    final pill = find.descendant(
+      of: find.byType(PillTabs<LibraryFilter>),
+      matching: find.text('Favourites'),
+    );
+    await tester.ensureVisible(pill);
+    await tester.tap(pill);
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Nothing matches these filters.'), findsOneWidget);
   });
@@ -75,6 +82,13 @@ void main() {
     expect(find.text('After Kitchen'), findsWidgets);
     expect(find.textContaining('of 4 watched'), findsOneWidget);
     expect(find.text('Episodes'), findsOneWidget);
+  });
+
+  testWidgets('episode item fits a phone', (tester) async {
+    await _pump(tester, const ItemScreen(itemId: 's2-s1e3'));
+    expect(find.text('SEASON 1 · EPISODE 3'), findsOneWidget);
+    expect(find.text('NEXT · E4'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('select menus open as a bottom sheet', (tester) async {

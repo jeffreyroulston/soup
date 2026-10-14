@@ -11,6 +11,9 @@ import '../widgets/catalog_image.dart';
 import '../widgets/focusable.dart';
 import '../widgets/hero_carousel.dart' show ArtScrims, HeroSlide;
 import '../widgets/media_card.dart';
+import '../widgets/meta_line.dart';
+import '../widgets/play_button.dart';
+import '../widgets/title_art.dart';
 
 /// Phone-sized counterparts of the TV spacing tokens.
 abstract final class TouchSpacing {
@@ -401,17 +404,13 @@ class _TouchSlide extends StatelessWidget {
     final scope = SoupScope.of(context);
     final isEpisode = item.type == 'Episode';
     final title = isEpisode ? (item.seriesName ?? item.name) : item.name;
-    final genre = item.genres.firstOrNull;
     final meta = <String>[
       ?yearLabel(item),
       ?runtimeLabel(item.runTimeTicks),
       ...item.genres.take(2),
     ];
-    final playLabel = !item.isPlayable
-        ? 'View'
-        : canResume(item)
-        ? 'Resume'
-        : 'Play';
+    final left = timeLeftLabel(item);
+    final resume = item.isPlayable && left != null && canResume(item);
     return GestureDetector(
       onTap: () => openItem(context, item),
       child: Stack(
@@ -435,31 +434,28 @@ class _TouchSlide extends StatelessWidget {
                   : CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '${slide.kicker}${genre != null ? ' · $genre' : ''}',
-                  style: SoupType.style(
-                    size: 13,
-                    weight: 700,
-                    color: SoupColors.ink2,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  title,
-                  maxLines: 2,
-                  textAlign: portrait ? TextAlign.center : TextAlign.start,
-                  overflow: TextOverflow.ellipsis,
-                  style: SoupType.style(
-                    size: title.length > 24 ? 30 : 38,
-                    weight: 800,
-                    letterSpacing: -1.2,
-                    height: 1,
+                TitleArt(
+                  logo: item.logo,
+                  maxWidth: 300,
+                  maxHeight: 110,
+                  alignment: portrait ? Alignment.center : Alignment.centerLeft,
+                  fallback: Text(
+                    title,
+                    maxLines: 2,
+                    textAlign: portrait ? TextAlign.center : TextAlign.start,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: title.length > 24 ? 30 : 38,
+                      weight: 800,
+                      letterSpacing: -1.2,
+                      height: 1,
+                    ),
                   ),
                 ),
                 if (isEpisode && episodeCode(item) != null) ...[
                   const SizedBox(height: 6),
                   Text(
-                    '${episodeCode(item)} · ${item.name}',
+                    '${episodeCode(item)}, ${item.name}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: SoupType.style(
@@ -470,37 +466,49 @@ class _TouchSlide extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 8),
-                Text(
-                  meta.join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: SoupType.style(
-                    size: 13,
-                    weight: 600,
-                    color: SoupColors.ink2,
-                  ),
+                MetaLine(
+                  bits: meta,
+                  size: 13,
+                  spacing: 14,
+                  alignment: portrait
+                      ? WrapAlignment.center
+                      : WrapAlignment.start,
                 ),
                 const SizedBox(height: 16),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
-                      child: TouchButton(
-                        label: playLabel,
-                        icon: item.isPlayable ? Icons.play_arrow_rounded : null,
-                        onPressed: () => item.isPlayable
+                      child: PlayButton(
+                        compact: true,
+                        height: 48,
+                        label: !item.isPlayable
+                            ? 'View'
+                            : resume
+                            ? 'Resume'
+                            : 'Play',
+                        icon: item.isPlayable,
+                        detail: resume ? left : null,
+                        progress: resume && isInProgress(item)
+                            ? (item.playedPercentage ?? 0) / 100
+                            : 0,
+                        onActivate: () => item.isPlayable
                             ? openWatch(context, item)
                             : openItem(context, item),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Flexible(
-                      child: TouchButton(
-                        label: 'Details',
-                        primary: false,
-                        onPressed: () => openItem(context, item),
+                    // Phones open details by tapping the slide (web hides
+                    // Details below `sm`).
+                    if (!portrait) ...[
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: TouchButton(
+                          label: 'Details',
+                          primary: false,
+                          onPressed: () => openItem(context, item),
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(width: 10),
                     ValueListenableBuilder(
                       valueListenable: scope.catalog.favoriteOverrides,
@@ -511,8 +519,9 @@ class _TouchSlide extends StatelessWidget {
                               ? 'Remove from favourites'
                               : 'Add to favourites',
                           icon: favorite
-                              ? Icons.check_rounded
-                              : Icons.add_rounded,
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: favorite ? SoupColors.accent : SoupColors.ink,
                           onPressed: () =>
                               scope.catalog.setFavorite(item.id, !favorite),
                         );

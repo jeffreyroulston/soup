@@ -126,6 +126,107 @@ class Chapter {
   final String? imageTag;
 }
 
+/// One cell of a [Trickplay] sprite sheet.
+typedef TrickplayFrame = ({int sheet, int x, int y});
+
+/// Seek-bar thumbnails Jellyfin (10.9+) tiles into JPEG sprite sheets at
+/// `Videos/{id}/Trickplay/{width}/{sheet}.jpg`.
+class Trickplay {
+  const Trickplay({
+    required this.width,
+    required this.height,
+    required this.tileWidth,
+    required this.tileHeight,
+    required this.thumbnailCount,
+    required this.interval,
+  });
+
+  /// Thumbnail width; also the {width} in the sheet URL.
+  final int width;
+  final int height;
+
+  /// Thumbnails per row and column of a sheet.
+  final int tileWidth;
+  final int tileHeight;
+  final int thumbnailCount;
+
+  /// Time between thumbnails.
+  final Duration interval;
+
+  /// Same target as the web player, which the server settings are tuned for.
+  static const preferredWidth = 320;
+
+  int get perSheet => tileWidth * tileHeight;
+  int get sheetWidth => tileWidth * width;
+  int get sheetHeight => tileHeight * height;
+
+  TrickplayFrame frameAt(Duration position) {
+    final n = (position.inMilliseconds ~/ interval.inMilliseconds).clamp(
+      0,
+      thumbnailCount - 1,
+    );
+    final local = n % perSheet;
+    return (
+      sheet: n ~/ perSheet,
+      x: (local % tileWidth) * width,
+      y: (local ~/ tileWidth) * height,
+    );
+  }
+
+  static Trickplay? _fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    int? n(String key) => (raw[key] as num?)?.toInt();
+    final width = n('Width'), height = n('Height');
+    final tileWidth = n('TileWidth'), tileHeight = n('TileHeight');
+    final count = n('ThumbnailCount'), interval = n('Interval');
+    if (width == null ||
+        height == null ||
+        tileWidth == null ||
+        tileHeight == null ||
+        count == null ||
+        interval == null ||
+        [
+          width,
+          height,
+          tileWidth,
+          tileHeight,
+          count,
+          interval,
+        ].any((v) => v <= 0)) {
+      return null;
+    }
+    return Trickplay(
+      width: width,
+      height: height,
+      tileWidth: tileWidth,
+      tileHeight: tileHeight,
+      thumbnailCount: count,
+      interval: Duration(milliseconds: interval),
+    );
+  }
+
+  /// Reads an item's `Trickplay` field (media source id → width → info),
+  /// keeping the width closest to [preferredWidth] for each source.
+  static Map<String, Trickplay> parse(Object? raw) {
+    if (raw is! Map) return const {};
+    final result = <String, Trickplay>{};
+    raw.forEach((sourceId, widths) {
+      if (widths is! Map) return;
+      Trickplay? best;
+      for (final info in widths.values.map(_fromJson)) {
+        if (info == null) continue;
+        if (best == null ||
+            (info.width - preferredWidth).abs() <
+                (best.width - preferredWidth).abs()) {
+          best = info;
+        }
+      }
+      if (best != null) result['$sourceId'] = best;
+    });
+    return result;
+  }
+}
+
 class RemoteTrailer {
   const RemoteTrailer({required this.url, this.name});
   final String url;
@@ -151,6 +252,9 @@ class CatalogItem {
     this.backdropImageTag,
     this.parentBackdropItemId,
     this.parentBackdropImageTag,
+    this.logoImageTag,
+    this.parentLogoItemId,
+    this.parentLogoImageTag,
     this.seriesName,
     this.seriesPrimaryImageTag,
     this.seriesId,
@@ -159,6 +263,7 @@ class CatalogItem {
     this.parentIndexNumber,
     this.premiereDate,
     this.endDate,
+    this.dateAdded,
     this.childCount,
     this.recursiveItemCount,
     this.genres = const [],
@@ -166,8 +271,10 @@ class CatalogItem {
     this.tags = const [],
     this.people = const [],
     this.mediaSourceId,
+    this.sourceBitrate,
     this.mediaStreams = const [],
     this.chapters = const [],
+    this.trickplay = const {},
     this.remoteTrailers = const [],
     this.localTrailerCount,
     this.specialFeatureCount,
@@ -176,6 +283,7 @@ class CatalogItem {
     this.played = false,
     this.playedPercentage,
     this.playbackPositionTicks = 0,
+    this.lastPlayedDate,
   });
 
   final String id;
@@ -195,6 +303,12 @@ class CatalogItem {
   final String? backdropImageTag;
   final String? parentBackdropItemId;
   final String? parentBackdropImageTag;
+
+  /// Transparent title art; episodes borrow their series' through the
+  /// parent fields.
+  final String? logoImageTag;
+  final String? parentLogoItemId;
+  final String? parentLogoImageTag;
   final String? seriesName;
   final String? seriesPrimaryImageTag;
   final String? seriesId;
@@ -203,6 +317,9 @@ class CatalogItem {
   final int? parentIndexNumber;
   final String? premiereDate;
   final String? endDate;
+
+  /// When the item (or, for a series, its newest episode) reached the server.
+  final DateTime? dateAdded;
   final int? childCount;
   final int? recursiveItemCount;
   final List<String> genres;
@@ -210,8 +327,14 @@ class CatalogItem {
   final List<String> tags;
   final List<Person> people;
   final String? mediaSourceId;
+
+  /// Total bitrate of the first media source in bits/s, when Jellyfin knows it.
+  final int? sourceBitrate;
   final List<MediaStreamInfo> mediaStreams;
   final List<Chapter> chapters;
+
+  /// Seek thumbnails per media source id; empty when the server made none.
+  final Map<String, Trickplay> trickplay;
   final List<RemoteTrailer> remoteTrailers;
   final int? localTrailerCount;
   final int? specialFeatureCount;
@@ -221,7 +344,14 @@ class CatalogItem {
   final double? playedPercentage;
   final int playbackPositionTicks;
 
-  CatalogItem copyWith({bool? isFavorite, bool? played}) => CatalogItem(
+  /// When the user last played it (ISO 8601); null if never.
+  final String? lastPlayedDate;
+
+  CatalogItem copyWith({
+    bool? isFavorite,
+    bool? played,
+    String? lastPlayedDate,
+  }) => CatalogItem(
     id: id,
     name: name,
     type: type,
@@ -239,6 +369,9 @@ class CatalogItem {
     backdropImageTag: backdropImageTag,
     parentBackdropItemId: parentBackdropItemId,
     parentBackdropImageTag: parentBackdropImageTag,
+    logoImageTag: logoImageTag,
+    parentLogoItemId: parentLogoItemId,
+    parentLogoImageTag: parentLogoImageTag,
     seriesName: seriesName,
     seriesPrimaryImageTag: seriesPrimaryImageTag,
     seriesId: seriesId,
@@ -247,6 +380,7 @@ class CatalogItem {
     parentIndexNumber: parentIndexNumber,
     premiereDate: premiereDate,
     endDate: endDate,
+    dateAdded: dateAdded,
     childCount: childCount,
     recursiveItemCount: recursiveItemCount,
     genres: genres,
@@ -254,8 +388,10 @@ class CatalogItem {
     tags: tags,
     people: people,
     mediaSourceId: mediaSourceId,
+    sourceBitrate: sourceBitrate,
     mediaStreams: mediaStreams,
     chapters: chapters,
+    trickplay: trickplay,
     remoteTrailers: remoteTrailers,
     localTrailerCount: localTrailerCount,
     specialFeatureCount: specialFeatureCount,
@@ -264,6 +400,7 @@ class CatalogItem {
     played: played ?? this.played,
     playedPercentage: playedPercentage,
     playbackPositionTicks: playbackPositionTicks,
+    lastPlayedDate: lastPlayedDate ?? this.lastPlayedDate,
   );
 
   /// 2:3 key art; episodes use their series poster instead of the still.
@@ -297,6 +434,15 @@ class CatalogItem {
     return ImageRef(id, 'Backdrop', null);
   }
 
+  /// Title art (own, else the series'), or null when there is none.
+  ImageRef? get logo {
+    if (logoImageTag != null) return ImageRef(id, 'Logo', logoImageTag);
+    if (parentLogoItemId != null && parentLogoImageTag != null) {
+      return ImageRef(parentLogoItemId!, 'Logo', parentLogoImageTag);
+    }
+    return null;
+  }
+
   bool get hasBackdrop =>
       backdropImageTag != null ||
       (parentBackdropItemId != null && parentBackdropImageTag != null);
@@ -306,6 +452,15 @@ class CatalogItem {
       type == 'Episode' ||
       type == 'Video' ||
       type == 'Trailer';
+
+  /// Thumbnails for [sourceId] (the version playing), else for any version,
+  /// with the source id their sheets are requested under.
+  ({String sourceId, Trickplay info})? trickplayFor(String? sourceId) {
+    final id = trickplay.containsKey(sourceId ?? mediaSourceId)
+        ? (sourceId ?? mediaSourceId)!
+        : trickplay.keys.firstOrNull;
+    return id == null ? null : (sourceId: id, info: trickplay[id]!);
+  }
 
   List<MediaStreamInfo> streamsOf(StreamKind kind) =>
       mediaStreams.where((s) => s.kind == kind).toList(growable: false);
@@ -366,6 +521,9 @@ class CatalogItem {
           parentBackdropTags is List && parentBackdropTags.isNotEmpty
           ? '${parentBackdropTags.first}'
           : null,
+      logoImageTag: tags['Logo'] as String?,
+      parentLogoItemId: raw['ParentLogoItemId'] as String?,
+      parentLogoImageTag: raw['ParentLogoImageTag'] as String?,
       seriesName: raw['SeriesName'] as String?,
       seriesPrimaryImageTag: raw['SeriesPrimaryImageTag'] as String?,
       seriesId: raw['SeriesId'] as String?,
@@ -374,6 +532,9 @@ class CatalogItem {
       parentIndexNumber: (raw['ParentIndexNumber'] as num?)?.toInt(),
       premiereDate: raw['PremiereDate'] as String?,
       endDate: raw['EndDate'] as String?,
+      dateAdded: DateTime.tryParse(
+        (raw['DateLastMediaAdded'] ?? raw['DateCreated'] ?? '') as String,
+      ),
       childCount: (raw['ChildCount'] as num?)?.toInt(),
       recursiveItemCount: (raw['RecursiveItemCount'] as num?)?.toInt(),
       genres: _strings(raw['Genres']),
@@ -384,6 +545,10 @@ class CatalogItem {
           for (final p in raw['People'] as List) ?Person.fromJson(p),
       ],
       mediaSourceId: firstSource == null ? null : firstSource['Id'] as String?,
+      sourceBitrate: switch (firstSource?['Bitrate']) {
+        final num b when b > 0 => b.toInt(),
+        _ => null,
+      },
       mediaStreams: [
         if (rawStreams is List)
           for (final s in rawStreams) ?MediaStreamInfo.fromJson(s),
@@ -398,6 +563,7 @@ class CatalogItem {
                 imageTag: c['ImageTag'] as String?,
               ),
       ],
+      trickplay: Trickplay.parse(raw['Trickplay']),
       remoteTrailers: [
         if (raw['RemoteTrailers'] is List)
           for (final t in raw['RemoteTrailers'] as List)
@@ -417,6 +583,7 @@ class CatalogItem {
       playedPercentage: (userData['PlayedPercentage'] as num?)?.toDouble(),
       playbackPositionTicks:
           (userData['PlaybackPositionTicks'] as num?)?.toInt() ?? 0,
+      lastPlayedDate: userData['LastPlayedDate'] as String?,
     );
   }
 }
@@ -433,10 +600,18 @@ class HomeData {
     required this.resume,
     required this.nextUp,
     required this.recentlyAdded,
+    this.keepWatching = const [],
+    this.random = const [],
   });
   final List<CatalogItem> resume;
   final List<CatalogItem> nextUp;
+
+  /// [resume] and [nextUp] merged, most recently watched show or film first.
+  final List<CatalogItem> keepWatching;
   final List<Shelf> recentlyAdded;
+
+  /// Random movies and shows with backdrops; fills out the hero.
+  final List<CatalogItem> random;
 }
 
 class HomeExtras {

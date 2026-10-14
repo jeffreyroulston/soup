@@ -103,9 +103,12 @@ class SelectMenu<T> extends StatelessWidget {
                   shrinkWrap: true,
                   children: [
                     for (final o in options)
+                      // Rows sit flush, so the focused one inverts rather
+                      // than ringing over its neighbours.
                       Focusable(
                         autofocus: o.value == value,
                         scale: 1.0,
+                        ring: false,
                         radius: 12,
                         onActivate: () =>
                             Navigator.of(context).pop(_Picked(o.value)),
@@ -117,7 +120,7 @@ class SelectMenu<T> extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: focused
-                                ? const Color(0x26FFFFFF)
+                                ? SoupColors.ink
                                 : Colors.transparent,
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -126,17 +129,25 @@ class SelectMenu<T> extends StatelessWidget {
                               SizedBox(
                                 width: 26,
                                 child: o.value == value
-                                    ? const Icon(
+                                    ? Icon(
                                         Icons.check_rounded,
                                         size: 20,
-                                        color: SoupColors.ink,
+                                        color: focused
+                                            ? SoupColors.canvas
+                                            : SoupColors.ink,
                                       )
                                     : null,
                               ),
                               Expanded(
                                 child: Text(
                                   o.label,
-                                  style: SoupType.style(size: 17, weight: 600),
+                                  style: SoupType.style(
+                                    size: 17,
+                                    weight: 600,
+                                    color: focused
+                                        ? SoupColors.canvas
+                                        : SoupColors.ink,
+                                  ),
                                 ),
                               ),
                               if (o.detail != null)
@@ -144,7 +155,11 @@ class SelectMenu<T> extends StatelessWidget {
                                   o.detail!,
                                   style: SoupType.style(
                                     size: 14,
-                                    color: SoupColors.muted,
+                                    color: focused
+                                        ? SoupColors.canvas.withValues(
+                                            alpha: .6,
+                                          )
+                                        : SoupColors.muted,
                                   ),
                                 ),
                             ],

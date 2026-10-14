@@ -6,6 +6,7 @@ import 'package:soup_identity/soup_identity.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
 import 'config.dart' as config;
+import 'data/device_settings.dart';
 import 'features/auth/direct_login_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/shell/authenticated_root.dart';
@@ -31,6 +32,7 @@ class SoupApp extends StatefulWidget {
     this.authPathStore,
     this.discoveryService,
     this.formFactor = FormFactor.tv,
+    this.device,
     super.key,
   });
 
@@ -44,6 +46,9 @@ class SoupApp extends StatefulWidget {
   final AuthPathPreferencesStore? authPathStore;
   final JellyfinDiscoveryService? discoveryService;
   final FormFactor formFactor;
+
+  /// Detected in `main`; null in tests.
+  final DeviceSettings? device;
 
   @override
   State<SoupApp> createState() => _SoupAppState();
@@ -72,6 +77,7 @@ class _SoupAppState extends State<SoupApp> {
       connectionStore:
           widget.connectionStore ?? SharedPreferencesConnectionStore(),
       discoveryService: widget.discoveryService,
+      deviceName: () => widget.device?.jellyfinName ?? 'Soup',
     )..initialize();
     final flags = widget.soupIdentityFlags;
     final client =
@@ -278,6 +284,7 @@ class _SoupAppState extends State<SoupApp> {
         soupAuth: _soupAuth,
         session: session,
         onSignOut: _signOut,
+        device: widget.device,
       );
     }
     // The Jellyfin address/credentials form (and Quick Connect), or the

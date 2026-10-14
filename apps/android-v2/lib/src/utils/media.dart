@@ -1,4 +1,5 @@
 import '../data/models.dart';
+import '../data/playback_prefs.dart';
 
 /// Ports of apps/web/app/utils/media.ts.
 const _ticksPerMinute = 10000000 * 60;
@@ -52,6 +53,44 @@ String? yearLabel(CatalogItem item) {
     if (end != null && end != year) return '$year – $end';
   }
   return '$year';
+}
+
+/// Resolution class (1080, 720…) rather than raw height: cropped widescreen
+/// is often e.g. 1280×536. Matches `resolutionClass` in web utils/media.ts.
+int? resolutionClass(MediaStreamInfo? video) {
+  final width = video?.width ?? 0;
+  final height = video?.height ?? 0;
+  if (width == 0 && height == 0) return null;
+  if (width >= 3200 || height >= 1800) return 2160;
+  if (width >= 1800 || height >= 1000) return 1080;
+  if (width >= 1200 || height >= 700) return 720;
+  if (width >= 960 || height >= 560) return 576;
+  return 480;
+}
+
+String resolutionLabel(int height) => height >= 2160 ? '4K' : '${height}p';
+
+/// 8234000 → "8.2 Mbps", 640000 → "640 kbps".
+String bitrateLabel(int bitsPerSecond) {
+  if (bitsPerSecond < 1000000) return '${(bitsPerSecond / 1000).round()} kbps';
+  final mbps = (bitsPerSecond / 1000000).toStringAsFixed(1);
+  return '${mbps.endsWith('.0') ? mbps.substring(0, mbps.length - 2) : mbps} Mbps';
+}
+
+/// The caps that would actually lower [item]'s quality: no taller than the
+/// file and below its bitrate (a cap at or above it only forces a needless
+/// transcode). Unknown values don't filter. See qualityCapsFor in media.ts.
+List<({int bitrate, int height, String label, String detail})> qualityCapsFor(
+  CatalogItem item,
+) {
+  final height = resolutionClass(item.streamsOf(StreamKind.video).firstOrNull);
+  final bitrate = item.sourceBitrate;
+  return [
+    for (final q in PlaybackPrefs.qualityCaps)
+      if ((height == null || q.height <= height) &&
+          (bitrate == null || q.bitrate < bitrate))
+        q,
+  ];
 }
 
 List<String> qualityBadges(CatalogItem item) {
@@ -173,6 +212,51 @@ int _imul(int a, int b) => ((a.toSigned(32) * b.toSigned(32))).toSigned(32);
   return (resume: collapsed, nextUp: next);
 }
 
+/// A show's first episode isn't "up next" until it's started; Jellyfin 12
+/// dropped the server-side DisableFirstEpisode option. See getHome in
+/// useJellyfin.ts.
+bool isFirstEpisode(CatalogItem item) =>
+    item.parentIndexNumber == 1 && item.indexNumber == 1;
+
+/// The Keep Watching row: [resume] and [nextUp] in one list, ordered by when
+/// each show or film was last played; see orderKeepWatching in media.ts.
+/// [activity] is everything with a play date (raw resume items and recently
+/// played episodes), since a Next Up episode is usually unplayed. Items with
+/// no known date keep their order, after the dated ones.
+List<CatalogItem> orderKeepWatching(
+  ({List<CatalogItem> resume, List<CatalogItem> nextUp}) home, [
+  List<CatalogItem> activity = const [],
+]) {
+  int time(String? date) =>
+      date == null ? 0 : DateTime.tryParse(date)?.millisecondsSinceEpoch ?? 0;
+  final lastPlayedBySeries = <String, int>{};
+  for (final item in activity) {
+    final seriesId = item.seriesId;
+    if (seriesId == null) continue;
+    final played = time(item.lastPlayedDate);
+    if (played > (lastPlayedBySeries[seriesId] ?? 0)) {
+      lastPlayedBySeries[seriesId] = played;
+    }
+  }
+  int lastActivity(CatalogItem item) {
+    final own = time(item.lastPlayedDate);
+    final show = item.seriesId == null
+        ? 0
+        : lastPlayedBySeries[item.seriesId] ?? 0;
+    return own > show ? own : show;
+  }
+
+  final entries =
+      [
+        for (final (index, item) in [...home.resume, ...home.nextUp].indexed)
+          (item: item, index: index, at: lastActivity(item)),
+      ]..sort((a, b) {
+        final byTime = b.at.compareTo(a.at);
+        return byTime != 0 ? byTime : a.index.compareTo(b.index);
+      });
+  return [for (final e in entries) e.item];
+}
+
 /// Hero title size stepped down by length (see heroTitleClass).
 double heroTitleSize(String title, double width) {
   final n = title.length;
@@ -183,3 +267,14 @@ double heroTitleSize(String title, double width) {
   if (n <= 48) return clamp(36, 4.75, 64);
   return clamp(32, 3.75, 52);
 }
+
+/// The season a series page shows: the picked one, else the first numbered
+/// season (so Specials don't lead), else the first.
+CatalogItem pickSeason(List<CatalogItem> seasons, String? pickedId) =>
+    seasons.firstWhere(
+      (s) => s.id == pickedId,
+      orElse: () => seasons.firstWhere(
+        (s) => (s.indexNumber ?? 0) > 0,
+        orElse: () => seasons.first,
+      ),
+    );

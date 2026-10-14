@@ -11,7 +11,7 @@ import 'focusable.dart';
 import 'glass.dart';
 import 'soup_wordmark.dart';
 
-enum NavSection { home, library, search, settings, none }
+enum NavSection { home, library, myStuff, search, settings, none }
 
 /// Top navigation: wordmark, glass pill of Home + libraries, search, account.
 class GlassNav extends StatelessWidget {
@@ -86,6 +86,14 @@ class GlassNav extends StatelessWidget {
                                 ? activeFocusNode
                                 : null,
                           ),
+                      _Tab(
+                        'My Stuff',
+                        section == NavSection.myStuff,
+                        () => openFavourites(context),
+                        focusNode: section == NavSection.myStuff
+                            ? activeFocusNode
+                            : null,
+                      ),
                     ],
                   ),
                 ),
@@ -453,6 +461,9 @@ class _MenuItem extends StatelessWidget {
   Widget build(BuildContext context) => Focusable(
     autofocus: autofocus,
     scale: 1.0,
+    // Rows sit flush against each other and the panel edge, so the ring is
+    // drawn inside the row instead of around it.
+    ring: false,
     radius: 12,
     onActivate: onTap,
     builder: (context, focused) => Container(
@@ -463,6 +474,10 @@ class _MenuItem extends StatelessWidget {
       decoration: BoxDecoration(
         color: focused ? const Color(0x26FFFFFF) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: focused ? SoupColors.ink : Colors.transparent,
+          width: 2.5,
+        ),
       ),
       child: Row(
         children: [

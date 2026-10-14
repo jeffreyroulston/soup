@@ -9,9 +9,9 @@ import 'curated_matcher.dart';
 import 'models.dart';
 
 const _detailFields =
-    'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,CriticRating,MediaSources,MediaStreams,Genres,Studios,Networks,People,Path,Chapters,SortName,ChildCount,RemoteTrailers,LocalTrailerCount,SpecialFeatureCount,OriginalTitle,Tags,ProviderIds,Status,PremiereDate,EndDate';
+    'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,CriticRating,MediaSources,MediaStreams,Genres,Studios,Networks,People,Path,Chapters,SortName,ChildCount,RemoteTrailers,LocalTrailerCount,SpecialFeatureCount,OriginalTitle,Tags,ProviderIds,Status,PremiereDate,EndDate,Trickplay';
 const _listFields =
-    'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,Genres,SortName,ChildCount,MediaStreams';
+    'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,Genres,SortName,ChildCount,MediaStreams,DateCreated,DateLastMediaAdded';
 const _curatedFields = 'ProviderIds,ProductionYear,SortName';
 const _gridFields = 'ProductionYear,Genres,SortName';
 const _nonVideoLibraries = {
@@ -105,7 +105,8 @@ class JellyfinCatalog extends Catalog {
 
   @override
   Future<HomeData> home() => _cached('home', () async {
-    const images = 'Primary,Backdrop';
+    // Logo: the hero shows title art over the backdrop when the item has it.
+    const images = 'Primary,Backdrop,Logo';
     final results = await Future.wait<Object?>([
       _get(
         'Users/${_session.userId}/Items/Resume',
@@ -113,7 +114,7 @@ class JellyfinCatalog extends Catalog {
       ),
       _get(
         'Shows/NextUp',
-        _listQuery(images, {'UserId': _session.userId, 'Limit': '12'}),
+        _listQuery(images, {'UserId': _session.userId, 'Limit': '30'}),
       ).then<Object?>((v) => v).catchError((Object _) => null),
       libraries().then(
         (libs) => Future.wait([
@@ -123,18 +124,44 @@ class JellyfinCatalog extends Catalog {
             _latestShelf(lib, images),
         ]),
       ),
+      _userItems(
+        _listQuery(images, {
+          'IncludeItemTypes': 'Movie,Series',
+          'Recursive': 'true',
+          'SortBy': 'Random',
+          'ImageTypes': 'Backdrop',
+          'Limit': '12',
+        }),
+      ).then<Object?>((v) => v).catchError((Object _) => null),
+      // Play dates for Keep Watching's order: a Next Up episode is unplayed,
+      // so its show's last watched episode says when you were last on it.
+      _userItems({
+        'IncludeItemTypes': 'Episode',
+        'Recursive': 'true',
+        'Filters': 'IsPlayed',
+        'SortBy': 'DatePlayed',
+        'SortOrder': 'Descending',
+        'Limit': '200',
+        'EnableImages': 'false',
+      }).then<Object?>((v) => v).catchError((Object _) => null),
     ]);
-    final collapsed = collapseKeepWatching(
-      _items(results[0]),
-      _items(results[1]),
-    );
+    final resume = _items(results[0]);
+    final collapsed = collapseKeepWatching(resume, [
+      for (final item in _items(results[1]))
+        if (!isFirstEpisode(item)) item,
+    ]);
     return HomeData(
       resume: collapsed.resume,
       nextUp: collapsed.nextUp,
+      keepWatching: orderKeepWatching(collapsed, [
+        ...resume,
+        ..._items(results[4]),
+      ]),
       recentlyAdded: [
         for (final shelf in results[2]! as List<Shelf>)
           if (shelf.items.isNotEmpty) shelf,
       ],
+      random: _items(results[3]),
     );
   }, ttl: const Duration(seconds: 30));
 
@@ -595,6 +622,40 @@ class JellyfinCatalog extends Catalog {
         );
       }, ttl: const Duration(minutes: 10));
 
+  @override
+  Future<List<CatalogItem>> history() => _cached('history', () async {
+    return _items(
+      await _userItems(
+        _listQuery('Primary,Backdrop', {
+          'Filters': 'IsPlayed',
+          'Recursive': 'true',
+          'IncludeItemTypes': 'Movie,Episode',
+          'SortBy': 'DatePlayed',
+          'SortOrder': 'Descending',
+          'Limit': '200',
+        }),
+      ),
+    );
+  }, ttl: const Duration(minutes: 1));
+
+  @override
+  Future<List<CatalogItem>> favorites(LibrarySort sort) =>
+      _cached('favorites:${sort.name}', () async {
+        return _items(
+          await _userItems(
+            _listQuery('Primary,Backdrop', {
+              'Filters': 'IsFavorite',
+              'Recursive': 'true',
+              'IncludeItemTypes': 'Movie,Series,Episode',
+              'SortBy': sort == LibrarySort.title
+                  ? 'SortName'
+                  : '${sort.apiValue},SortName',
+              'SortOrder': sort.descending ? 'Descending' : 'Ascending',
+            }),
+          ),
+        );
+      });
+
   // ── search ───────────────────────────────────────────────────────────────
   @override
   Future<SearchResults> search(String term) async {
@@ -684,6 +745,20 @@ class JellyfinCatalog extends Catalog {
   // ── images ───────────────────────────────────────────────────────────────
   final _images = <String, Future<Uint8List?>>{};
   static const _imageCacheSize = 400;
+
+  @override
+  Future<Uint8List?> trickplaySheet(
+    String itemId,
+    String? mediaSourceId,
+    int width,
+    int index,
+  ) => _api
+      .getBytes(
+        _session,
+        'Videos/$itemId/Trickplay/$width/$index.jpg',
+        query: {'MediaSourceId': ?mediaSourceId},
+      )
+      .catchError((Object _) => null);
 
   @override
   Future<Uint8List?> image(ImageRef ref, {int maxWidth = 480}) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_scope.dart';
+import 'data/device_settings.dart';
 import 'data/mock_catalog.dart';
 import 'data/playback_prefs.dart';
 import 'features/home/home_screen.dart';
@@ -12,9 +13,10 @@ import 'ui/widgets/design_scale.dart';
 /// `--dart-define=SOUP_MOCK=true`: the full UI over [MockCatalog], with no
 /// Tailscale, identity or Jellyfin server.
 class MockApp extends StatefulWidget {
-  const MockApp({this.formFactor = FormFactor.tv, super.key});
+  const MockApp({this.formFactor = FormFactor.tv, this.device, super.key});
 
   final FormFactor formFactor;
+  final DeviceSettings? device;
 
   @override
   State<MockApp> createState() => _MockAppState();
@@ -42,6 +44,7 @@ class _MockAppState extends State<MockApp> {
         prefs: _prefs,
         userLabel: 'mock@soup.dev',
         onSignOut: () async {},
+        device: widget.device,
         child: child!,
       );
       return FormFactorScope(

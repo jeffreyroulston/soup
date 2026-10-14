@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app_scope.dart';
@@ -6,22 +8,27 @@ import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/touch/touch_scaffold.dart';
 import '../../ui/touch/touch_widgets.dart';
+import '../../ui/widgets/action_menu.dart';
 import '../../ui/widgets/catalog_builder.dart';
 import '../../ui/widgets/catalog_image.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/glass_nav.dart' show NavSection;
 import '../../ui/widgets/hero_carousel.dart' show ArtScrims;
 import '../../ui/widgets/media_card.dart';
+import '../../ui/widgets/meta_line.dart';
 import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
-import '../../ui/widgets/select_menu.dart';
+import '../../ui/widgets/play_button.dart';
+import '../../ui/widgets/title_art.dart';
 import '../../ui/widgets/expandable_overview.dart';
 import '../../ui/widgets/error_state.dart';
 import '../../utils/media.dart';
+import 'episode_parts.dart';
 import 'item_screen.dart';
 
 /// Touch item page: artwork header, then one column of actions, overview,
-/// episodes, extras, cast, information and related titles.
+/// episodes, extras, cast, information and related titles. An episode leads
+/// with its own still and keeps the show to a small card.
 class TouchItemScreen extends StatefulWidget {
   const TouchItemScreen({required this.itemId, super.key});
   final String itemId;
@@ -34,6 +41,12 @@ class _TouchItemScreenState extends State<TouchItemScreen> {
   int? _audio; // null = default
   int? _subtitle; // null = per settings, -1 = off
   String? _seasonId;
+  int? _quality; // bitrate cap, null = Auto; only once picked here
+  bool _qualityPicked = false;
+
+  /// The picked cap, else the one Settings prefers.
+  int? get _effectiveQuality =>
+      _qualityPicked ? _quality : SoupScope.of(context).prefs.maxBitrate;
 
   @override
   Widget build(BuildContext context) {
@@ -58,12 +71,18 @@ class _TouchItemScreenState extends State<TouchItemScreen> {
             ],
           );
         }
+        final isEpisode = item.type == 'Episode';
         return TouchScaffold(
           section: NavSection.none,
-          title: item.name,
-          overlayTopBar: true,
+          // An episode's still sits below the bar, and its title right under it.
+          title: isEpisode ? null : item.name,
+          overlayTopBar: !isEpisode,
           slivers: [
-            SliverToBoxAdapter(child: _Header(item: item)),
+            SliverToBoxAdapter(
+              child: isEpisode
+                  ? _EpisodeHeader(item: item)
+                  : _Header(item: item),
+            ),
             SliverToBoxAdapter(child: _summary(context, item)),
             SliverToBoxAdapter(child: _body(item)),
           ],
@@ -78,79 +97,44 @@ class _TouchItemScreenState extends State<TouchItemScreen> {
   );
 
   Widget _summary(BuildContext context, CatalogItem item) {
-    final audio = item.streamsOf(StreamKind.audio);
-    final subs = item.streamsOf(StreamKind.subtitle);
-    final progress = isInProgress(item)
-        ? (item.playedPercentage ?? 0) / 100
-        : 0.0;
-    final left = timeLeftLabel(item);
+    final isEpisode = item.type == 'Episode';
+    // Pickers only apply when Play starts this item (not a series' episode).
+    final tracks = item.isPlayable && item.mediaStreams.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: TouchSpacing.gutter),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 16),
-          _Actions(item: item, audio: _audio, subtitle: _subtitle),
-          if (progress > 0) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: progress.clamp(0, 1),
-                minHeight: 4,
-                color: SoupColors.accent,
-                backgroundColor: const Color(0x33FFFFFF),
-              ),
-            ),
-            if (left != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  left,
-                  style: SoupType.style(
-                    size: 13,
-                    weight: 600,
-                    color: SoupColors.muted,
-                  ),
-                ),
-              ),
-          ],
-          if (audio.length > 1 || subs.isNotEmpty) ...[
+          _Actions(
+            item: item,
+            audio: _audio,
+            subtitle: _subtitle,
+            quality: _effectiveQuality,
+            seasonId: _seasonId,
+          ),
+          if (tracks) ...[
             const SizedBox(height: 14),
-            Wrap(
+            TrackPickers(
+              item: item,
+              audio: _audio,
+              subtitle: _subtitle,
+              quality: _effectiveQuality,
+              onAudio: (v) => setState(() => _audio = v),
+              onSubtitle: (v) => setState(() => _subtitle = v),
+              onQuality: (v) => setState(() {
+                _quality = v;
+                _qualityPicked = true;
+              }),
+              surface: isEpisode,
               spacing: 10,
-              runSpacing: 10,
-              children: [
-                if (audio.length > 1)
-                  SelectMenu<int?>(
-                    prefix: 'Audio',
-                    icon: Icons.volume_up_rounded,
-                    value: _audio,
-                    options: [
-                      const SelectOption(null, 'Default'),
-                      for (final a in audio) SelectOption(a.index, a.label),
-                    ],
-                    onChanged: (v) => setState(() => _audio = v),
-                  ),
-                if (subs.isNotEmpty)
-                  SelectMenu<int?>(
-                    prefix: 'Subtitles',
-                    icon: Icons.subtitles_outlined,
-                    value: _subtitle,
-                    options: [
-                      const SelectOption(null, 'Default'),
-                      const SelectOption(-1, 'Off'),
-                      for (final s in subs) SelectOption(s.index, s.label),
-                    ],
-                    onChanged: (v) => setState(() => _subtitle = v),
-                  ),
-              ],
             ),
           ],
           if (item.overview != null && item.overview!.isNotEmpty) ...[
             const SizedBox(height: 18),
             ExpandableOverview(
               text: item.overview!,
+              maxLines: isEpisode ? 4 : 6,
               style: SoupType.style(
                 size: 15,
                 color: SoupColors.ink2,
@@ -158,66 +142,148 @@ class _TouchItemScreenState extends State<TouchItemScreen> {
               ),
             ),
           ],
+          if (isEpisode) ...[
+            const SizedBox(height: 18),
+            EpisodeCredits(item: item, size: 13),
+            const SizedBox(height: 10),
+            AdjacentEpisodes(item: item, thumbnails: false),
+          ],
         ],
       ),
     );
   }
 
-  Widget _body(CatalogItem item) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      if (item.type == 'Series')
-        _gap(
-          _Episodes(
-            series: item,
-            seasonId: _seasonId,
-            onSeason: (id) => setState(() => _seasonId = id),
-          ),
-        ),
-      if (item.type == 'BoxSet')
-        CatalogBuilder<List<CatalogItem>>(
-          load: (c) => c.children(item.id),
-          keys: [item.id],
-          builder: (context, children, _) => _gap(
-            TouchRow(
-              title: 'In This Collection',
-              items: children ?? const [],
-              loading: children == null,
+  Widget _body(CatalogItem item) => item.type == 'Episode'
+      // The show stays a small card; no cast rail or Related for one episode.
+      ? Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _gap(
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TouchSpacing.gutter,
+                ),
+                child: ShowCard(item: item),
+              ),
             ),
-          ),
-        ),
-      CatalogBuilder<List<CatalogItem>>(
-        load: (c) => c.extras(item),
-        keys: [item.id],
-        builder: (context, extras, _) => extras == null || extras.isEmpty
-            ? const SizedBox.shrink()
-            : _gap(
-                TouchRow(
-                  title: 'Extras',
-                  items: extras,
-                  shape: CardShape.landscape,
-                  cardBuilder: (context, e, _) => MediaCard(
-                    item: e,
-                    shape: CardShape.landscape,
-                    width: TouchSpacing.landscapeWidth,
-                    kicker: extraLabel(e),
-                    onTap: () => openWatch(context, e, fromStart: true),
+            _gap(_Information(item: item)),
+          ],
+        )
+      : Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (item.type == 'Series')
+              _gap(
+                _Episodes(
+                  series: item,
+                  seasonId: _seasonId,
+                  onSeason: (id) => setState(() => _seasonId = id),
+                ),
+              ),
+            if (item.type == 'BoxSet')
+              CatalogBuilder<List<CatalogItem>>(
+                load: (c) => c.children(item.id),
+                keys: [item.id],
+                builder: (context, children, _) => _gap(
+                  TouchRow(
+                    title: 'In This Collection',
+                    items: children ?? const [],
+                    loading: children == null,
                   ),
                 ),
               ),
+            CatalogBuilder<List<CatalogItem>>(
+              load: (c) => c.extras(item),
+              keys: [item.id],
+              builder: (context, extras, _) => extras == null || extras.isEmpty
+                  ? const SizedBox.shrink()
+                  : _gap(
+                      TouchRow(
+                        title: 'Extras',
+                        items: extras,
+                        shape: CardShape.landscape,
+                        cardBuilder: (context, e, _) => MediaCard(
+                          item: e,
+                          shape: CardShape.landscape,
+                          width: TouchSpacing.landscapeWidth,
+                          kicker: extraLabel(e),
+                          onTap: () => openWatch(context, e, fromStart: true),
+                        ),
+                      ),
+                    ),
+            ),
+            if (item.people.isNotEmpty) _gap(_Cast(people: item.people)),
+            _gap(_Information(item: item)),
+            if (item.type != 'BoxSet')
+              CatalogBuilder<List<CatalogItem>>(
+                load: (c) => c.similar(item.id),
+                keys: [item.id],
+                builder: (context, similar, _) =>
+                    similar == null || similar.isEmpty
+                    ? const SizedBox.shrink()
+                    : _gap(TouchRow(title: 'Related', items: similar)),
+              ),
+          ],
+        );
+}
+
+/// The episode's still, then "Season · Episode", its title and meta.
+class _EpisodeHeader extends StatelessWidget {
+  const _EpisodeHeader({required this.item});
+  final CatalogItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = episodeLabel(item);
+    final chips = <String>[?item.officialRating, ...qualityBadges(item)];
+    final (titleSize, titleHeight) = episodeTitleSize(item.name, touch: true);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        TouchSpacing.gutter,
+        4,
+        TouchSpacing.gutter,
+        0,
       ),
-      if (item.people.isNotEmpty) _gap(_Cast(people: item.people)),
-      _gap(_Information(item: item)),
-      if (item.type != 'BoxSet')
-        CatalogBuilder<List<CatalogItem>>(
-          load: (c) => c.similar(item.id),
-          keys: [item.id],
-          builder: (context, similar, _) => similar == null || similar.isEmpty
-              ? const SizedBox.shrink()
-              : _gap(TouchRow(title: 'Related', items: similar)),
-        ),
-    ],
-  );
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          EpisodeStill(item: item, radius: 14),
+          const SizedBox(height: 18),
+          if (label != null) ...[
+            Text(
+              label.toUpperCase(),
+              style: SoupType.style(
+                size: 13,
+                weight: 800,
+                color: SoupColors.accent,
+                letterSpacing: 1,
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+          Text(
+            item.name,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: SoupType.style(
+              size: titleSize,
+              weight: 800,
+              letterSpacing: -1,
+              height: titleHeight,
+            ),
+          ),
+          const SizedBox(height: 10),
+          MetaLine(
+            bits: episodeMeta(item),
+            chips: chips,
+            size: 13,
+            spacing: 14,
+            color: SoupColors.muted,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Header extends StatelessWidget {
@@ -229,7 +295,7 @@ class _Header extends StatelessWidget {
     final width = MediaQuery.sizeOf(context).width;
     final isEpisode = item.type == 'Episode';
     final episodeLine = isEpisode
-        ? [?item.seriesName, ?episodeCode(item)].join(' · ')
+        ? [?item.seriesName, ?episodeCode(item)].join(', ')
         : null;
     final meta = <String>[
       ?yearLabel(item),
@@ -272,33 +338,31 @@ class _Header extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                 ],
-                Text(
-                  item.name,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: SoupType.style(
-                    size: item.name.length > 28 ? 28 : 36,
-                    weight: 800,
-                    letterSpacing: -1.2,
-                    height: 1.02,
+                TitleArt(
+                  // Episodes keep the text: the show's logo would read as
+                  // the show rather than this episode.
+                  logo: isEpisode ? null : item.logo,
+                  maxWidth: 280,
+                  maxHeight: 120,
+                  fallback: Text(
+                    item.name,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: item.name.length > 28 ? 28 : 36,
+                      weight: 800,
+                      letterSpacing: -1.2,
+                      height: 1.02,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (final c in chips) TouchChip(c),
-                    Text(
-                      meta.join(' · '),
-                      style: SoupType.style(
-                        size: 13,
-                        weight: 600,
-                        color: SoupColors.muted,
-                      ),
-                    ),
-                  ],
+                MetaLine(
+                  bits: meta,
+                  chips: chips,
+                  size: 13,
+                  spacing: 14,
+                  color: SoupColors.muted,
                 ),
               ],
             ),
@@ -314,95 +378,201 @@ class _Actions extends StatelessWidget {
     required this.item,
     required this.audio,
     required this.subtitle,
+    required this.quality,
+    this.seasonId,
   });
   final CatalogItem item;
   final int? audio;
   final int? subtitle;
 
+  /// Bitrate cap; null = Auto.
+  final int? quality;
+
+  /// The season picked below, for a series.
+  final String? seasonId;
+
   @override
   Widget build(BuildContext context) {
     if (item.type == 'Series') {
-      return CatalogBuilder<(CatalogItem?,)>(
-        load: (c) async => (await c.seriesNextUp(item.id),),
+      return CatalogBuilder<(CatalogItem?, List<CatalogItem>)>(
+        load: (c) async =>
+            (await c.seriesNextUp(item.id), await c.seasons(item.id)),
         keys: [item.id],
-        builder: (context, next, _) => _buttons(context, next?.$1),
+        builder: (context, data, _) {
+          final seasons = data?.$2 ?? const <CatalogItem>[];
+          return _buttons(
+            context,
+            data?.$1,
+            // With several seasons, Watched covers the one on screen.
+            season: seasons.length > 1 ? pickSeason(seasons, seasonId) : null,
+          );
+        },
       );
     }
     return _buttons(context, item.isPlayable ? item : null);
   }
 
-  Widget _buttons(BuildContext context, CatalogItem? target) {
+  /// Phones (web below `sm`): Play full width, then the rest as equal
+  /// tiles.
+  Widget _buttons(
+    BuildContext context,
+    CatalogItem? target, {
+    CatalogItem? season,
+  }) {
     final scope = SoupScope.of(context);
-    var label = 'Play';
-    if (target != null) {
-      if (canResume(target)) {
-        label = 'Resume';
-      } else if (item.type == 'Series' && target.indexNumber != null) {
-        label = 'Play S${target.parentIndexNumber ?? 1}:E${target.indexNumber}';
-      }
-    }
+    final watchTarget = season ?? item;
     final own = target?.id == item.id;
-    final favorite = ValueListenableBuilder(
-      valueListenable: scope.catalog.favoriteOverrides,
-      builder: (context, _, _) {
-        final favorite = scope.catalog.isFavorite(item);
-        return TouchIconButton(
-          tooltip: favorite ? 'Remove from favourites' : 'Add to favourites',
-          icon: favorite
-              ? Icons.favorite_rounded
-              : Icons.favorite_border_rounded,
-          color: favorite ? SoupColors.accent : SoupColors.ink,
-          size: 52,
-          onPressed: () => scope.catalog.setFavorite(item.id, !favorite),
-        );
-      },
-    );
+    final resumable = target != null && canResume(target);
+    final tiles = <Widget>[
+      if (resumable)
+        _Tile(
+          icon: Icons.replay_rounded,
+          label: 'Play from start',
+          onTap: () => openWatch(context, target, fromStart: true),
+        ),
+      if (item.type != 'BoxSet')
+        _Tile(
+          icon: Icons.check_rounded,
+          label: watchTarget.played ? 'Watched' : 'Mark as watched',
+          filled: watchTarget.played,
+          onTap: () =>
+              scope.catalog.setPlayed(watchTarget.id, !watchTarget.played),
+        ),
+      _Tile(
+        icon: Icons.more_horiz_rounded,
+        label: 'More',
+        onTap: () => _more(context, scope, allEpisodes: season != null),
+      ),
+    ];
     return Column(
       children: [
+        if (target != null) ...[
+          PlayButton(
+            compact: true,
+            expand: true,
+            height: 52,
+            label: playLabel(item, target),
+            detail: resumable ? timeLeftLabel(target) : null,
+            progress: isInProgress(target)
+                ? (target.playedPercentage ?? 0) / 100
+                : 0,
+            onActivate: () => openWatch(
+              context,
+              target,
+              audioIndex: own ? audio : null,
+              subtitleIndex: own ? subtitle : null,
+              maxBitrate: own ? (quality ?? 0) : null,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         Row(
           children: [
-            if (target != null)
-              Expanded(
-                child: TouchButton(
-                  label: label,
-                  icon: Icons.play_arrow_rounded,
-                  expand: true,
-                  height: 52,
-                  onPressed: () => openWatch(
-                    context,
-                    target,
-                    audioIndex: own ? audio : null,
-                    subtitleIndex: own ? subtitle : null,
-                  ),
-                ),
-              ),
-            if (item.type != 'Series' && item.type != 'BoxSet') ...[
-              const SizedBox(width: 10),
-              TouchIconButton(
-                tooltip: item.played ? 'Mark unwatched' : 'Mark watched',
-                icon: Icons.check_rounded,
-                filled: item.played,
-                size: 52,
-                onPressed: () => scope.catalog.setPlayed(item.id, !item.played),
-              ),
+            for (var i = 0; i < tiles.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: tiles[i]),
             ],
-            const SizedBox(width: 10),
-            favorite,
           ],
         ),
-        if (target != null && canResume(target)) ...[
-          const SizedBox(height: 10),
-          TouchButton(
-            label: 'Play from start',
-            icon: Icons.replay_rounded,
-            primary: false,
-            expand: true,
-            onPressed: () => openWatch(context, target, fromStart: true),
-          ),
-        ],
       ],
     );
   }
+
+  /// [allEpisodes]: offer marking the whole series, when Watched covers
+  /// only a season.
+  void _more(
+    BuildContext context,
+    SoupScope scope, {
+    bool allEpisodes = false,
+  }) {
+    final favorite = scope.catalog.isFavorite(item);
+    final seriesId = item.seriesId;
+    unawaited(
+      showActionMenu(context, [
+        MenuAction(
+          label: favorite ? 'Remove from Favourites' : 'Add to Favourites',
+          icon: favorite
+              ? Icons.favorite_rounded
+              : Icons.favorite_border_rounded,
+          iconColor: favorite ? SoupColors.accent : SoupColors.ink,
+          onSelected: () => scope.catalog.setFavorite(item.id, !favorite),
+        ),
+        if (allEpisodes)
+          MenuAction(
+            label: item.played
+                ? 'Mark all episodes as unwatched'
+                : 'Mark all episodes as watched',
+            icon: Icons.done_all_rounded,
+            iconColor: item.played ? SoupColors.accent : SoupColors.ink,
+            onSelected: () => scope.catalog.setPlayed(item.id, !item.played),
+          ),
+        if (item.type == 'Episode' && seriesId != null)
+          MenuAction(
+            label: 'Go to series',
+            icon: Icons.chevron_right_rounded,
+            onSelected: () => openItemId(context, seriesId),
+          ),
+      ]),
+    );
+  }
+}
+
+/// Icon over a short label, for the row under Play.
+class _Tile extends StatelessWidget {
+  const _Tile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    child: Focusable(
+      radius: SoupRadii.button,
+      scale: 1.0,
+      onActivate: onTap,
+      builder: (context, focused) => Container(
+        height: 60,
+        decoration: BoxDecoration(
+          color: filled
+              ? SoupColors.ink
+              : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+          borderRadius: BorderRadius.circular(SoupRadii.button),
+          border: filled ? null : Border.all(color: const Color(0x1AFFFFFF)),
+        ),
+        child: ExcludeSemantics(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: filled ? SoupColors.canvas : SoupColors.ink,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: SoupType.style(
+                  size: 12,
+                  weight: 700,
+                  color: filled ? SoupColors.canvas : SoupColors.ink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// Overview clamped to four lines; tap to expand.
@@ -424,13 +594,7 @@ class _Episodes extends StatelessWidget {
       keys: [series.id],
       builder: (context, seasons, _) {
         if (seasons == null || seasons.isEmpty) return const SizedBox.shrink();
-        final selected = seasons.firstWhere(
-          (s) => s.id == seasonId,
-          orElse: () => seasons.firstWhere(
-            (s) => (s.indexNumber ?? 0) > 0,
-            orElse: () => seasons.first,
-          ),
-        );
+        final selected = pickSeason(seasons, seasonId);
         return CatalogBuilder<List<CatalogItem>>(
           load: (c) => c.episodes(series.id, selected.id),
           keys: [series.id, selected.id],
@@ -465,6 +629,8 @@ class _Episodes extends StatelessWidget {
                       value: selected.id,
                       labelOf: (id) =>
                           seasons.firstWhere((s) => s.id == id).name,
+                      checkedOf: (id) =>
+                          seasons.firstWhere((s) => s.id == id).played,
                       onChanged: onSeason,
                       height: 38,
                     ),
@@ -506,7 +672,7 @@ class _EpisodeTile extends StatelessWidget {
     return Focusable(
       radius: SoupRadii.card,
       scale: 1.0,
-      onActivate: () => openWatch(context, episode),
+      onActivate: () => openItem(context, episode),
       builder: (context, focused) => Container(
         color: focused ? SoupColors.surface : Colors.transparent,
         padding: const EdgeInsets.symmetric(
@@ -533,11 +699,19 @@ class _EpisodeTile extends StatelessWidget {
                             fallbackTitle: episode.name,
                             fallbackFontSize: 13,
                           ),
-                          const Center(
-                            child: Icon(
-                              Icons.play_circle_fill_rounded,
-                              size: 32,
-                              color: Color(0xCCFFFFFF),
+                          // The tile opens the episode; its play badge plays it.
+                          Center(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => openWatch(context, episode),
+                              child: const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  size: 32,
+                                  color: Color(0xCCFFFFFF),
+                                ),
+                              ),
                             ),
                           ),
                           if (episode.played)

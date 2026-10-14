@@ -152,6 +152,7 @@ const _movie = CatalogItem(
 
 void main() {
   _touchTests();
+  _trickplayTests();
 
   testWidgets('direct play shows the Direct pill and starts playing', (
     tester,
@@ -531,6 +532,77 @@ void _touchTests() {
       factory.controllers.single.value.position,
       start + const Duration(seconds: 20),
     );
+    await tester.pump(const Duration(seconds: 5));
+  });
+}
+
+/// [_movie] with seek thumbnails for the source PlaybackInfo picks.
+final _withTrickplay = CatalogItem(
+  id: _movie.id,
+  name: _movie.name,
+  type: _movie.type,
+  chapters: _movie.chapters,
+  trickplay: const {
+    'source': Trickplay(
+      width: 320,
+      height: 180,
+      tileWidth: 10,
+      tileHeight: 10,
+      thumbnailCount: 540,
+      interval: Duration(seconds: 10),
+    ),
+  },
+);
+
+void _trickplayTests() {
+  testWidgets('TV: seeking shows the trickplay thumbnail, then hides it', (
+    tester,
+  ) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _withTrickplay);
+    final preview = find.byKey(const ValueKey('trickplay-preview'));
+    expect(preview, findsNothing);
+    // Once the chrome hides, Right seeks (and focuses the seek bar).
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(preview, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1600));
+    expect(preview, findsNothing);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('TV: no thumbnail when the server made none', (tester) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('trickplay-preview')), findsNothing);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('touch: scrubbing shows the thumbnail in the bubble', (
+    tester,
+  ) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(
+      tester,
+      factory: factory,
+      item: _withTrickplay,
+      touch: true,
+    );
+    final bar = find.byKey(const ValueKey('playback-seekbar'));
+    final gesture = await tester.startGesture(tester.getCenter(bar));
+    await tester.pump();
+    await gesture.moveBy(const Offset(60, 0));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('trickplay-preview')), findsOneWidget);
+    await gesture.up();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('trickplay-preview')), findsNothing);
     await tester.pump(const Duration(seconds: 5));
   });
 }

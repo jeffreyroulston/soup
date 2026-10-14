@@ -26,6 +26,7 @@ class RankList extends StatelessWidget {
             padding: const EdgeInsets.only(left: 64),
             child: MediaCard(
               item: item,
+              favoriteButton: false,
               shape: CardShape.landscape,
               width: 396,
               detail: [
@@ -34,7 +35,7 @@ class RankList extends StatelessWidget {
                 ?item.genres.firstOrNull,
                 item.type,
                 ?yearLabel(item),
-              ].join(' · '),
+              ].join(', '),
             ),
           ),
           Positioned(left: 0, top: 40, child: _Rank(rank: i + 1)),

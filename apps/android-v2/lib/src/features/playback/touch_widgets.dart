@@ -93,7 +93,8 @@ class TouchSeekBar extends StatelessWidget {
   /// Shown above the thumb while scrubbing.
   final Widget? bubble;
 
-  static const _bubbleWidth = 180.0;
+  /// Width of the [bubble] slot.
+  static const bubbleWidth = 180.0;
 
   double _fraction(Duration d) {
     final total = duration.inMilliseconds;
@@ -192,12 +193,12 @@ class TouchSeekBar extends StatelessWidget {
                 ),
                 if (scrubbing && bubble != null)
                   Positioned(
-                    left: (w * fraction - _bubbleWidth / 2).clamp(
+                    left: (w * fraction - bubbleWidth / 2).clamp(
                       0.0,
-                      w - _bubbleWidth,
+                      w - bubbleWidth,
                     ),
                     bottom: 30,
-                    width: _bubbleWidth,
+                    width: bubbleWidth,
                     child: IgnorePointer(child: bubble!),
                   ),
               ],
@@ -209,16 +210,26 @@ class TouchSeekBar extends StatelessWidget {
   }
 }
 
-/// Big time + chapter label shown above the thumb while scrubbing.
+/// Big time + chapter label (and a trickplay thumbnail, when the server has
+/// them) shown above the thumb while scrubbing.
 class ScrubBubble extends StatelessWidget {
-  const ScrubBubble({required this.time, this.chapter, super.key});
+  const ScrubBubble({
+    required this.time,
+    this.chapter,
+    this.preview,
+    super.key,
+  });
   final String time;
   final String? chapter;
+
+  /// Trickplay thumbnail shown above the time.
+  final Widget? preview;
 
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
+      if (preview != null) ...[preview!, const SizedBox(height: 8)],
       Text(
         time,
         key: const ValueKey('scrub-time'),

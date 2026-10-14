@@ -17,6 +17,7 @@ class ShelfRow extends StatelessWidget {
     items: shelf.items,
     cardBuilder: (context, item, i) => MediaCard(
       item: item,
+      favoriteButton: false,
       width: 200,
       onTap: () => item.type == 'Episode' && item.seriesId != null
           ? openItemId(context, item.seriesId!)
@@ -57,6 +58,7 @@ class _RecentlyAddedRowState extends State<RecentlyAddedRow> {
           : null,
       cardBuilder: (context, item, _) => MediaCard(
         item: item,
+        favoriteButton: false,
         width: 200,
         onTap: () => item.type == 'Episode' && item.seriesId != null
             ? openItemId(context, item.seriesId!)

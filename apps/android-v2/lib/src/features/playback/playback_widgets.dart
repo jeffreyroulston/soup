@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:soup_core/soup_core.dart';
 
+import '../../data/models.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/glass.dart';
@@ -233,6 +236,113 @@ class SeekBar extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// The trickplay thumbnail at [position]: one cell of a sprite sheet, cropped
+/// and scaled to [width]. Holds the last frame while the next sheet loads.
+class TrickplayPreview extends StatefulWidget {
+  const TrickplayPreview({
+    required this.info,
+    required this.position,
+    required this.loadSheet,
+    this.width = 200,
+    super.key,
+  });
+
+  final Trickplay info;
+  final Duration position;
+  final Future<Uint8List?> Function(int index) loadSheet;
+  final double width;
+
+  @override
+  State<TrickplayPreview> createState() => _TrickplayPreviewState();
+}
+
+class _TrickplayPreviewState extends State<TrickplayPreview> {
+  Uint8List? _sheet;
+  int? _sheetIndex;
+  TrickplayFrame? _frame;
+  int? _wanted;
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(TrickplayPreview old) {
+    super.didUpdateWidget(old);
+    _sync();
+  }
+
+  void _sync() {
+    final frame = widget.info.frameAt(widget.position);
+    if (frame.sheet == _sheetIndex) {
+      _frame = frame;
+      return;
+    }
+    if (_wanted == frame.sheet) return;
+    _wanted = frame.sheet;
+    unawaited(
+      widget.loadSheet(frame.sheet).then((bytes) {
+        if (!mounted || bytes == null || _wanted != frame.sheet) return;
+        setState(() {
+          _sheet = bytes;
+          _sheetIndex = frame.sheet;
+          _wanted = null;
+          _frame = widget.info.frameAt(widget.position);
+        });
+      }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final info = widget.info;
+    final scale = widget.width / info.width;
+    final sheet = _sheet;
+    final frame = _frame;
+    final sheetWidth = info.sheetWidth * scale;
+    final sheetHeight = info.sheetHeight * scale;
+    // Decode near display size: a full sheet is ~3200×1800.
+    final decodeWidth = (sheetWidth * MediaQuery.devicePixelRatioOf(context))
+        .round()
+        .clamp(1, info.sheetWidth);
+    return Container(
+      key: const ValueKey('trickplay-preview'),
+      width: widget.width,
+      height: info.height * scale,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0x33FFFFFF)),
+        boxShadow: const [BoxShadow(color: Color(0x80000000), blurRadius: 12)],
+      ),
+      child: sheet == null || frame == null
+          ? null
+          : OverflowBox(
+              alignment: Alignment.topLeft,
+              minWidth: 0,
+              minHeight: 0,
+              maxWidth: sheetWidth,
+              maxHeight: sheetHeight,
+              child: Transform.translate(
+                offset: Offset(-frame.x * scale, -frame.y * scale),
+                child: Image.memory(
+                  sheet,
+                  width: sheetWidth,
+                  height: sheetHeight,
+                  cacheWidth: decodeWidth,
+                  fit: BoxFit.fill,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+            ),
     );
   }
 }

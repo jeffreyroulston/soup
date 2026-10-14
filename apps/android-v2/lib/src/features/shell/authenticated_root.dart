@@ -5,6 +5,7 @@ import 'package:soup_core/soup_core.dart';
 
 import '../../app_scope.dart';
 import '../../data/connection_status.dart';
+import '../../data/device_settings.dart';
 import '../../data/jellyfin_catalog.dart';
 import '../../data/playback_prefs.dart';
 import '../../ui/theme/soup_tokens.dart';
@@ -19,6 +20,7 @@ class AuthenticatedRoot extends StatefulWidget {
     required this.session,
     required this.onSignOut,
     this.soupAuth,
+    this.device,
     super.key,
   });
 
@@ -26,6 +28,7 @@ class AuthenticatedRoot extends StatefulWidget {
   final SoupDeviceLinkViewModel? soupAuth;
   final JellyfinSession session;
   final Future<void> Function() onSignOut;
+  final DeviceSettings? device;
 
   @override
   State<AuthenticatedRoot> createState() => _AuthenticatedRootState();
@@ -95,7 +98,21 @@ class _AuthenticatedRootState extends State<AuthenticatedRoot> {
     }
     final catalog = JellyfinCatalog(api, session);
     _catalog = catalog;
+    unawaited(_syncLanguages(api, session));
     return _Ready(api, session, catalog);
+  }
+
+  /// Languages are per account in Jellyfin, so every device shares them.
+  Future<void> _syncLanguages(JellyfinApi api, JellyfinSession session) async {
+    try {
+      await _prefs.syncLanguages(
+        fetch: () => api.getLanguagePreferences(session),
+        save: (languages) => api.updateLanguagePreferences(session, languages),
+      );
+    } on Object catch (error) {
+      // Local choices keep working offline or on servers that refuse writes.
+      debugPrint('[soup] language sync skipped: $error');
+    }
   }
 
   /// The app rebuilds its navigator once the new Jellyfin session is adopted,
@@ -167,6 +184,7 @@ class _AuthenticatedRootState extends State<AuthenticatedRoot> {
             soupAuth: widget.soupAuth,
             onSelectServer: widget.soupAuth == null ? null : _selectServer,
             connection: _connection,
+            device: widget.device,
             child: const HomeScreen(),
           );
         }

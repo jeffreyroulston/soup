@@ -10,6 +10,7 @@ class PillTabs<T> extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.labelOf,
+    this.checkedOf,
     this.height = 40,
     super.key,
   });
@@ -18,6 +19,9 @@ class PillTabs<T> extends StatelessWidget {
   final T value;
   final ValueChanged<T> onChanged;
   final String Function(T)? labelOf;
+
+  /// Options that get a tick before their label (e.g. a watched season).
+  final bool Function(T)? checkedOf;
   final double height;
 
   String _text(T o) => labelOf != null ? labelOf!(o) : '$o';
@@ -48,13 +52,26 @@ class PillTabs<T> extends StatelessWidget {
                       : (focused ? SoupColors.elevated : Colors.transparent),
                   borderRadius: BorderRadius.circular(height),
                 ),
-                child: Text(
-                  _text(o),
-                  style: SoupType.style(
-                    size: 15,
-                    weight: 700,
-                    color: o == value ? SoupColors.canvas : SoupColors.ink2,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (checkedOf?.call(o) ?? false) ...[
+                      Icon(
+                        Icons.check_rounded,
+                        size: 17,
+                        color: o == value ? SoupColors.canvas : SoupColors.ink2,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      _text(o),
+                      style: SoupType.style(
+                        size: 15,
+                        weight: 700,
+                        color: o == value ? SoupColors.canvas : SoupColors.ink2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -67,6 +67,7 @@ class _TouchScaffoldState extends State<TouchScaffold> {
   Widget build(BuildContext context) {
     final tab =
         widget.section == NavSection.library ||
+        widget.section == NavSection.myStuff ||
         widget.section == NavSection.search ||
         widget.section == NavSection.settings;
     final padding = MediaQuery.paddingOf(context);
@@ -214,6 +215,7 @@ class _BottomNav extends StatelessWidget {
   static const _sections = [
     NavSection.home,
     NavSection.library,
+    NavSection.myStuff,
     NavSection.search,
     NavSection.settings,
   ];
@@ -250,7 +252,9 @@ class _BottomNav extends StatelessWidget {
             ),
           ),
           child: NavigationBar(
-            selectedIndex: _sections.indexOf(section).clamp(0, 3),
+            selectedIndex: _sections
+                .indexOf(section)
+                .clamp(0, _sections.length - 1),
             labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
             onDestinationSelected: (i) {
               final target = _sections[i];
@@ -261,6 +265,8 @@ class _BottomNav extends StatelessWidget {
                 case NavSection.library:
                   final first = libraries?.firstOrNull;
                   if (first != null) openLibrary(context, first);
+                case NavSection.myStuff:
+                  openFavourites(context);
                 case NavSection.search:
                   openSearch(context);
                 case NavSection.settings:
@@ -279,6 +285,11 @@ class _BottomNav extends StatelessWidget {
                 icon: Icon(Icons.video_library_outlined),
                 selectedIcon: Icon(Icons.video_library_rounded),
                 label: 'Library',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.favorite_border_rounded),
+                selectedIcon: Icon(Icons.favorite_rounded),
+                label: 'My Stuff',
               ),
               NavigationDestination(
                 icon: Icon(Icons.search_rounded),

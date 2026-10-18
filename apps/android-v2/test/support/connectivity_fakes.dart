@@ -20,14 +20,18 @@ class MemorySessionStore implements SessionStore {
 
   @override
   Future<String> deviceId() async {
-    if (deviceIdError case final error?) throw error;
+    if (deviceIdError case final error?) {
+      Error.throwWithStackTrace(error, StackTrace.current);
+    }
     return 'device-1';
   }
 
   @override
   Future<JellyfinSession?> read() async {
     await readGate?.future;
-    if (readError case final error?) throw error;
+    if (readError case final error?) {
+      Error.throwWithStackTrace(error, StackTrace.current);
+    }
     return session;
   }
 
@@ -135,7 +139,9 @@ class FakeTailscaleClient implements TailscaleClient {
   @override
   Future<void> connectInteractively() async {
     interactiveConnects++;
-    if (connectError case final error?) throw error;
+    if (connectError case final error?) {
+      Error.throwWithStackTrace(error, StackTrace.current);
+    }
     if (immediateConnect) {
       emit(connectedStatus);
       return;
@@ -169,7 +175,9 @@ class FakeTailscaleClient implements TailscaleClient {
   Future<void> connectWithAuthKey({required String authKey}) async {
     authKeyConnects++;
     lastAuthKey = authKey;
-    if (connectError case final error?) throw error;
+    if (connectError case final error?) {
+      Error.throwWithStackTrace(error, StackTrace.current);
+    }
     if (immediateConnect || authKeyConnectsSucceed) {
       emit(connectedStatus);
       return;

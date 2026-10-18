@@ -39,7 +39,9 @@ class Person {
     final id = '${raw['Id'] ?? ''}';
     final name = '${raw['Name'] ?? ''}';
     if (id.isEmpty || name.isEmpty) return null;
-    final tags = raw['ImageTags'] is Map ? raw['ImageTags'] as Map : const {};
+    final tags = raw['ImageTags'] is Map
+        ? raw['ImageTags'] as Map
+        : const <Object?, Object?>{};
     final role = raw['Role'] as String?;
     return Person(
       id: id,
@@ -482,13 +484,17 @@ class CatalogItem {
     final id = '${raw['Id'] ?? ''}';
     final name = '${raw['Name'] ?? ''}';
     if (id.isEmpty || name.isEmpty) return null;
-    final tags = raw['ImageTags'] is Map ? raw['ImageTags'] as Map : const {};
+    final tags = raw['ImageTags'] is Map
+        ? raw['ImageTags'] as Map
+        : const <Object?, Object?>{};
     final backdropTags = raw['BackdropImageTags'];
     final parentBackdropTags = raw['ParentBackdropImageTags'];
-    final userData = raw['UserData'] is Map ? raw['UserData'] as Map : const {};
+    final userData = raw['UserData'] is Map
+        ? raw['UserData'] as Map
+        : const <Object?, Object?>{};
     final sources = raw['MediaSources'] is List
         ? raw['MediaSources'] as List
-        : const [];
+        : const <Object?>[];
     final firstSource = sources.isNotEmpty && sources.first is Map
         ? sources.first as Map
         : null;

@@ -1073,7 +1073,7 @@ class JellyfinApi
     final streams = source['MediaStreams'];
     final subtitles = <JellyfinSubtitleTrack>[];
     if (streams is List) {
-      for (final raw in streams.whereType<Map>()) {
+      for (final raw in streams.whereType<Map<Object?, Object?>>()) {
         final stream = Map<String, Object?>.from(raw);
         if (stream['Type'] != 'Subtitle') continue;
         final index = (stream['Index'] as num?)?.toInt();

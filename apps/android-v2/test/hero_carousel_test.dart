@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup_v2/src/app_scope.dart';
@@ -57,8 +59,10 @@ void main() {
 
   testWidgets('a covered carousel holds its slide', (tester) async {
     await pump(tester);
-    navigator.currentState!.push(
-      MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+    unawaited(
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+      ),
     );
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 17));

@@ -144,7 +144,7 @@ class ArtworkCache implements ArtworkRepository {
     } on Object catch (error, stackTrace) {
       completer.completeError(error, stackTrace);
     } finally {
-      if (identical(_inFlight[key], future)) _inFlight.remove(key);
+      _inFlight.removeWhere((k, f) => k == key && identical(f, future));
     }
   }
 

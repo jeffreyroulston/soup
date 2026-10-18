@@ -256,7 +256,9 @@ class DriftJellyfinMetadataRepository implements JellyfinMetadataRepository {
   }
 
   Stream<MetadataSnapshot<List<JellyfinItem>>> _watchScope(ScopeKey key) {
+    // Never closed: onCancel cancels the sources, so nothing feeds it after.
     late final StreamController<MetadataSnapshot<List<JellyfinItem>>>
+    // ignore: close_sinks
     controller;
     StreamSubscription<List<CachedScopedItem>>? itemsSubscription;
     StreamSubscription<ScopeSync?>? syncSubscription;
@@ -302,6 +304,8 @@ class DriftJellyfinMetadataRepository implements JellyfinMetadataRepository {
     List<Stream<MetadataSnapshot<List<JellyfinItem>>>> streams,
     T Function(List<MetadataSnapshot<List<JellyfinItem>>>) build,
   ) {
+    // Never closed: onCancel cancels the sources, so nothing feeds it after.
+    // ignore: close_sinks
     late final StreamController<MetadataSnapshot<T>> controller;
     final values = List<MetadataSnapshot<List<JellyfinItem>>?>.filled(
       streams.length,

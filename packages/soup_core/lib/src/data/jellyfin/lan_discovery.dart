@@ -29,7 +29,7 @@ class SocketLanDiscoverySession implements LanDiscoverySession {
 
   Future<void> _open(AndroidNetworkInterfaces interfaces) async {
     final addresses = await interfaces.broadcasts();
-    Object? lastError;
+    SocketException? lastError;
     for (final entry in addresses) {
       if (_closed) return;
       final RawDatagramSocket socket;

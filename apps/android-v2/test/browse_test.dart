@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup_v2/src/app_scope.dart';
@@ -32,7 +34,11 @@ Future<void> _pump(WidgetTester tester, Widget page) async {
       home: const Scaffold(body: Text('root')),
     ),
   );
-  _navigator.currentState!.push(MaterialPageRoute<void>(builder: (_) => page));
+  unawaited(
+    _navigator.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => page),
+    ),
+  );
   await _settle(tester);
 }
 

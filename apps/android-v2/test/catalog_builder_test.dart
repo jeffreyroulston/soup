@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup_v2/src/app_scope.dart';
@@ -45,8 +47,12 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester, counting('below'));
-    navigator.currentState!.push(
-      MaterialPageRoute<void>(builder: (_) => Scaffold(body: counting('top'))),
+    unawaited(
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(body: counting('top')),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
     expect(loads, {'below': 1, 'top': 1});

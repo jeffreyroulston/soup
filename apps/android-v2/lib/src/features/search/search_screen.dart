@@ -17,15 +17,7 @@ import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/soup_text_field.dart';
 import '../../ui/widgets/error_state.dart';
 import 'search_screen_touch.dart';
-
-enum _Scope { all, movies, shows, people }
-
-const _scopeLabels = {
-  _Scope.all: 'All',
-  _Scope.movies: 'Movies',
-  _Scope.shows: 'Shows',
-  _Scope.people: 'People',
-};
+import 'search_scope.dart';
 
 const _tints = [
   Color(0xFF2541C8),
@@ -52,7 +44,7 @@ class _SearchScreenState extends State<SearchScreen> {
   );
   Timer? _debounce;
   String _term = '';
-  _Scope _scope = _Scope.all;
+  SearchScope _scope = SearchScope.all;
   Person? _person;
 
   @override
@@ -111,10 +103,10 @@ class _SearchScreenState extends State<SearchScreen> {
                           setState(() => _term = _controller.text.trim()),
                     ),
                     const SizedBox(height: 18),
-                    PillTabs<_Scope>(
-                      options: _Scope.values,
+                    PillTabs<SearchScope>(
+                      options: SearchScope.values,
                       value: _scope,
-                      labelOf: (s) => _scopeLabels[s]!,
+                      labelOf: (s) => s.label,
                       onChanged: (s) => setState(() => _scope = s),
                     ),
                   ],
@@ -209,7 +201,7 @@ class _Results extends StatelessWidget {
     required this.onClearPerson,
   });
   final String term;
-  final _Scope scope;
+  final SearchScope scope;
   final Person? person;
   final VoidCallback onClearPerson;
 
@@ -220,28 +212,9 @@ class _Results extends StatelessWidget {
       keys: [term],
       builder: (context, results, error) {
         final items = results?.items ?? const <CatalogItem>[];
-        final movies = [
-          for (final i in items)
-            if (i.type == 'Movie' || i.type == 'Series') i,
-        ];
-        final episodes = [
-          for (final i in items)
-            if (i.type == 'Episode') i,
-        ];
+        final titles = scope.titles(items);
+        final episodes = SearchScope.episodes(items);
         final top = items.take(8).toList();
-        final showMovies =
-            scope == _Scope.all ||
-            scope == _Scope.movies ||
-            scope == _Scope.shows;
-        final filtered = [
-          for (final i in movies)
-            if (scope == _Scope.movies
-                ? i.type == 'Movie'
-                : scope == _Scope.shows
-                ? i.type == 'Series'
-                : true)
-              i,
-        ];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -292,7 +265,7 @@ class _Results extends StatelessWidget {
             else if (error != null && results == null)
               ErrorState(error: error)
             else ...[
-              if (scope == _Scope.all && top.isNotEmpty)
+              if (scope == SearchScope.all && top.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 40),
                   child: MediaRow(
@@ -301,12 +274,12 @@ class _Results extends StatelessWidget {
                     shape: CardShape.landscape,
                   ),
                 ),
-              if (showMovies && filtered.isNotEmpty)
+              if (scope.showsTitles && titles.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 40),
-                  child: MediaRow(title: 'Movies & Shows', items: filtered),
+                  child: MediaRow(title: 'Movies & Shows', items: titles),
                 ),
-              if (scope == _Scope.all && episodes.isNotEmpty)
+              if (scope.showsEpisodes && episodes.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 40),
                   child: MediaRow(
@@ -315,8 +288,7 @@ class _Results extends StatelessWidget {
                     shape: CardShape.landscape,
                   ),
                 ),
-              if ((scope == _Scope.all || scope == _Scope.people) &&
-                  (results?.people.isNotEmpty ?? false))
+              if (scope.showsPeople && (results?.people.isNotEmpty ?? false))
                 _People(people: results!.people),
               if ((results?.items.isEmpty ?? true) &&
                   (results?.people.isEmpty ?? true))

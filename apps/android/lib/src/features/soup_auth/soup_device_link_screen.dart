@@ -85,11 +85,12 @@ class _SoupDeviceLinkScreenState extends State<SoupDeviceLinkScreen>
       SoupDeviceLinkPhase.exchanging =>
         'Signing into Jellyfin with your Soup invite…',
       SoupDeviceLinkPhase.refreshing => 'Refreshing your Soup session…',
-      SoupDeviceLinkPhase.ready => model.jellyfinSession != null
-          ? 'Soup and Jellyfin sign-in saved.'
-          : model.transportConnected
-          ? 'Soup sign-in saved. Home network connected.'
-          : 'Soup sign-in saved.',
+      SoupDeviceLinkPhase.ready =>
+        model.jellyfinSession != null
+            ? 'Soup and Jellyfin sign-in saved.'
+            : model.transportConnected
+            ? 'Soup sign-in saved. Home network connected.'
+            : 'Soup sign-in saved.',
       SoupDeviceLinkPhase.needsGoogleSignIn =>
         model.error ?? 'Your Soup sign-in expired. Sign in with Google again.',
       SoupDeviceLinkPhase.expired =>

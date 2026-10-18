@@ -78,8 +78,7 @@ class _SoupAppState extends State<SoupApp> {
     super.initState();
     _database = widget.database;
     _ownsDatabase = widget.database == null;
-    _authPathStore =
-        widget.authPathStore ?? SharedPreferencesAuthPathStore();
+    _authPathStore = widget.authPathStore ?? SharedPreferencesAuthPathStore();
     _viewModel = ConnectivityViewModel(
       widget.tailscaleClient,
       jellyfinClientFactory: widget.jellyfinClientFactory,
@@ -105,8 +104,7 @@ class _SoupAppState extends State<SoupApp> {
         jellyfinSessionStore: widget.sessionStore,
         jellyfinApiProvider: () => _viewModel.authenticatedApi(),
         tailscaleClient: widget.tailscaleClient,
-        connectTransportGrants:
-            widget.soupIdentityFlags.connectTransportGrants,
+        connectTransportGrants: widget.soupIdentityFlags.connectTransportGrants,
       )..initialize();
       unawaited(_loadAuthPath());
     } else {
@@ -233,9 +231,7 @@ class _SoupAppState extends State<SoupApp> {
                   _viewModel.initialized) {
                 _adoptedSoupJellyfin = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  unawaited(
-                    _viewModel.adoptSoupJellyfinSession(soupJellyfin),
-                  );
+                  unawaited(_viewModel.adoptSoupJellyfinSession(soupJellyfin));
                 });
               }
               if (soupAuth != null && soupJellyfin != null && session == null) {

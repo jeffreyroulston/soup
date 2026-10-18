@@ -76,16 +76,16 @@ class HttpSoupIdentityClient implements SoupIdentityClient {
   @override
   Future<SoupSessionTokens> refreshSession(String refreshToken) =>
       _guard(() async {
-    final response = await _client.post(
-      _uri('/v1/sessions/refresh'),
-      headers: const {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-      },
-      body: jsonEncode({'refresh_token': refreshToken}),
-    );
-    return SoupSessionTokens.fromJson(_decodeObject(response));
-  });
+        final response = await _client.post(
+          _uri('/v1/sessions/refresh'),
+          headers: const {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({'refresh_token': refreshToken}),
+        );
+        return SoupSessionTokens.fromJson(_decodeObject(response));
+      });
 
   @override
   Future<ServerRoster> listServers(String accessToken) => _guard(() async {

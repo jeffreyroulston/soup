@@ -32,10 +32,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: SoupDeviceLinkScreen(
-          viewModel: model,
-          onUseDirectLogin: () {},
-        ),
+        home: SoupDeviceLinkScreen(viewModel: model, onUseDirectLogin: () {}),
       ),
     );
     await tester.pump();

@@ -596,9 +596,7 @@ void _check(int server, String operation, int result) {
   final message = _nativeError(server);
   throw TailscaleException(
     operation,
-    redactNativeSecrets(
-      message.isEmpty ? 'native error $result' : message,
-    ),
+    redactNativeSecrets(message.isEmpty ? 'native error $result' : message),
   );
 }
 

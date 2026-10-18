@@ -422,8 +422,9 @@ class CatalogItem {
   }
 
   ImageRef get backdrop {
-    if (backdropImageTag != null)
+    if (backdropImageTag != null) {
       return ImageRef(id, 'Backdrop', backdropImageTag);
+    }
     if (parentBackdropItemId != null) {
       return ImageRef(
         parentBackdropItemId!,

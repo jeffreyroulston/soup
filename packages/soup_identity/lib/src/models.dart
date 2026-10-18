@@ -148,9 +148,7 @@ class TransportGrant {
   /// Roster already atomically claimed; app can join with [material].
   bool get isClaimableTailscaleAuthKey {
     final key = material?.trim();
-    return grantType == 'tailscale_auth_key' &&
-        key != null &&
-        key.isNotEmpty;
+    return grantType == 'tailscale_auth_key' && key != null && key.isNotEmpty;
   }
 
   Map<String, Object?> toJson() => {

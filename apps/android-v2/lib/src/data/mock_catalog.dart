@@ -192,7 +192,7 @@ class MockCatalog extends Catalog {
         officialRating: 'PG-13',
         runTimeTicks: runtime,
         genres: m.$6,
-        providerIds: {if (m.$7 case final imdb?) 'Imdb': imdb},
+        providerIds: {'Imdb': ?m.$7},
         overview:
             '${m.$2} is a ${m.$6.first.toLowerCase()} about people on the edge of something larger than themselves — made up for the mock library so layouts have real-looking copy to wrap around.',
         primaryImageTag: 'mock',
@@ -256,8 +256,9 @@ class MockCatalog extends Catalog {
       movieIds.add(m.$1);
     }
     _libraryMembers['lib-movies'] = movieIds;
-    // A few finished films for History.
-    for (final (i, hours) in [(1, 26), (3, 30), (5, 24 * 40)]) {
+    // A few finished films for History, none with a saved position so they
+    // stay out of Keep Watching.
+    for (final (i, hours) in [(2, 26), (3, 30), (5, 24 * 40)]) {
       if (i >= movieIds.length) continue;
       final id = movieIds[i];
       _items[id] = _items[id]!.copyWith(
@@ -284,7 +285,7 @@ class MockCatalog extends Catalog {
         communityRating: rating,
         officialRating: 'TV-MA',
         genres: genres,
-        providerIds: {if (imdb != null) 'Imdb': imdb},
+        providerIds: {'Imdb': ?imdb},
         overview:
             '$name follows an ensemble through $seasons season${seasons > 1 ? 's' : ''} of escalating consequences.',
         primaryImageTag: 'mock',

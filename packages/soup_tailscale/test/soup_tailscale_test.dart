@@ -57,11 +57,7 @@ void main() {
         const TailscaleStatus.connected(
           hostname: 'soup',
           tailnetIp: '100.64.0.1',
-          proxy: TailscaleProxy(
-            host: '127.0.0.1',
-            port: 1,
-            password: 'secret',
-          ),
+          proxy: TailscaleProxy(host: '127.0.0.1', port: 1, password: 'secret'),
         ),
       );
 
@@ -214,4 +210,3 @@ class _RecordingTailscaleClient implements TailscaleClient {
   TailscaleDatagramSession openDatagrams() =>
       throw UnsupportedError('No datagrams in test client');
 }
-

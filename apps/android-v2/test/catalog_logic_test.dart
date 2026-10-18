@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup_v2/src/data/curated_matcher.dart';
-import 'package:soup_v2/src/data/curated_pack.dart';
 import 'package:soup_v2/src/data/curated_packs.g.dart';
 import 'package:soup_v2/src/data/mock_catalog.dart';
 import 'package:soup_v2/src/data/models.dart';
@@ -12,7 +11,7 @@ CatalogItem _movie(String id, String name, int year, {String? imdb}) =>
       name: name,
       type: 'Movie',
       productionYear: year,
-      providerIds: {if (imdb != null) 'Imdb': imdb},
+      providerIds: {'Imdb': ?imdb},
     );
 
 void main() {

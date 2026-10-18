@@ -50,6 +50,8 @@ tasks:
     desc: Install dependencies for the app and Dart packages
     cmds:
       - task: deps:app
+      - task: deps:v2
+      - task: deps:core
       - task: deps:tailscale
       - task: deps:jellyfin
       - task: deps:soup-identity
@@ -57,6 +59,18 @@ tasks:
   deps:app:
     desc: Install Flutter dependencies for the Android app
     dir: apps/android
+    cmds:
+      - flutter pub get
+
+  deps:v2:
+    desc: Install Flutter dependencies for the Android v2 app
+    dir: apps/android-v2
+    cmds:
+      - flutter pub get
+
+  deps:core:
+    desc: Install Flutter dependencies for the shared soup_core package
+    dir: packages/soup_core
     cmds:
       - flutter pub get
 
@@ -84,6 +98,8 @@ tasks:
       - >-
         dart format
         apps/android/lib apps/android/test
+        apps/android-v2/lib apps/android-v2/test
+        packages/soup_core/lib packages/soup_core/test
         packages/soup_tailscale/lib packages/soup_tailscale/test
         packages/soup_identity/lib packages/soup_identity/test
         packages/jellyfin_api/lib packages/jellyfin_api/test
@@ -94,6 +110,8 @@ tasks:
       - >-
         dart format --output=none --set-exit-if-changed
         apps/android/lib apps/android/test
+        apps/android-v2/lib apps/android-v2/test
+        packages/soup_core/lib packages/soup_core/test
         packages/soup_tailscale/lib packages/soup_tailscale/test
         packages/soup_identity/lib packages/soup_identity/test
         packages/jellyfin_api/lib packages/jellyfin_api/test
@@ -148,8 +166,10 @@ tasks:
     aliases: [test:all]
     desc: Run tests for the app and packages
     cmds:
-      - task: test:app
+      # The legacy app's own widget tests are stale; run them with test:app.
+      - task: test:core-legacy
       - task: test:v2
+      - task: test:core
       - task: test:tailscale
       - task: test:jellyfin
       - task: test:soup-identity
@@ -160,9 +180,38 @@ tasks:
     cmds:
       - flutter test {{.CLI_ARGS}}
 
+  test:core-legacy:
+    desc: Run the soup_core suites that still live in the legacy app's tests
+    dir: apps/android
+    cmds:
+      - >-
+        flutter test {{.CLI_ARGS}}
+        test/artwork_cache_test.dart
+        test/auth_path_preferences_store_test.dart
+        test/connection_preferences_store_test.dart
+        test/connectivity_view_model_test.dart
+        test/direct_connection_integration_test.dart
+        test/direct_jellyfin_client_test.dart
+        test/discovery_client_test.dart
+        test/jellyfin_api_test.dart
+        test/jellyfin_discovery_test.dart
+        test/jellyfin_metadata_repository_test.dart
+        test/playback_bridge_test.dart
+        test/session_store_test.dart
+        test/socks_jellyfin_client_test.dart
+        test/soup_database_test.dart
+        test/soup_device_link_view_model_test.dart
+        test/soup_session_store_test.dart
+
   test:v2:
     desc: Run Android v2 app tests; pass extra flags after --
     dir: apps/android-v2
+    cmds:
+      - flutter test {{.CLI_ARGS}}
+
+  test:core:
+    desc: Run shared soup_core package tests; pass extra flags after --
+    dir: packages/soup_core
     cmds:
       - flutter test {{.CLI_ARGS}}
 

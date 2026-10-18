@@ -71,7 +71,9 @@ class _HeroCarouselState extends State<HeroCarousel> {
     _timer = Timer.periodic(const Duration(seconds: 8), (_) {
       // TickerMode is off while another page covers Home (the player, an
       // item page), so the carousel doesn't keep rebuilding underneath.
-      if (!mounted || !TickerMode.valuesOf(context).enabled) return;
+      // valuesOf replaces this, but flutter-webOS (3.38) doesn't have it yet.
+      // ignore: deprecated_member_use
+      if (!mounted || !TickerMode.of(context)) return;
       if (!_paused && widget.slides.length > 1) {
         setState(() => _index = (_index + 1) % widget.slides.length);
       }

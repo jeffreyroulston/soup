@@ -309,7 +309,9 @@ class _TouchHeroState extends State<TouchHero> {
       final n = widget.slides.length;
       if (_dragging || n < 2 || !_pages.hasClients) return;
       // Hold while another page covers this one.
-      if (!TickerMode.valuesOf(context).enabled) return;
+      // valuesOf replaces this, but flutter-webOS (3.38) doesn't have it yet.
+      // ignore: deprecated_member_use
+      if (!TickerMode.of(context)) return;
       unawaited(
         _pages.animateToPage(
           (_index + 1) % n,

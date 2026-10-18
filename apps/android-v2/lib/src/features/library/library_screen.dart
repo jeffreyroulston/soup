@@ -149,7 +149,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
           section: NavSection.library,
           libraryId: lib.id,
           controller: _scroll,
-          overlay: all == null || items.isEmpty
+          // Letters only mean something when the grid is in title order.
+          overlay: all == null || items.isEmpty || _sort != LibrarySort.title
               ? null
               : Positioned(
                   right: 16,
@@ -208,8 +209,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 // The row's last card hands Right to the
                                 // strip, at its own letter.
                                 rowEnd:
-                                    c == columns - 1 ||
-                                    row * columns + c == items.length - 1,
+                                    _sort == LibrarySort.title &&
+                                    (c == columns - 1 ||
+                                        row * columns + c == items.length - 1),
                               )
                             else
                               SizedBox(width: cardWidth),

@@ -506,7 +506,7 @@ class _AdjacentCard extends StatelessWidget {
       child: Focusable(
         radius: 14,
         scale: 1.02,
-        onActivate: () => openItem(context, episode),
+        onActivate: () => replaceItem(context, episode),
         builder: (context, focused) => Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(

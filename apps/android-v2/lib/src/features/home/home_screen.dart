@@ -90,7 +90,10 @@ class _Rows extends StatelessWidget {
   const _Rows({required this.home});
   final HomeData home;
 
-  Widget _gap(Widget child) => Padding(
+  /// [id] keeps each row's element (and focus) its own when rows that
+  /// load later are inserted above it.
+  Widget _gap(String id, Widget child) => Padding(
+    key: ValueKey(id),
     padding: const EdgeInsets.only(top: SoupSpacing.rowGap),
     child: child,
   );
@@ -115,6 +118,7 @@ class _Rows extends StatelessWidget {
                 children: [
                   if (keepWatching.isNotEmpty)
                     _gap(
+                      'keepWatching',
                       MediaRow(
                         title: 'Keep Watching',
                         items: keepWatching,
@@ -135,16 +139,23 @@ class _Rows extends StatelessWidget {
                       ),
                     ),
                   if (home.recentlyAdded.isNotEmpty)
-                    _gap(RecentlyAddedRow(shelves: home.recentlyAdded)),
+                    _gap(
+                      'recent',
+                      RecentlyAddedRow(shelves: home.recentlyAdded),
+                    ),
                   if (extras != null && extras.topRated.isNotEmpty)
-                    _gap(RankList(title: 'Top Rated', items: extras.topRated)),
+                    _gap(
+                      'topRated',
+                      RankList(title: 'Top Rated', items: extras.topRated),
+                    ),
                   if (bywShelves.isNotEmpty)
-                    _gap(ShelfRow(shelf: bywShelves.first)),
+                    _gap('byw:0', ShelfRow(shelf: bywShelves.first)),
                   if (collection != null) ..._spotlight(context, collection),
-                  for (final s in genreShelves.take(2))
-                    _gap(ShelfRow(shelf: s)),
+                  for (final (i, s) in genreShelves.take(2).indexed)
+                    _gap('genre:$i', ShelfRow(shelf: s)),
                   if (extras != null && extras.unwatchedTopRated.isNotEmpty)
                     _gap(
+                      'unwatchedTopRated',
                       ShelfRow(
                         shelf: Shelf(
                           title: 'Highly Rated, Not Yet Watched',
@@ -152,9 +163,10 @@ class _Rows extends StatelessWidget {
                         ),
                       ),
                     ),
-                  for (final s in bywShelves.skip(1)) _gap(ShelfRow(shelf: s)),
-                  for (final s in genreShelves.skip(2))
-                    _gap(ShelfRow(shelf: s)),
+                  for (final (i, s) in bywShelves.skip(1).indexed)
+                    _gap('byw:${i + 1}', ShelfRow(shelf: s)),
+                  for (final (i, s) in genreShelves.skip(2).indexed)
+                    _gap('genre:${i + 2}', ShelfRow(shelf: s)),
                 ],
               );
             },
@@ -167,12 +179,13 @@ class _Rows extends StatelessWidget {
   List<Widget> _spotlight(BuildContext context, HomeCollection collection) {
     if (collection.curated.isNotEmpty) {
       final pick = dailyShuffle(collection.curated, 'spotlight').first;
-      return [_gap(CollectionSpotlight.curated(pick, context))];
+      return [_gap('spotlight', CollectionSpotlight.curated(pick, context))];
     }
     final spot = collection.spotlight;
     if (spot == null) return const [];
     return [
       _gap(
+        'spotlight',
         CollectionSpotlight(
           title: spot.collection.name,
           description: spot.collection.overview,

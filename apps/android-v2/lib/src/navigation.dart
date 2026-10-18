@@ -70,6 +70,12 @@ void openItem(BuildContext context, CatalogItem item) {
 void openItemId(BuildContext context, String id) =>
     Navigator.of(context).push(_route<void>(context, ItemScreen(itemId: id)));
 
+/// Swaps this detail page for [item]'s: stepping through episodes with
+/// Previous/Next shouldn't stack a page per step for Back to unwind.
+void replaceItem(BuildContext context, CatalogItem item) => Navigator.of(
+  context,
+).pushReplacement(_route<void>(context, ItemScreen(itemId: item.id)));
+
 void openCollection(BuildContext context, String id) => Navigator.of(
   context,
 ).push(_route<void>(context, CollectionScreen(packId: id)));

@@ -73,6 +73,13 @@ class MediaCard extends StatelessWidget {
           Focusable(
             autofocus: autofocus,
             focusNode: focusNode,
+            semanticsLabel: [
+              ?kicker,
+              title,
+              ?code,
+              ?detailText,
+              if (item.played) 'watched',
+            ].join(', '),
             onActivate: onTap ?? () => openItem(context, item),
             builder: (context, focused) => AspectRatio(
               aspectRatio: poster ? 2 / 3 : 16 / 9,
@@ -133,60 +140,69 @@ class MediaCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          if (kicker != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                kicker!.toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: SoupType.style(
-                  size: 12,
-                  weight: 700,
-                  color: SoupColors.muted,
-                  letterSpacing: 0.5,
+          // Read out as part of the card's label above.
+          ExcludeSemantics(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (kicker != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      kicker!.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SoupType.style(
+                        size: 12,
+                        weight: 700,
+                        color: SoupColors.muted,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                if (!poster && code != null)
+                  Text(
+                    code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: 13,
+                      weight: 600,
+                      color: SoupColors.muted,
+                    ),
+                  ),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: SoupType.style(size: poster ? 15 : 16, weight: 700),
                 ),
-              ),
+                if (poster && code != null)
+                  Text(
+                    code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: 13,
+                      weight: 600,
+                      color: SoupColors.muted,
+                    ),
+                  ),
+                if (detailText != null && !(poster && code != null))
+                  Text(
+                    detailText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: 13,
+                      weight: 600,
+                      color: SoupColors.muted,
+                    ),
+                  ),
+              ],
             ),
-          if (!poster && code != null)
-            Text(
-              code,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: SoupType.style(
-                size: 13,
-                weight: 600,
-                color: SoupColors.muted,
-              ),
-            ),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: SoupType.style(size: poster ? 15 : 16, weight: 700),
           ),
-          if (poster && code != null)
-            Text(
-              code,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: SoupType.style(
-                size: 13,
-                weight: 600,
-                color: SoupColors.muted,
-              ),
-            ),
-          if (detailText != null && !(poster && code != null))
-            Text(
-              detailText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: SoupType.style(
-                size: 13,
-                weight: 600,
-                color: SoupColors.muted,
-              ),
-            ),
         ],
       ),
     );

@@ -167,7 +167,6 @@ tasks:
     desc: Run tests for the app and packages
     cmds:
       # The legacy app's own widget tests are stale; run them with test:app.
-      - task: test:core-legacy
       - task: test:v2
       - task: test:core
       - task: test:tailscale
@@ -179,28 +178,6 @@ tasks:
     dir: apps/android
     cmds:
       - flutter test {{.CLI_ARGS}}
-
-  test:core-legacy:
-    desc: Run the soup_core suites that still live in the legacy app's tests
-    dir: apps/android
-    cmds:
-      - >-
-        flutter test {{.CLI_ARGS}}
-        test/artwork_cache_test.dart
-        test/auth_path_preferences_store_test.dart
-        test/connection_preferences_store_test.dart
-        test/connectivity_view_model_test.dart
-        test/direct_connection_integration_test.dart
-        test/direct_jellyfin_client_test.dart
-        test/discovery_client_test.dart
-        test/jellyfin_api_test.dart
-        test/jellyfin_discovery_test.dart
-        test/jellyfin_metadata_repository_test.dart
-        test/session_store_test.dart
-        test/socks_jellyfin_client_test.dart
-        test/soup_database_test.dart
-        test/soup_device_link_view_model_test.dart
-        test/soup_session_store_test.dart
 
   test:v2:
     desc: Run Android v2 app tests; pass extra flags after --

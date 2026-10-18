@@ -186,7 +186,7 @@ class FakeMetadataSource
 
   void _throwIfNeeded() {
     final failure = error;
-    if (failure != null) throw failure;
+    if (failure != null) Error.throwWithStackTrace(failure, StackTrace.current);
   }
 
   @override

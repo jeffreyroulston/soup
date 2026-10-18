@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:soup/src/data/appearance/appearance_store.dart';
-import 'package:soup_core/src/data/artwork/artwork_cache.dart';
-import 'package:soup_core/src/data/cache/soup_database.dart';
+import 'package:soup_core/src/legacy/artwork_cache.dart';
+import 'package:soup_core/src/legacy/soup_database.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_client_factory.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_discovery.dart';
-import 'package:soup_core/src/data/jellyfin/jellyfin_metadata_repository.dart';
+import 'package:soup_core/src/legacy/jellyfin_metadata_repository.dart';
 import 'package:soup_core/src/data/session/session_store.dart';
 import 'package:soup_core/src/data/session/connection_preferences_store.dart';
 import 'package:soup_core/src/data/session/auth_path_preferences_store.dart';

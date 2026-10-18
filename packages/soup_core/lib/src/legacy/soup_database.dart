@@ -1,3 +1,6 @@
+// Legacy: only apps/android uses this; it goes when that app does. See
+// package:soup_core/legacy.dart.
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 

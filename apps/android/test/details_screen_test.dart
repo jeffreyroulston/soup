@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/legacy/artwork_cache.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup/src/features/details/details_screen.dart';
 

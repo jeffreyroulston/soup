@@ -1,9 +1,12 @@
+// Legacy: only apps/android uses this; it goes when that app does. See
+// package:soup_core/legacy.dart.
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/legacy/artwork_cache.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup_core/src/data/jellyfin/jellyfin_metadata_repository.dart';
+import 'package:soup_core/src/legacy/jellyfin_metadata_repository.dart';
 
 class LibraryViewModel extends ChangeNotifier {
   LibraryViewModel({

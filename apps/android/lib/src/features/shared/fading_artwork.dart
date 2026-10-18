@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/legacy/artwork_cache.dart';
 
 class FadingArtwork extends StatefulWidget {
   const FadingArtwork({

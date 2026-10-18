@@ -6,7 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup/src/data/appearance/appearance_settings.dart';
-import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/legacy/artwork_cache.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup/src/features/appearance/soup_theme.dart';
 import 'package:soup/src/features/details/details_screen.dart';

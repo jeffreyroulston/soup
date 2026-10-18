@@ -1,7 +1,10 @@
+// Legacy: only apps/android uses this; it goes when that app does. See
+// package:soup_core/legacy.dart.
+
 import 'dart:async';
 
 import 'package:drift/drift.dart';
-import 'package:soup_core/src/data/cache/soup_database.dart';
+import 'package:soup_core/src/legacy/soup_database.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 
 class MetadataSnapshot<T> {

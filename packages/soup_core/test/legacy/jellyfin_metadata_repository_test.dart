@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart' hide isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup_core/src/data/cache/soup_database.dart';
+import 'package:soup_core/src/legacy/soup_database.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup_core/src/data/jellyfin/jellyfin_metadata_repository.dart';
+import 'package:soup_core/src/legacy/jellyfin_metadata_repository.dart';
 
 void main() {
   late SoupDatabase database;

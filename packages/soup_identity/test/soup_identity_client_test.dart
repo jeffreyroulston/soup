@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart';
@@ -67,6 +68,23 @@ void main() {
       expect(poll.tokens?.accessToken, 'access');
       expect(poll.tokens?.email, 'a@example.com');
     });
+
+    test(
+      'a request that never answers times out as SoupIdentityException',
+      () async {
+        final client = HttpSoupIdentityClient(
+          baseUrl: Uri.parse('http://identity.test'),
+          timeout: const Duration(milliseconds: 50),
+          httpClient: MockClient((_) => Completer<Response>().future),
+        );
+        addTearDown(client.close);
+
+        await expectLater(
+          client.pollDeviceLink('dc-1'),
+          throwsA(isA<SoupIdentityException>()),
+        );
+      },
+    );
 
     test('revokeSession posts refresh_token and accepts 204', () async {
       final client = HttpSoupIdentityClient(

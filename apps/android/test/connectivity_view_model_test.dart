@@ -297,6 +297,20 @@ void main() {
       expect(model.initializationError, isNull);
     },
   );
+
+  test(
+    'an unreadable saved sign-in is dropped instead of blocking setup',
+    () async {
+      sessions.session = testSession;
+      sessions.readError = const FormatException('damaged');
+      preferences.mode = ConnectionMode.direct;
+      await model.initialize();
+      expect(model.initializationError, isNull);
+      expect(model.initialized, isTrue);
+      expect(model.session, isNull);
+      expect(sessions.clears, 1);
+    },
+  );
 }
 
 Future<void> tick() => Future<void>.delayed(Duration.zero);

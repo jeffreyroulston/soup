@@ -124,6 +124,12 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
   Timer? _pollTimer;
   int _generation = 0;
 
+  /// When the current device code stops working, from its expires_in.
+  DateTime? _linkExpiresAt;
+
+  /// Polls that failed in a row for a reason worth waiting out.
+  int _pollFailures = 0;
+
   /// The refresh in flight, shared by everyone who needs fresh tokens.
   Future<SoupSession>? _refreshing;
 
@@ -137,10 +143,13 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     _busy = true;
     _notify();
     try {
-      final stored = await _sessionStore.read();
+      final stored = await _readOrDrop(_sessionStore.read, _sessionStore.clear);
       if (_disposed) return;
       _session = stored;
-      _jellyfinSession = await _jellyfinSessionStore.read();
+      _jellyfinSession = await _readOrDrop(
+        _jellyfinSessionStore.read,
+        _jellyfinSessionStore.clear,
+      );
       _initialized = true;
       if (stored != null) {
         _phase = SoupDeviceLinkPhase.loadingRoster;
@@ -157,6 +166,21 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
         _busy = false;
         _notify();
       }
+    }
+  }
+
+  /// A stored session that can't be decoded (an older format, a damaged
+  /// write) won't fix itself on retry, so it's dropped and sign-in starts
+  /// over. Storage errors, which can be transient, still surface.
+  static Future<T?> _readOrDrop<T>(
+    Future<T?> Function() read,
+    Future<void> Function() clear,
+  ) async {
+    try {
+      return await read();
+    } on FormatException {
+      await clear();
+      return null;
     }
   }
 
@@ -192,6 +216,8 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
         final start = await _client.startDeviceLink();
         if (_disposed || generation != _generation) return;
         _link = start;
+        _linkExpiresAt = DateTime.now().add(Duration(seconds: start.expiresIn));
+        _pollFailures = 0;
         _phase = SoupDeviceLinkPhase.waiting;
         _busy = false;
         _notify();
@@ -210,10 +236,39 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     _pollTimer?.cancel();
     final link = _link;
     if (link == null || !_foreground) return;
+    if (_linkExpired) {
+      _expireLink();
+      return;
+    }
+    // Back off while polls fail (offline, server busy, rate limited).
+    final interval = link.interval.clamp(1, 60);
+    final backoff = interval * (1 << _pollFailures.clamp(0, 4));
     final delay = immediate
         ? Duration.zero
-        : Duration(seconds: link.interval.clamp(1, 60));
+        : Duration(seconds: backoff.clamp(interval, 60));
     _pollTimer = Timer(delay, () => unawaited(_poll(link.deviceCode)));
+  }
+
+  bool get _linkExpired {
+    final expiresAt = _linkExpiresAt;
+    return expiresAt != null && DateTime.now().isAfter(expiresAt);
+  }
+
+  /// Ends the wait once the code's lifetime is up, without needing the
+  /// server to say so: polls that keep failing never would.
+  void _expireLink() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _phase = SoupDeviceLinkPhase.expired;
+    _error = 'This code has expired. Get a new code to continue.';
+    _notify();
+  }
+
+  /// Network trouble, timeouts, server errors and rate limiting pass; the
+  /// approval may still come through, so polling carries on.
+  static bool _isTransient(SoupIdentityException error) {
+    final status = error.statusCode;
+    return status == null || status == 429 || status >= 500;
   }
 
   Future<void> _poll(String deviceCode) async {
@@ -224,6 +279,7 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     try {
       final poll = await _client.pollDeviceLink(deviceCode);
       if (_disposed || generation != _generation) return;
+      _pollFailures = 0;
       switch (poll.status) {
         case DeviceLinkStatus.pending:
           _schedulePoll();
@@ -246,6 +302,10 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
       if (error.statusCode == 404) {
         _phase = SoupDeviceLinkPhase.expired;
         _error = 'This code is no longer valid. Get a new code to continue.';
+      } else if (_isTransient(error)) {
+        _pollFailures++;
+        _schedulePoll(); // or expires the code, once its time is up
+        return;
       } else {
         _phase = SoupDeviceLinkPhase.error;
         _error = _friendlyError(error);

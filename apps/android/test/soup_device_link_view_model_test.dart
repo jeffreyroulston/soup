@@ -455,6 +455,72 @@ void main() {
     expect(store.session, isNull);
   });
 
+  group('device-code polling', () {
+    test('a failed poll is retried, and the approval still lands', () async {
+      final client = FlakyPollClient(
+        MockSoupIdentityClient(pollsUntilApproved: 1),
+        failures: 1,
+      );
+      final model = buildModel(client: client);
+      addTearDown(model.dispose);
+      await model.initialize();
+      await model.startDeviceLink();
+      await pumpUntil(() => client.polls >= 1);
+      expect(model.phase, SoupDeviceLinkPhase.waiting);
+
+      await pumpUntil(() => model.phase == SoupDeviceLinkPhase.ready);
+      expect(client.polls, greaterThan(1));
+      expect(model.session, isNotNull);
+    });
+
+    test('the code expires locally when polls keep failing', () async {
+      final client = FlakyPollClient(
+        MockSoupIdentityClient(),
+        failures: 1000,
+        expiresIn: 1,
+      );
+      final model = buildModel(client: client);
+      addTearDown(model.dispose);
+      await model.initialize();
+      await model.startDeviceLink();
+
+      await pumpUntil(() => model.phase == SoupDeviceLinkPhase.expired);
+      expect(model.error, contains('expired'));
+    });
+
+    test('a client error still stops polling', () async {
+      final client = FlakyPollClient(
+        MockSoupIdentityClient(),
+        failures: 1000,
+        status: 400,
+      );
+      final model = buildModel(client: client);
+      addTearDown(model.dispose);
+      await model.initialize();
+      await model.startDeviceLink();
+
+      await pumpUntil(() => model.phase == SoupDeviceLinkPhase.error);
+      final polls = client.polls;
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      expect(client.polls, polls);
+    });
+  });
+
+  test('an unreadable Soup session is dropped, not retried forever', () async {
+    final store = CorruptSoupSessionStore();
+    final model = buildModel(
+      client: MockSoupIdentityClient(),
+      soupStore: store,
+    );
+    addTearDown(model.dispose);
+
+    await model.initialize();
+
+    expect(model.error, isNull);
+    expect(model.session, isNull);
+    expect(store.cleared, isTrue);
+  });
+
   group('selectServer', () {
     const servers = [
       RosterServer(
@@ -707,4 +773,57 @@ class OneShotGrantClient extends ExpiredFirstClient {
       ],
     );
   }
+}
+
+/// Polls fail with [status] the first [failures] times.
+class FlakyPollClient extends ExpiredFirstClient {
+  FlakyPollClient(
+    super.inner, {
+    required this.failures,
+    this.status = 503,
+    this.expiresIn,
+  });
+
+  int failures;
+  final int status;
+  final int? expiresIn;
+  int polls = 0;
+
+  @override
+  Future<DeviceLinkStart> startDeviceLink() async {
+    final start = await inner.startDeviceLink();
+    final expires = expiresIn;
+    if (expires == null) return start;
+    return DeviceLinkStart(
+      deviceCode: start.deviceCode,
+      userCode: start.userCode,
+      verificationUri: start.verificationUri,
+      verificationUriComplete: start.verificationUriComplete,
+      expiresIn: expires,
+      interval: start.interval,
+    );
+  }
+
+  @override
+  Future<DeviceLinkPoll> pollDeviceLink(String deviceCode) async {
+    polls++;
+    if (failures-- > 0) {
+      throw SoupIdentityException('Unavailable', statusCode: status);
+    }
+    return inner.pollDeviceLink(deviceCode);
+  }
+}
+
+class CorruptSoupSessionStore implements SoupSessionStore {
+  bool cleared = false;
+
+  @override
+  Future<void> clear() async => cleared = true;
+
+  @override
+  Future<SoupSession?> read() async =>
+      cleared ? null : throw const FormatException('damaged');
+
+  @override
+  Future<void> write(SoupSession value) async {}
 }

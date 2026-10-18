@@ -103,7 +103,16 @@ class JellyfinCatalog extends Catalog {
   List<CatalogItem> _items(Object? value) {
     final raw = value is Map ? value['Items'] : value;
     if (raw is! List) return const [];
-    return [for (final e in raw) ?CatalogItem.fromJson(e)];
+    return [for (final e in raw) ?_tryItem(e)];
+  }
+
+  /// One malformed entry drops itself, not the whole list.
+  static CatalogItem? _tryItem(Object? raw) {
+    try {
+      return CatalogItem.fromJson(raw);
+    } on TypeError {
+      return null;
+    }
   }
 
   // ── libraries / home ─────────────────────────────────────────────────────

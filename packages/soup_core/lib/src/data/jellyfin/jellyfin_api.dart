@@ -797,6 +797,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not load artwork. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
     final mimeType = (response.headers['content-type'] ?? '')
@@ -951,6 +952,28 @@ class JellyfinApi
     required Duration startAt,
     JellyfinDeviceProfile? profile,
   }) async {
+    try {
+      return await _getPlaybackPlan(
+        session,
+        item,
+        startAt: startAt,
+        profile: profile,
+      );
+    } on TypeError {
+      // A field of an unexpected type; the raw cast error means nothing on
+      // screen.
+      throw const JellyfinApiException(
+        'Jellyfin sent playback information Soup could not read.',
+      );
+    }
+  }
+
+  Future<JellyfinPlaybackPlan> _getPlaybackPlan(
+    JellyfinSession session,
+    JellyfinItem item, {
+    required Duration startAt,
+    JellyfinDeviceProfile? profile,
+  }) async {
     final deviceProfile =
         profile ??
         JellyfinDeviceProfile(
@@ -982,6 +1005,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not prepare playback. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
     final Object? decoded;
@@ -1103,6 +1127,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not load subtitles. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
     return response.body;
@@ -1187,6 +1212,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not report playback. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
   }
@@ -1277,6 +1303,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not load your library. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
     try {

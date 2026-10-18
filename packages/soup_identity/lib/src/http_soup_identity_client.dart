@@ -88,6 +88,22 @@ class HttpSoupIdentityClient implements SoupIdentityClient {
       });
 
   @override
+  Future<void> revokeSession(String refreshToken) => _guard(() async {
+    final response = await _client.post(
+      _uri('/v1/sessions/revoke'),
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'refresh_token': refreshToken}),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw SoupIdentityException(
+        'Soup Identity request failed',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+  });
+
+  @override
   Future<ServerRoster> listServers(String accessToken) => _guard(() async {
     final response = await _client.get(
       _uri('/v1/me/servers'),

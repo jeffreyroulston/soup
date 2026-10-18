@@ -353,6 +353,29 @@ void main() {
     expect(captured.headers['x-emby-token'], 'token');
   });
 
+  test('logout ends the session on the server', () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response('', 204);
+    });
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/base/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+
+    await api.logout(session);
+
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/base/Sessions/Logout');
+    expect(captured.headers['x-emby-token'], 'token');
+  });
+
   test('loads details, library contents, seasons, and episodes', () async {
     final paths = <String>[];
     final client = MockClient((request) async {

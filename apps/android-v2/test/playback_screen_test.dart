@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -160,11 +162,34 @@ void main() {
     final factory = FakeFactory();
     await _pumpPlayer(tester, factory: factory, item: _movie);
     expect(factory.controllers, hasLength(1));
-    expect(factory.controllers.single.uri.path, '/Videos/m1/stream.mp4');
+    expect(
+      factory.controllers.single.uri.path,
+      endsWith('/Videos/m1/stream.mp4'),
+    );
     await _openSettings(tester);
     expect(find.text('Direct'), findsOneWidget);
     expect(find.byKey(const ValueKey('playback-title')), findsOneWidget);
     expect(factory.controllers.single.value.playing, isTrue);
+  });
+
+  testWidgets('leaving while the player loads never starts playback', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final factory = FakeFactory(initializeGate: gate);
+    await _pumpPlayer(tester, factory: factory, item: _movie);
+    expect(factory.controllers, hasLength(1));
+    await _back(tester);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PlaybackScreen), findsNothing);
+    gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final controller = factory.controllers.single;
+    expect(controller.value.playing, isFalse);
+    expect(controller.closes, greaterThan(0));
+    expect(factory.controllers, hasLength(1));
   });
 
   testWidgets('falls back from failed direct play to transcode', (
@@ -178,7 +203,10 @@ void main() {
       startTicks: 150000000,
     );
     expect(factory.controllers, hasLength(2));
-    expect(factory.controllers.last.uri.path, '/Videos/x/master.m3u8');
+    expect(
+      factory.controllers.last.uri.path,
+      endsWith('/Videos/x/master.m3u8'),
+    );
     await _openSettings(tester);
     expect(find.text('Transcode'), findsOneWidget);
     expect(
@@ -608,8 +636,11 @@ void _trickplayTests() {
 }
 
 class FakeFactory implements SoupVideoControllerFactory {
-  FakeFactory({this.failures = 0});
+  FakeFactory({this.failures = 0, this.initializeGate});
   int failures;
+
+  /// When set, every controller's initialize waits on it.
+  final Completer<void>? initializeGate;
   final controllers = <FakeController>[];
 
   @override
@@ -618,6 +649,7 @@ class FakeFactory implements SoupVideoControllerFactory {
       uri,
       hadSubtitles: subtitleVtt != null,
       fail: failures-- > 0,
+      gate: initializeGate,
     );
     controllers.add(c);
     return c;
@@ -626,10 +658,17 @@ class FakeFactory implements SoupVideoControllerFactory {
 
 class FakeController extends ChangeNotifier
     implements SoupVideoController, SpeedControllable {
-  FakeController(this.uri, {required this.hadSubtitles, required this.fail});
+  FakeController(
+    this.uri, {
+    required this.hadSubtitles,
+    required this.fail,
+    this.gate,
+  });
   final Uri uri;
   final bool hadSubtitles;
   final bool fail;
+  final Completer<void>? gate;
+  int closes = 0;
   double speed = 1;
   SoupVideoValue _value = const SoupVideoValue();
 
@@ -648,6 +687,7 @@ class FakeController extends ChangeNotifier
 
   @override
   Future<void> initialize() async {
+    await gate?.future;
     if (fail) throw StateError('direct playback failed');
     _value = const SoupVideoValue(
       initialized: true,
@@ -672,5 +712,5 @@ class FakeController extends ChangeNotifier
   Widget buildView() => const SizedBox.expand();
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async => closes++;
 }

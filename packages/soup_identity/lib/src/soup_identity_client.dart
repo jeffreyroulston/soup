@@ -8,6 +8,9 @@ abstract interface class SoupIdentityClient {
 
   Future<SoupSessionTokens> refreshSession(String refreshToken);
 
+  /// Ends the session behind [refreshToken] on the server (sign-out).
+  Future<void> revokeSession(String refreshToken);
+
   Future<ServerRoster> listServers(String accessToken);
 
   /// Mint a short-lived Pattern A assertion JWT for [serverId].

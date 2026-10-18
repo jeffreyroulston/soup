@@ -1,15 +1,25 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 
+/// Serves Jellyfin media to the platform player from a loopback port, adding
+/// the session's auth headers on the way through.
+///
+/// Anything on the device can reach a loopback port, so every local URL
+/// carries a random per-bridge path prefix, and only media paths are
+/// forwarded. Without both, any app could use the user's token against the
+/// whole Jellyfin API.
 class PlaybackBridge {
-  PlaybackBridge(this._transport, this._session, this._headers);
+  PlaybackBridge(this._transport, this._session, this._headers)
+    : _secret = _randomSecret();
 
   final http.Client _transport;
   final JellyfinSession _session;
   final Map<String, String> _headers;
+  final String _secret;
   HttpServer? _server;
 
   bool get isRunning => _server != null;
@@ -36,10 +46,16 @@ class PlaybackBridge {
         'Jellyfin returned a playback URL for an unexpected server.',
       );
     }
+    if (!_isMediaPath(upstream.path)) {
+      throw const JellyfinApiException(
+        'Jellyfin returned a playback URL outside its media paths.',
+      );
+    }
     return upstream.replace(
       scheme: 'http',
       host: InternetAddress.loopbackIPv4.address,
       port: server.port,
+      path: '/$_secret${upstream.path}',
     );
   }
 
@@ -50,18 +66,24 @@ class PlaybackBridge {
       await response.close();
       return;
     }
+    final prefix = '/$_secret/';
+    final localPath = incoming.uri.path;
+    if (!localPath.startsWith(prefix) ||
+        !_isMediaPath(localPath.substring(prefix.length - 1))) {
+      response.statusCode = HttpStatus.notFound;
+      await response.close();
+      return;
+    }
     try {
       final upstream = _session.serverUrl.replace(
-        path: incoming.uri.path,
+        path: localPath.substring(prefix.length - 1),
         query: incoming.uri.hasQuery ? incoming.uri.query : null,
       );
       final request = http.Request(incoming.method, upstream);
       incoming.headers.forEach((name, values) {
-        final lower = name.toLowerCase();
-        if (_requestHopByHop.contains(lower) || lower == 'content-length') {
-          return;
+        if (_forwardedRequestHeaders.contains(name.toLowerCase())) {
+          request.headers[name] = values.join(',');
         }
-        request.headers[name] = values.join(',');
       });
       request.headers.addAll(_headers);
       final upstreamResponse = await _transport.send(request);
@@ -94,16 +116,35 @@ class PlaybackBridge {
     await server?.close(force: true);
   }
 
-  static const _requestHopByHop = {
-    'connection',
-    'host',
-    'keep-alive',
-    'proxy-authenticate',
-    'proxy-authorization',
-    'te',
-    'trailer',
-    'transfer-encoding',
-    'upgrade',
+  /// Whether [path] is under the server's `Videos/` or `Audio/` routes.
+  bool _isMediaPath(String path) {
+    final base = _session.serverUrl.path.endsWith('/')
+        ? _session.serverUrl.path
+        : '${_session.serverUrl.path}/';
+    if (!path.startsWith(base)) return false;
+    final rest = path.substring(base.length);
+    if (rest.split('/').contains('..')) return false;
+    // Jellyfin's own TranscodingUrl uses lowercase `/videos/`.
+    final route = rest.toLowerCase();
+    return route.startsWith('videos/') || route.startsWith('audio/');
+  }
+
+  static String _randomSecret() {
+    final random = Random.secure();
+    return [
+      for (var i = 0; i < 16; i++)
+        random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ].join();
+  }
+
+  /// What a player needs for ranged and adaptive streaming. Everything else,
+  /// including any auth a caller sends, is dropped.
+  static const _forwardedRequestHeaders = {
+    'accept',
+    'accept-encoding',
+    'if-range',
+    'range',
+    'user-agent',
   };
 
   static const _responseHopByHop = {

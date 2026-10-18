@@ -13,6 +13,8 @@ class SoupSession {
     required this.email,
     this.lastServerId,
     this.accessExpiresAt,
+    this.pendingTransportKey,
+    this.pendingTransportServerId,
   });
 
   factory SoupSession.fromTokens(
@@ -40,6 +42,11 @@ class SoupSession {
   final String? lastServerId;
   final DateTime? accessExpiresAt;
 
+  /// A one-time Tailscale auth key from a roster transport grant, kept until
+  /// the join succeeds: the roster only hands the key out once.
+  final String? pendingTransportKey;
+  final String? pendingTransportServerId;
+
   SoupSession copyWith({
     String? accessToken,
     String? refreshToken,
@@ -48,7 +55,10 @@ class SoupSession {
     String? email,
     String? lastServerId,
     DateTime? accessExpiresAt,
+    String? pendingTransportKey,
+    String? pendingTransportServerId,
     bool clearLastServerId = false,
+    bool clearPendingTransport = false,
   }) {
     return SoupSession(
       accessToken: accessToken ?? this.accessToken,
@@ -60,6 +70,12 @@ class SoupSession {
           ? null
           : (lastServerId ?? this.lastServerId),
       accessExpiresAt: accessExpiresAt ?? this.accessExpiresAt,
+      pendingTransportKey: clearPendingTransport
+          ? null
+          : (pendingTransportKey ?? this.pendingTransportKey),
+      pendingTransportServerId: clearPendingTransport
+          ? null
+          : (pendingTransportServerId ?? this.pendingTransportServerId),
     );
   }
 
@@ -71,6 +87,8 @@ class SoupSession {
     'email': email,
     'lastServerId': lastServerId,
     'accessExpiresAt': accessExpiresAt?.toIso8601String(),
+    'pendingTransportKey': ?pendingTransportKey,
+    'pendingTransportServerId': ?pendingTransportServerId,
   };
 
   static SoupSession fromJson(Map<String, Object?> json) {
@@ -96,6 +114,8 @@ class SoupSession {
       accessExpiresAt: DateTime.tryParse(
         json['accessExpiresAt'] as String? ?? '',
       )?.toUtc(),
+      pendingTransportKey: json['pendingTransportKey'] as String?,
+      pendingTransportServerId: json['pendingTransportServerId'] as String?,
     );
   }
 }

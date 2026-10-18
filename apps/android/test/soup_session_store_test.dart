@@ -12,17 +12,21 @@ void main() {
   test('Soup session round trips with optional lastServerId', () async {
     FlutterSecureStorage.setMockInitialValues({});
     const store = SecureSoupSessionStore();
-    final session = SoupSession.fromTokens(
-      const SoupSessionTokens(
-        accessToken: 'access',
-        refreshToken: 'refresh',
-        expiresIn: 900,
-        tokenType: 'Bearer',
-        email: 'a@example.com',
-      ),
-      lastServerId: 'home-jf',
-      issuedAt: DateTime.utc(2026, 9, 10, 6),
-    );
+    final session =
+        SoupSession.fromTokens(
+          const SoupSessionTokens(
+            accessToken: 'access',
+            refreshToken: 'refresh',
+            expiresIn: 900,
+            tokenType: 'Bearer',
+            email: 'a@example.com',
+          ),
+          lastServerId: 'home-jf',
+          issuedAt: DateTime.utc(2026, 9, 10, 6),
+        ).copyWith(
+          pendingTransportKey: 'tskey-auth-once',
+          pendingTransportServerId: 'home-jf',
+        );
     await store.write(session);
     final reopened = await const SecureSoupSessionStore().read();
     expect(reopened?.accessToken, 'access');
@@ -30,6 +34,12 @@ void main() {
     expect(reopened?.email, 'a@example.com');
     expect(reopened?.lastServerId, 'home-jf');
     expect(reopened?.accessExpiresAt, DateTime.utc(2026, 9, 10, 6, 15));
+    expect(reopened?.pendingTransportKey, 'tskey-auth-once');
+    expect(reopened?.pendingTransportServerId, 'home-jf');
+    expect(
+      reopened?.copyWith(clearPendingTransport: true).toJson(),
+      isNot(contains('pendingTransportKey')),
+    );
   });
 
   test('corrupt Soup session throws without clearing storage', () async {

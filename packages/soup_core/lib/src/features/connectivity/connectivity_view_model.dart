@@ -560,6 +560,17 @@ class ConnectivityViewModel extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    if (_session case final session?) {
+      // Best effort and not awaited: sign-out shouldn't wait on, or fail
+      // because of, a server that may be unreachable.
+      unawaited(() async {
+        try {
+          await (await authenticatedApi()).logout(session);
+        } on Object {
+          // The token is gone locally either way.
+        }
+      }());
+    }
     _stopQuickConnect(clear: true);
     _formGeneration++;
     await _mutateSession(sessionStore.clear);

@@ -92,8 +92,14 @@ class SpeedVideoController extends ChangeNotifier
       ? ScreenSpace(child: VideoPlayer(_controller))
       : VideoPlayer(_controller);
 
+  bool _closed = false;
+
+  /// Safe to call more than once: a screen leaving mid-load and the load
+  /// itself can both close the same player.
   @override
   Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
     _controller.removeListener(_sync);
     await _controller.dispose();
     dispose();

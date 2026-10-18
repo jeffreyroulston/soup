@@ -186,7 +186,11 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     });
     final startAt = Duration(microseconds: widget.startTicks ~/ 10);
     try {
+      // Every await below can outlive the screen (Back while loading), so
+      // each one checks _disposed: _shutdown has already run by then and
+      // won't see anything opened afterwards.
       await _enrichItem();
+      if (_disposed) return;
       unawaited(_loadSegments());
       unawaited(_loadSiblings());
       if (_mock) {
@@ -206,7 +210,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         startAt: startAt,
         profile: _scope.deviceProfile,
       );
+      if (_disposed) return;
       await _bridge!.start();
+      if (_disposed) {
+        await _bridge!.close();
+        return;
+      }
       _plan = plan;
       _resolveOptions(plan);
       final wantsTranscode = _audioIndex != null || _maxBitrate != null;
@@ -217,6 +226,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             startAt,
           );
         } on Object {
+          if (_disposed) return;
           await _load(JellyfinPlayMethod.transcode, startAt);
         }
       } else {
@@ -336,16 +346,28 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       old.removeListener(_playerChanged);
       await old.close();
     }
+    if (_disposed) return;
     final controller = widget.controllerFactory.create(uri, subtitleVtt: vtt);
     _controller = controller;
     _endedHandled = false;
     controller.addListener(_playerChanged);
+    Future<bool> abandoned() async {
+      if (!_disposed) return false;
+      controller.removeListener(_playerChanged);
+      await controller.close();
+      return true;
+    }
+
     await controller.initialize();
+    if (await abandoned()) return;
     if (startAt > Duration.zero) await controller.seekTo(startAt);
+    if (await abandoned()) return;
     if (_speed != 1 && controller is SpeedControllable) {
       await (controller as SpeedControllable).setSpeed(_speed);
+      if (await abandoned()) return;
     }
     await controller.play();
+    await abandoned();
   }
 
   /// Rebuild the player at the current position with the current options.

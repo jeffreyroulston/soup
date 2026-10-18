@@ -95,6 +95,15 @@ class MockSoupIdentityClient implements SoupIdentityClient {
     return const DeviceLinkPoll(status: DeviceLinkStatus.pending);
   }
 
+  /// Refresh tokens passed to [revokeSession], for tests.
+  final revoked = <String>[];
+
+  @override
+  Future<void> revokeSession(String refreshToken) async {
+    _ensureOpen();
+    revoked.add(refreshToken);
+  }
+
   @override
   Future<SoupSessionTokens> refreshSession(String refreshToken) async {
     _ensureOpen();

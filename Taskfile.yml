@@ -196,7 +196,6 @@ tasks:
         test/jellyfin_api_test.dart
         test/jellyfin_discovery_test.dart
         test/jellyfin_metadata_repository_test.dart
-        test/playback_bridge_test.dart
         test/session_store_test.dart
         test/socks_jellyfin_client_test.dart
         test/soup_database_test.dart

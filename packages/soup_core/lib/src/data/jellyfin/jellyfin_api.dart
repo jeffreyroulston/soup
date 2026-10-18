@@ -599,6 +599,23 @@ class JellyfinApi
     await _getJson(session, 'Users/${session.userId}');
   }
 
+  /// Ends [session] on the server, so its token stops working (sign-out).
+  /// Jellyfin tokens never expire on their own.
+  Future<void> logout(JellyfinSession session) async {
+    final response = await _client
+        .post(
+          _sessionUri(session, 'Sessions/Logout'),
+          headers: _sessionHeaders(session),
+        )
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw JellyfinApiException(
+        'Could not sign out of Jellyfin. It returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   static JellyfinQuickConnectRequest _quickConnectRequest(
     generated.QuickConnectResult? result,
   ) {

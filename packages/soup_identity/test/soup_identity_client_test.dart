@@ -68,6 +68,40 @@ void main() {
       expect(poll.tokens?.email, 'a@example.com');
     });
 
+    test('revokeSession posts refresh_token and accepts 204', () async {
+      final client = HttpSoupIdentityClient(
+        baseUrl: Uri.parse('http://identity.test'),
+        httpClient: MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/v1/sessions/revoke');
+          expect(jsonDecode(request.body), {'refresh_token': 'old'});
+          return Response('', 204);
+        }),
+      );
+      addTearDown(client.close);
+
+      await client.revokeSession('old');
+    });
+
+    test('revokeSession reports a failed status', () async {
+      final client = HttpSoupIdentityClient(
+        baseUrl: Uri.parse('http://identity.test'),
+        httpClient: MockClient((_) async => Response('', 500)),
+      );
+      addTearDown(client.close);
+
+      expect(
+        client.revokeSession('old'),
+        throwsA(
+          isA<SoupIdentityException>().having(
+            (e) => e.statusCode,
+            'status',
+            500,
+          ),
+        ),
+      );
+    });
+
     test('refreshSession posts refresh_token', () async {
       final client = HttpSoupIdentityClient(
         baseUrl: Uri.parse('http://identity.test'),

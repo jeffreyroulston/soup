@@ -88,7 +88,8 @@ class PlaybackScreen extends StatefulWidget {
   State<PlaybackScreen> createState() => _PlaybackScreenState();
 }
 
-class _PlaybackScreenState extends State<PlaybackScreen> {
+class _PlaybackScreenState extends State<PlaybackScreen>
+    with WidgetsBindingObserver {
   late final SoupScope _scope;
   late CatalogItem _item = widget.item;
 
@@ -141,6 +142,9 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   Duration? _pendingSeek;
   Duration _lastReported = Duration.zero;
   Timer? _reportDebounce;
+  bool? _reportedPlaying; // playing state Jellyfin last heard
+  Timer? _pausedPing;
+  Duration? _retryFrom; // where Try again picks up
 
   // trickplay
   final _sheets = <int, Future<Uint8List?>>{};
@@ -175,6 +179,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
       );
     }
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_initialize());
   }
 
@@ -184,7 +189,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       _loading = true;
       _error = null;
     });
-    final startAt = Duration(microseconds: widget.startTicks ~/ 10);
+    final startAt =
+        _retryFrom ?? Duration(microseconds: widget.startTicks ~/ 10);
     try {
       // Every await below can outlive the screen (Back while loading), so
       // each one checks _disposed: _shutdown has already run by then and
@@ -297,7 +303,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
   }
 
   Future<void> _loadSample(Duration startAt) async {
-    await _swapController(Uri.parse(mockSampleUrl), startAt);
+    if (!await _swapController(Uri.parse(mockSampleUrl), startAt)) return;
     _method = JellyfinPlayMethod.directPlay;
     if (!mounted) return;
     setState(() => _loading = false);
@@ -319,7 +325,13 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
           .getSubtitle(_session!, subtitle)
           .catchError((Object _) => 'WEBVTT\n');
     }
-    await _swapController(_bridge!.localUriFor(upstream), startAt, vtt: vtt);
+    final current = await _swapController(
+      _bridge!.localUriFor(upstream),
+      startAt,
+      vtt: vtt,
+    );
+    // A newer load (another option change) took over; it reports instead.
+    if (!current) return;
     _method = method;
     if (!mounted) return;
     setState(() => _loading = false);
@@ -336,7 +348,9 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     );
   }
 
-  Future<void> _swapController(
+  /// Swaps in a player for [uri]. False when it was abandoned: the screen
+  /// closed, or a newer load replaced it while it was starting.
+  Future<bool> _swapController(
     Uri uri,
     Duration startAt, {
     Future<String>? vtt,
@@ -346,29 +360,63 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       old.removeListener(_playerChanged);
       await old.close();
     }
-    if (_disposed) return;
+    if (_disposed) return false;
     final controller = widget.controllerFactory.create(uri, subtitleVtt: vtt);
     _controller = controller;
     _endedHandled = false;
     controller.addListener(_playerChanged);
     Future<bool> abandoned() async {
-      if (!_disposed) return false;
-      controller.removeListener(_playerChanged);
-      await controller.close();
-      return true;
+      if (_disposed) {
+        controller.removeListener(_playerChanged);
+        await controller.close();
+        return true;
+      }
+      // A newer load already replaced, and closed, this player.
+      return !identical(_controller, controller);
     }
 
-    await controller.initialize();
-    if (await abandoned()) return;
-    if (startAt > Duration.zero) await controller.seekTo(startAt);
-    if (await abandoned()) return;
-    if (_speed != 1 && controller is SpeedControllable) {
-      await (controller as SpeedControllable).setSpeed(_speed);
-      if (await abandoned()) return;
+    try {
+      await controller.initialize();
+      if (await abandoned()) return false;
+      if (startAt > Duration.zero) await controller.seekTo(startAt);
+      if (await abandoned()) return false;
+      if (_speed != 1 && controller is SpeedControllable) {
+        await (controller as SpeedControllable).setSpeed(_speed);
+        if (await abandoned()) return false;
+      }
+      await controller.play();
+    } on Object {
+      // Closed under a newer load: its failure is that load's business.
+      if (await abandoned()) return false;
+      rethrow;
     }
-    await controller.play();
-    await abandoned();
+    return !await abandoned();
   }
+
+  /// Try again from where playback got to, as a new play session.
+  Future<void> _retry() async {
+    final plan = _plan;
+    final controller = _c;
+    final position = _pendingSeek ?? controller?.value.position;
+    if (position != null && position > Duration.zero) _retryFrom = position;
+    if (plan != null && controller != null && !_mock) {
+      unawaited(
+        _api!
+            .reportPlaybackStopped(
+              _session!,
+              plan,
+              method: _method,
+              position: position ?? Duration.zero,
+            )
+            .catchError((Object _) {}),
+      );
+    }
+    _fellBack = false;
+    _reportedPlaying = null;
+    await _initialize();
+  }
+
+  int _reloads = 0;
 
   /// Rebuild the player at the current position with the current options.
   Future<void> _reload() async {
@@ -377,6 +425,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     if (controller == null || plan == null) return;
     final position = _pendingSeek ?? controller.value.position;
     setState(() => _loading = true);
+    final load = ++_reloads;
     try {
       final wantsTranscode = _audioIndex != null || _maxBitrate != null;
       await _load(
@@ -386,7 +435,8 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
         position,
       );
     } on Object catch (error) {
-      if (!mounted) return;
+      // A later option change superseded this one; its result stands.
+      if (!mounted || load != _reloads) return;
       setState(() {
         _loading = false;
         _error = error is JellyfinApiException
@@ -456,6 +506,21 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     }
     _maybeActivateNext(v, seconds);
     final plan = _plan;
+    // Report every play/pause however it happened (remote keys, the OS
+    // pausing on background, the end of the stream), not just the button.
+    if (plan != null && v.initialized && v.playing != _reportedPlaying) {
+      _reportedPlaying = v.playing;
+      _lastReported = v.position;
+      unawaited(_report(paused: !v.playing));
+      _pausedPing?.cancel();
+      // Jellyfin drops sessions, and their transcodes, that go quiet.
+      _pausedPing = v.playing
+          ? null
+          : Timer.periodic(
+              const Duration(seconds: 30),
+              (_) => unawaited(_report(paused: true)),
+            );
+    }
     if (plan != null &&
         (v.position - _lastReported).abs() >= const Duration(seconds: 10)) {
       _lastReported = v.position;
@@ -537,6 +602,9 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return t.cancel();
+      // Paused before the end: hold the count until playback resumes.
+      final v = _c?.value;
+      if (!_endedHandled && v != null && !v.playing) return;
       if (_countdown <= 1) {
         t.cancel();
         _playNext();
@@ -599,7 +667,6 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     } else {
       await c.play();
     }
-    unawaited(_report(paused: !c.value.playing));
   }
 
   void _seekBy(Duration delta) {
@@ -984,7 +1051,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
             _session!,
             plan,
             method: _method,
-            position: controller.value.position,
+            position: _pendingSeek ?? controller.value.position,
           );
         } on Object {
           // Closing the player must not be blocked by presence reporting.
@@ -994,6 +1061,16 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
       await controller.close();
     }
     await _bridge?.close();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The app may never come back from the background, so Jellyfin hears
+    // the position now rather than at the next 10s report.
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      unawaited(_report(paused: true));
+    }
   }
 
   @override
@@ -1009,7 +1086,12 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
     _countdownTimer?.cancel();
     _reportDebounce?.cancel();
     _seekPreviewTimer?.cancel();
-    unawaited(_shutdown());
+    WidgetsBinding.instance.removeObserver(this);
+    _pausedPing?.cancel();
+    // Once Jellyfin has the stop position, refetch so resume points and
+    // watched state on the screens underneath are current.
+    final catalog = _scope.catalog;
+    unawaited(_shutdown().whenComplete(catalog.refresh));
     for (final n in [
       _rootFocus,
       _seekFocus,
@@ -1295,11 +1377,7 @@ class _PlaybackScreenState extends State<PlaybackScreen> {
                   ),
                 ),
               if (_error case final error?)
-                PlaybackError(
-                  error: error,
-                  onRetry: _initialize,
-                  onClose: _exit,
-                ),
+                PlaybackError(error: error, onRetry: _retry, onClose: _exit),
             ],
           ),
         ),

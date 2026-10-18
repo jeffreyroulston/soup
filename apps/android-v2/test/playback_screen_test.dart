@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -190,6 +191,72 @@ void main() {
     expect(controller.value.playing, isFalse);
     expect(controller.closes, greaterThan(0));
     expect(factory.controllers, hasLength(1));
+  });
+
+  Map<String, Object?> lastReport(List<http.Request> log, String kind) =>
+      jsonDecode(
+            log.lastWhere((r) => r.url.path == '/Sessions/Playing/$kind').body,
+          )
+          as Map<String, Object?>;
+
+  testWidgets('Try again resumes where playback failed, as a new session', (
+    tester,
+  ) async {
+    final log = <http.Request>[];
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, log: log);
+    await factory.controllers.last.seekTo(const Duration(minutes: 40));
+    // Direct play fails, then its transcode fallback fails too.
+    factory.controllers.last.failNow();
+    await tester.pump(const Duration(milliseconds: 100));
+    factory.controllers.last.failNow();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('playback-error')), findsOneWidget);
+
+    await tester.tap(find.text('Try again'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const ValueKey('playback-error')), findsNothing);
+    expect(
+      factory.controllers.last.value.position,
+      const Duration(minutes: 40),
+    );
+    expect(factory.controllers.last.value.playing, isTrue);
+    expect(lastReport(log, 'Stopped')['PositionTicks'], 40 * 60 * 10000000);
+  });
+
+  testWidgets('a pause from outside the controls is reported', (tester) async {
+    final log = <http.Request>[];
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, log: log);
+    expect(lastReport(log, 'Progress')['IsPaused'], isFalse);
+
+    // e.g. the OS pausing the player when the app goes to the background.
+    await factory.controllers.single.pause();
+    await tester.pump();
+
+    expect(lastReport(log, 'Progress')['IsPaused'], isTrue);
+    // Paused sessions keep pinging so Jellyfin doesn't drop them.
+    final before = log.length;
+    await tester.pump(const Duration(seconds: 31));
+    expect(log.length, greaterThan(before));
+    expect(lastReport(log, 'Progress')['IsPaused'], isTrue);
+  });
+
+  testWidgets('leaving straight after a seek saves the seek target', (
+    tester,
+  ) async {
+    final log = <http.Request>[];
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, log: log);
+    await tester.pump(const Duration(seconds: 5)); // chrome hides
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    Navigator.of(tester.element(find.byType(PlaybackScreen))).pop();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(lastReport(log, 'Stopped')['PositionTicks'], 10 * 10000000);
   });
 
   testWidgets('falls back from failed direct play to transcode', (
@@ -713,4 +780,15 @@ class FakeController extends ChangeNotifier
 
   @override
   Future<void> close() async => closes++;
+
+  /// A media error mid-stream, as the platform player reports one.
+  void failNow() {
+    _value = SoupVideoValue(
+      initialized: _value.initialized,
+      position: _value.position,
+      duration: _value.duration,
+      error: 'decoder failed',
+    );
+    notifyListeners();
+  }
 }

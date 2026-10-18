@@ -475,6 +475,63 @@ void main() {
     );
   });
 
+  test('direct play names the file by its first container', () async {
+    final client = MockClient(
+      (_) async => http.Response(
+        '{"PlaySessionId":"p","MediaSources":[{"Id":"s","Container":"mov,mp4,m4a,3gp,3g2,mj2","SupportsDirectPlay":true}]}',
+        200,
+      ),
+    );
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+    const movie = JellyfinItem(id: 'movie', name: 'Movie', type: 'Movie');
+
+    final plan = await api.getPlaybackPlan(
+      session,
+      movie,
+      startAt: Duration.zero,
+    );
+
+    expect(plan.directUri?.path, '/Videos/movie/stream.mov');
+  });
+
+  test('a playback field of the wrong type is a readable error', () async {
+    final client = MockClient(
+      (_) async => http.Response(
+        '{"PlaySessionId":7,"MediaSources":[{"Id":"s","Container":"mp4","SupportsDirectPlay":true}]}',
+        200,
+      ),
+    );
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+    const movie = JellyfinItem(id: 'movie', name: 'Movie', type: 'Movie');
+
+    await expectLater(
+      api.getPlaybackPlan(session, movie, startAt: Duration.zero),
+      throwsA(
+        isA<JellyfinApiException>().having(
+          (e) => e.message,
+          'message',
+          contains('could not read'),
+        ),
+      ),
+    );
+  });
+
   test('uses a transcode-only source and reports playback progress', () async {
     final requests = <http.Request>[];
     final client = MockClient((request) async {

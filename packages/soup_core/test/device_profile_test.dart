@@ -94,6 +94,28 @@ void main() {
     expect(_condition(h264, 'VideoBitDepth'), '8');
   });
 
+  test('10-bit VP9 and AV1 only direct play where detected', () {
+    const plain = DeviceCapabilities(
+      platform: 'Android',
+      videoCodecs: {'h264', 'vp9', 'av1'},
+      audioDecoders: {'aac'},
+    );
+    const tenBit = DeviceCapabilities(
+      platform: 'Android',
+      videoCodecs: {'h264', 'vp9', 'av1'},
+      audioDecoders: {'aac'},
+      vp9Profile2: true,
+      av1Main10: true,
+    );
+    for (final codec in const ['vp9', 'av1']) {
+      Map<String, Object?> of(DeviceCapabilities caps) => _codecProfiles(
+        JellyfinDeviceProfile(capabilities: caps),
+      ).firstWhere((p) => p['Codec'] == codec);
+      expect(_condition(of(plain), 'VideoBitDepth'), '8', reason: codec);
+      expect(_condition(of(tenBit), 'VideoBitDepth'), isNull, reason: codec);
+    }
+  });
+
   test('8-bit-only HEVC decoders are limited to Main', () {
     const caps = DeviceCapabilities(
       platform: 'Android',

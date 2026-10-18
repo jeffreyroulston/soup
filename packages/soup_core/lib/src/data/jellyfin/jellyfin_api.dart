@@ -1030,7 +1030,13 @@ class JellyfinApi
     final source = Map<String, Object?>.from(sources.first as Map);
     final mediaSourceId = source['Id'] as String? ?? item.id;
     final playSessionId = decoded['PlaySessionId'] as String? ?? '';
-    final container = source['Container'] as String? ?? 'mp4';
+    // Jellyfin can list several names for one format ("mov,mp4,m4a,...");
+    // the first one is the file's, and the extension lets the player pick
+    // its demuxer.
+    final containers = (source['Container'] as String? ?? '').split(',');
+    final container = containers.first.trim().isEmpty
+        ? 'mp4'
+        : containers.first.trim();
     final supportsDirectPlay = source['SupportsDirectPlay'] as bool? ?? false;
     final supportsDirectStream =
         source['SupportsDirectStream'] as bool? ?? false;

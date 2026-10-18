@@ -40,9 +40,9 @@ class PlayerPill extends StatelessWidget {
           decoration: BoxDecoration(
             color: primary
                 ? SoupColors.ink
-                : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+                : (focused ? SoupColors.glassFocused : SoupColors.glass),
             borderRadius: BorderRadius.circular(20),
-            border: primary ? null : Border.all(color: const Color(0x1AFFFFFF)),
+            border: primary ? null : Border.all(color: SoupColors.faint),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -674,9 +674,9 @@ class MethodDot extends StatelessWidget {
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: const Color(0x99282828),
+        color: SoupColors.glass,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0x1AFFFFFF)),
+        border: Border.all(color: SoupColors.faint),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

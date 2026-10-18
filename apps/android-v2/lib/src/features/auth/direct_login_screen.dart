@@ -307,7 +307,7 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
                     decoration: BoxDecoration(
                       color: const Color(0xEB1E1E20),
                       borderRadius: BorderRadius.circular(SoupRadii.spotlight),
-                      border: Border.all(color: const Color(0x1AFFFFFF)),
+                      border: Border.all(color: SoupColors.faint),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -818,9 +818,7 @@ class _DirectLoginScreenState extends State<DirectLoginScreen>
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: focused
-                  ? const Color(0x2EFFFFFF)
-                  : const Color(0x1AFFFFFF),
+              color: focused ? const Color(0x2EFFFFFF) : SoupColors.faint,
               borderRadius: BorderRadius.circular(SoupRadii.button),
             ),
             child: Text(

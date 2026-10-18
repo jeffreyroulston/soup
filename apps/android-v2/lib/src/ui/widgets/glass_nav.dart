@@ -196,9 +196,9 @@ class _IconButton extends StatelessWidget {
       decoration: BoxDecoration(
         color: active
             ? SoupColors.ink
-            : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+            : (focused ? SoupColors.glassFocused : SoupColors.glass),
         shape: BoxShape.circle,
-        border: active ? null : Border.all(color: const Color(0x1AFFFFFF)),
+        border: active ? null : Border.all(color: SoupColors.faint),
       ),
       child: Icon(
         icon,
@@ -441,7 +441,7 @@ class _Divider extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     height: 1,
     margin: const EdgeInsets.fromLTRB(14, 6, 14, 6),
-    color: const Color(0x1AFFFFFF),
+    color: SoupColors.faint,
   );
 }
 

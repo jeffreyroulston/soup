@@ -269,7 +269,7 @@ class _PlayBadge extends StatelessWidget {
     width: 56,
     height: 56,
     decoration: BoxDecoration(
-      color: const Color(0x99282828),
+      color: SoupColors.glass,
       shape: BoxShape.circle,
       border: Border.all(color: const Color(0x33FFFFFF)),
     ),

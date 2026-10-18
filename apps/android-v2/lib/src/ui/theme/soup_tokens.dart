@@ -10,6 +10,16 @@ abstract final class SoupColors {
   static const muted = Color(0xFFA1A1A6);
   static const accent = Color(0xFFFC7814);
   static const ok = Color(0xFF30D158);
+
+  /// Frosted glass over artwork (web: rgb(40 40 44 / .6)): bars, pills,
+  /// secondary buttons.
+  static const glass = Color(0x99282828);
+
+  /// [glass] under focus.
+  static const glassFocused = Color(0xBF48484E);
+
+  /// 10% white: glass edges, and the faintest fill.
+  static const faint = Color(0x1AFFFFFF);
 }
 
 abstract final class SoupRadii {

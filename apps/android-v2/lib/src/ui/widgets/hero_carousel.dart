@@ -360,9 +360,9 @@ class _GlassPill extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 28),
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      color: focused ? const Color(0xBF48484E) : const Color(0x99282828),
+      color: focused ? SoupColors.glassFocused : SoupColors.glass,
       borderRadius: BorderRadius.circular(SoupRadii.button),
-      border: Border.all(color: const Color(0x1AFFFFFF)),
+      border: Border.all(color: SoupColors.faint),
     ),
     child: child,
   );
@@ -381,9 +381,9 @@ class _RoundButton extends StatelessWidget {
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: focused ? const Color(0xBF48484E) : const Color(0x99282828),
+        color: focused ? SoupColors.glassFocused : SoupColors.glass,
         shape: BoxShape.circle,
-        border: Border.all(color: const Color(0x1AFFFFFF)),
+        border: Border.all(color: SoupColors.faint),
       ),
       child: Icon(icon, size: 26),
     ),

@@ -54,8 +54,8 @@ class ChromeButton extends StatelessWidget {
             shape: BoxShape.circle,
             color: filled
                 ? SoupColors.ink
-                : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
-            border: filled ? null : Border.all(color: const Color(0x1AFFFFFF)),
+                : (focused ? SoupColors.glassFocused : SoupColors.glass),
+            border: filled ? null : Border.all(color: SoupColors.faint),
           ),
           alignment: Alignment.center,
           child: busy
@@ -458,7 +458,7 @@ class _CardButton extends StatelessWidget {
       decoration: BoxDecoration(
         color: primary
             ? SoupColors.ink
-            : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+            : (focused ? SoupColors.glassFocused : SoupColors.glass),
         borderRadius: BorderRadius.circular(SoupRadii.button),
       ),
       child: FittedBox(

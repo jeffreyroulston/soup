@@ -40,9 +40,9 @@ class SoupButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: primary
               ? SoupColors.ink
-              : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+              : (focused ? SoupColors.glassFocused : SoupColors.glass),
           borderRadius: BorderRadius.circular(SoupRadii.button),
-          border: primary ? null : Border.all(color: const Color(0x1AFFFFFF)),
+          border: primary ? null : Border.all(color: SoupColors.faint),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

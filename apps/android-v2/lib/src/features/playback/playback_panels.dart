@@ -266,7 +266,7 @@ class PanelChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: option.selected
             ? SoupColors.ink
-            : (focused ? const Color(0x33FFFFFF) : const Color(0x1AFFFFFF)),
+            : (focused ? const Color(0x33FFFFFF) : SoupColors.faint),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Text(

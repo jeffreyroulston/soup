@@ -1537,7 +1537,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                       decoration: BoxDecoration(
                         color: const Color(0xB3282828),
                         borderRadius: BorderRadius.circular(17),
-                        border: Border.all(color: const Color(0x1AFFFFFF)),
+                        border: Border.all(color: SoupColors.faint),
                       ),
                       alignment: Alignment.center,
                       child: Text(

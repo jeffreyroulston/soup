@@ -314,7 +314,7 @@ class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
           height: 198,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: link == null ? const Color(0x1AFFFFFF) : Colors.white,
+            color: link == null ? SoupColors.faint : Colors.white,
             borderRadius: BorderRadius.circular(18),
           ),
           alignment: Alignment.center,
@@ -999,7 +999,7 @@ class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
         height: 33,
         alignment: Alignment.center,
         decoration: const BoxDecoration(
-          color: Color(0x1AFFFFFF),
+          color: SoupColors.faint,
           shape: BoxShape.circle,
         ),
         child: Text('$n', style: SoupType.style(size: 15, weight: 800)),
@@ -1078,7 +1078,7 @@ class _Card extends StatelessWidget {
     decoration: BoxDecoration(
       color: const Color(0xEB1E1E20),
       borderRadius: BorderRadius.circular(30),
-      border: Border.all(color: const Color(0x1AFFFFFF)),
+      border: Border.all(color: SoupColors.faint),
       boxShadow: const [
         BoxShadow(
           color: Color(0x8C000000),

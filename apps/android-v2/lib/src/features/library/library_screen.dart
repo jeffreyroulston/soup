@@ -505,9 +505,9 @@ class _AzStrip extends StatelessWidget {
     width: 40,
     padding: const EdgeInsets.symmetric(vertical: 8),
     decoration: BoxDecoration(
-      color: const Color(0x99282828),
+      color: SoupColors.glass,
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: const Color(0x1AFFFFFF)),
+      border: Border.all(color: SoupColors.faint),
     ),
     child: Focus(
       canRequestFocus: false,

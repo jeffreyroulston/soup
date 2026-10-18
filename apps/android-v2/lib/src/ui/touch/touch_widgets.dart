@@ -308,6 +308,8 @@ class _TouchHeroState extends State<TouchHero> {
     _timer = Timer.periodic(const Duration(seconds: 8), (_) {
       final n = widget.slides.length;
       if (_dragging || n < 2 || !_pages.hasClients) return;
+      // Hold while another page covers this one.
+      if (!TickerMode.valuesOf(context).enabled) return;
       unawaited(
         _pages.animateToPage(
           (_index + 1) % n,

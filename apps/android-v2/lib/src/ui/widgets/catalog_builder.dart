@@ -6,6 +6,10 @@ import '../../data/connection_status.dart';
 
 /// Loads data from the [Catalog] and reloads when the catalog invalidates
 /// (favourite/watched toggles). Keeps showing stale data while reloading.
+///
+/// Only the visible page reloads straight away; pages underneath (and under
+/// the player) reload when they're shown again, so one toggle doesn't
+/// refetch every screen in the stack at once.
 class CatalogBuilder<T> extends StatefulWidget {
   const CatalogBuilder({
     required this.load,
@@ -32,17 +36,33 @@ class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
   T? _data;
   Object? _error;
   int _generation = 0;
+  bool _stale = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final visible = _visible;
     final scope = SoupScope.of(context);
     _connection = scope.connection;
     final catalog = scope.catalog;
     if (!identical(catalog, _catalog)) {
-      _catalog?.removeListener(_reload);
-      _catalog = catalog..addListener(_reload);
+      _catalog?.removeListener(_invalidated);
+      _catalog = catalog..addListener(_invalidated);
       _reload();
+    } else if (_stale && visible) {
+      _reload();
+    }
+  }
+
+  /// Also subscribes this state to route changes, so [didChangeDependencies]
+  /// runs when the page is uncovered.
+  bool get _visible => ModalRoute.of(context)?.isCurrent ?? true;
+
+  void _invalidated() {
+    if (_visible) {
+      _reload();
+    } else {
+      _stale = true;
     }
   }
 
@@ -51,6 +71,7 @@ class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
     super.didUpdateWidget(old);
     if (!_sameKeys(old.keys, widget.keys)) {
       _data = null;
+      _error = null;
       _reload();
     }
   }
@@ -64,6 +85,7 @@ class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
   }
 
   void _reload() {
+    _stale = false;
     final generation = ++_generation;
     widget
         .load(_catalog!)
@@ -86,7 +108,7 @@ class _CatalogBuilderState<T> extends State<CatalogBuilder<T>> {
 
   @override
   void dispose() {
-    _catalog?.removeListener(_reload);
+    _catalog?.removeListener(_invalidated);
     super.dispose();
   }
 

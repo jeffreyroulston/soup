@@ -64,15 +64,28 @@ class JellyfinCatalog extends Catalog {
     }
     final future = load();
     _memo[key] = (at: DateTime.now(), value: future);
-    future.catchError((Object _) {
-      _memo.remove(key);
-      return null as T;
-    });
+    // Failures aren't cached, unless a newer load has taken the slot since.
+    unawaited(
+      future.then<void>(
+        (_) {},
+        onError: (Object _) {
+          if (identical(_memo[key]?.value, future)) _memo.remove(key);
+        },
+      ),
+    );
     return future;
   }
 
+  /// Entries that carry no per-user state (watched, favourite, progress), so
+  /// a watched or favourite toggle leaves them cached.
+  static bool _userIndependent(String key) =>
+      key == 'libraries' ||
+      key.startsWith('segments:') ||
+      key.startsWith('libGenres:') ||
+      key.startsWith('libTotal:');
+
   void invalidate() {
-    _memo.clear();
+    _memo.removeWhere((key, _) => !_userIndependent(key));
     _revision++;
     notifyListeners();
   }
@@ -743,8 +756,19 @@ class JellyfinCatalog extends Catalog {
   }
 
   // ── images ───────────────────────────────────────────────────────────────
+  /// Encoded artwork, least recently used first. Bounded by count and by
+  /// bytes, since TVs have little memory to spare next to Flutter's own
+  /// decoded-image cache.
   final _images = <String, Future<Uint8List?>>{};
+  final _imageSizes = <String, int>{};
+  int _imageBytes = 0;
   static const _imageCacheSize = 400;
+  static const _imageCacheBytes = 32 << 20;
+
+  void _evictImage(String key) {
+    _images.remove(key);
+    _imageBytes -= _imageSizes.remove(key) ?? 0;
+  }
 
   @override
   Future<Uint8List?> trickplaySheet(
@@ -770,15 +794,31 @@ class JellyfinCatalog extends Catalog {
       _images[key] = hit;
       return hit;
     }
-    final future = _api
+    late final Future<Uint8List?> future;
+    future = _api
         .getBytes(
           _session,
           'Items/${ref.itemId}/Images/${ref.type}',
           query: {'tag': tag, 'maxWidth': '$maxWidth', 'quality': '80'},
         )
-        .catchError((Object _) => null);
+        .catchError((Object _) => null)
+        .then((bytes) {
+          // Settled entries only: a failure (null) is retried next time.
+          if (identical(_images[key], future)) {
+            if (bytes == null) {
+              _evictImage(key);
+            } else {
+              _imageSizes[key] = bytes.length;
+              _imageBytes += bytes.length;
+              while (_imageBytes > _imageCacheBytes && _images.length > 1) {
+                _evictImage(_images.keys.first);
+              }
+            }
+          }
+          return bytes;
+        });
     _images[key] = future;
-    if (_images.length > _imageCacheSize) _images.remove(_images.keys.first);
+    if (_images.length > _imageCacheSize) _evictImage(_images.keys.first);
     return future;
   }
 }

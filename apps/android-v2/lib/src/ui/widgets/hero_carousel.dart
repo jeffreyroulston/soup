@@ -69,7 +69,10 @@ class _HeroCarouselState extends State<HeroCarousel> {
   void initState() {
     super.initState();
     _timer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (!_paused && widget.slides.length > 1 && mounted) {
+      // TickerMode is off while another page covers Home (the player, an
+      // item page), so the carousel doesn't keep rebuilding underneath.
+      if (!mounted || !TickerMode.valuesOf(context).enabled) return;
+      if (!_paused && widget.slides.length > 1) {
         setState(() => _index = (_index + 1) % widget.slides.length);
       }
     });
@@ -109,22 +112,25 @@ class _HeroCarouselState extends State<HeroCarousel> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            for (var i = 0; i < widget.slides.length; i++)
-              ExcludeFocus(
-                excluding: i != _index,
-                child: IgnorePointer(
-                  ignoring: i != _index,
-                  child: AnimatedOpacity(
-                    opacity: i == _index ? 1 : 0,
-                    duration: const Duration(milliseconds: 700),
-                    child: _Slide(
-                      slide: widget.slides[i],
-                      height: height,
-                      first: i == 0,
-                    ),
-                  ),
-                ),
+            // Only the incoming and outgoing slides are built, so the other
+            // full-screen backdrops aren't held decoded.
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 700),
+              layoutBuilder: (current, previous) => Stack(
+                fit: StackFit.expand,
+                children: [
+                  for (final child in previous)
+                    ExcludeFocus(child: IgnorePointer(child: child)),
+                  ?current,
+                ],
               ),
+              child: _Slide(
+                key: ValueKey(widget.slides[_index].item.id),
+                slide: widget.slides[_index],
+                height: height,
+                first: _index == 0,
+              ),
+            ),
             if (widget.slides.length > 1) ...[
               Positioned(
                 right: SoupSpacing.gutter,
@@ -179,6 +185,7 @@ class _Slide extends StatelessWidget {
     required this.slide,
     required this.height,
     required this.first,
+    super.key,
   });
   final HeroSlide slide;
   final double height;

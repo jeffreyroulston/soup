@@ -73,6 +73,15 @@ class _CatalogImageState extends State<CatalogImage> {
                   gaplessPlayback: true,
                   width: double.infinity,
                   height: double.infinity,
+                  // Never decode past the requested size, whatever the server
+                  // sends (it can't upscale, so small images stay as they are).
+                  cacheWidth: widget.maxWidth,
+                  // Corrupt or unsupported bytes get the title tile, not
+                  // Flutter's broken-image box.
+                  errorBuilder: (_, _, _) => _Fallback(
+                    title: widget.fallbackTitle,
+                    fontSize: widget.fallbackFontSize,
+                  ),
                 )
               : _Fallback(
                   key: const ValueKey('fallback'),

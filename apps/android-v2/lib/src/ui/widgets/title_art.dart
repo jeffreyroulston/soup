@@ -44,13 +44,15 @@ class _TitleArtState extends State<TitleArt> {
     _load();
   }
 
+  static const _logoWidth = 800;
+
   void _load() {
     final logo = widget.logo;
     if (logo == _loaded && (_future != null || logo == null)) return;
     _loaded = logo;
     _future = logo == null
         ? null
-        : SoupScope.of(context).catalog.image(logo, maxWidth: 800);
+        : SoupScope.of(context).catalog.image(logo, maxWidth: _logoWidth);
   }
 
   @override
@@ -75,6 +77,7 @@ class _TitleArtState extends State<TitleArt> {
             fit: BoxFit.contain,
             alignment: widget.alignment,
             gaplessPlayback: true,
+            cacheWidth: _logoWidth,
             errorBuilder: (_, _, _) => widget.fallback,
           ),
         );

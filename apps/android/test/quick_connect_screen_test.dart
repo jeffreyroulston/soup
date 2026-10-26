@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup/src/features/connectivity/connectivity_view_model.dart';
+import 'package:soup_core/src/features/connectivity/connectivity_view_model.dart';
 import 'package:soup/src/features/shared/tv_text_input.dart';
 import 'support/quick_connect_fixture.dart';
 import 'widget_test.dart' show setup, FakeTvTextInput, nextToServer;

@@ -1,0 +1,10 @@
+# Soup Identity local overrides (see .env.example)
+.env
+.env.local
+node_modules/
+dist/
+*.pem
+*.key
+.DS_Store
+# Generated JWT signing keys (persisted per deployment, never committed)
+data/

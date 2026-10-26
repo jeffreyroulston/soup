@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The fill-line mark on the web canvas gradient. The inset keeps the ring
+     inside circular and squircle masks; the art has a transparent canvas. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/soup_launcher_background" />
+    <foreground>
+        <inset
+            android:drawable="@drawable/soup_launcher_art"
+            android:inset="22dp" />
+    </foreground>
+</adaptive-icon>

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:soup/src/data/session/connection_preferences_store.dart';
+import 'package:soup_core/src/data/session/connection_preferences_store.dart';
 
 void main() {
   test('connection choice survives a new store instance', () async {

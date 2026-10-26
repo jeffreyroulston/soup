@@ -1,188 +1,206 @@
-# Soup — Jellyfin, with optional Tailscale
+# Soup
 
-Soup is a Jellyfin client that connects directly to your server or through an
-optional embedded Tailscale connection. Embedded Tailscale does not require a
-separate VPN app.
+A Jellyfin client for the browser and the TV, with an optional way to let friends
+sign in with their Google account instead of a Jellyfin password.
 
-## Screenshots
+![Soup on Android TV: home screen with a featured show](docs/screenshots/tv/home.jpg)
 
-The current Festival design, rendered from the app's Flutter widgets with sample
-accounts and library artwork. The QR and Quick Connect codes are demonstrations.
+| Sign in | Movies | Episodes |
+| --- | --- | --- |
+| ![Soup sign-in with a QR code, a device code and discovered servers](docs/screenshots/tv/sign-in-soup.jpg) | ![Movies library grid with genres, filters and an A–Z strip](docs/screenshots/tv/movies.jpg) | ![Show details with season picker and episodes](docs/screenshots/tv/episodes.jpg) |
 
-### Onboarding on Android TV
+## How it fits together
 
-| Choose your connection | Connect with Tailscale (optional) |
+| Piece | What it is | Needed for |
+| --- | --- | --- |
+| **Web app** (`apps/web`) | Static site you host anywhere; runs entirely in the browser | Watching in a browser |
+| **TV app** (`apps/android-v2`) | Android TV app (also builds for LG webOS) | Watching on a TV |
+| **Jellyfin plugin** (`plugins/jellyfin-soup`) | Adds Soup sign-in and an invite list to your Jellyfin | Google sign-in |
+| **Soup Identity** (`services/soup-identity`) | Small Node + Postgres service that handles Google sign-in | Google sign-in |
+| **Tailscale** (optional) | Private network so guests can reach a Jellyfin that isn't on the internet | Remote guests |
+
+There are two ways to sign in, and you can use both:
+
+- **Direct:** enter your Jellyfin address, then sign in with Quick Connect or a
+  username and password. Only Jellyfin is involved, so nothing else needs setting up.
+- **Sign in with Soup:** the TV shows a QR code, the guest scans it, signs in
+  with Google, and they're in. The server owner invites guests by email
+  from the Jellyfin dashboard. This needs Soup Identity and the plugin.
+
+## 1. Try it without any servers
+
+Both apps have a mock mode with a built-in sample library.
+
+```sh
+# Web: http://localhost:3000, signed in automatically
+task web:deps && task web:dev:mock
+
+# TV app on an emulator or device (see "Build the TV app" below)
+task v2:run DEVICE=emulator-5554 -- --dart-define=SOUP_MOCK=true
+```
+
+## 2. Use Soup with your Jellyfin (direct sign-in)
+
+You need a Jellyfin server the device can reach.
+
+**Web app**
+
+1. In Jellyfin, go to **Dashboard → Networking** and allow the web app's address
+   as a CORS origin (e.g. `http://localhost:3000`, or wherever you host it).
+2. Run it locally, or build it and host the files:
+
+   ```sh
+   cd apps/web
+   cp .env.example .env
+   npm install
+   npm run dev          # local: http://localhost:3000
+   npm run generate     # hosting: upload .output/public to any static host
+   ```
+
+3. Open it. Under **or connect to a Jellyfin server**, pick your server or enter
+   its address, then use Quick Connect or your username and password.
+
+If you host it on `https://`, the browser will block calls to an `http://`
+Jellyfin, so put Jellyfin behind HTTPS (or a Tailscale `https://…ts.net` name).
+Hosting details, including SPA fallback and the editable `soup.config.json`, are in
+the [web app README](apps/web/README.md).
+
+**TV app**
+
+Install the APK (see [Build the TV app](#build-the-tv-app)), open Soup, pick your
+server from the list it finds on your network (or **Enter address**), then sign in
+with Quick Connect or a username and password.
+
+![TV app Jellyfin sign-in with a Quick Connect code beside username and password fields](docs/screenshots/tv/sign-in-jellyfin.jpg)
+
+## 3. Let guests sign in with Google
+
+This is for sharing your library without handing out Jellyfin passwords. The guest
+signs in with Google, Jellyfin trusts Soup Identity's signed confirmation of who they
+are, and the plugin signs them in to their own Jellyfin user.
+
+### a. Run Soup Identity
+
+It's a Node 20+ service backed by Postgres 16. Phones must be able to open it, so
+in production give it a public HTTPS address behind a reverse proxy.
+
+**To try it locally**, `docker compose up -d --build` in `services/soup-identity`
+starts it on `:8787` with Postgres. The compose file hard-codes development
+settings (dev login on, placeholder secrets) that override `.env`, so don't use it
+for a real deployment.
+
+**For a real deployment:**
+
+```sh
+cd services/soup-identity
+cp .env.example .env        # then edit, see below
+npm ci && npm run build
+npm start                   # applies database migrations on boot
+```
+
+In `.env`, set at least:
+
+| Setting | Value |
 | --- | --- |
-| ![Welcome screen with the optional Tailscale switch](docs/screenshots/onboarding/welcome-tv.png) | ![Optional Tailscale setup with a demonstration authorization QR code](docs/screenshots/onboarding/tailscale-qr-tv.png) |
+| `DATABASE_URL` | Your Postgres connection string |
+| `PUBLIC_BASE_URL` | The address phones will open, e.g. `https://identity.example.com` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | From a Google Cloud **Web application** OAuth client |
+| `GOOGLE_REDIRECT_URI` | `<PUBLIC_BASE_URL>/auth/google/callback`, also added to the OAuth client |
+| `BOOTSTRAP_PLUGIN_ID` / `BOOTSTRAP_PLUGIN_SECRET` | A username and password the Jellyfin plugin will use |
+| `TRANSPORT_GRANT_ENCRYPTION_KEY` | 64 random hex characters (`openssl rand -hex 32`) |
+| `ALLOW_DEV_LOGIN` | `false` (`.env.example` has `true` for local testing) |
 
-| Find your server | Sign in |
+Check it with `curl https://identity.example.com/healthz`. The service keeps its
+signing keys in `data/`, so back that folder up; losing it signs everyone out.
+The [Soup Identity README](services/soup-identity/README.md) has the Google
+Console steps, and `services/soup-identity/deploy/ploi/` has a process-manager
+and nginx setup you can copy.
+
+### b. Install the Jellyfin plugin
+
+The plugin targets Jellyfin 10.11. Build it and copy it into Jellyfin's plugins folder:
+
+```sh
+cd plugins/jellyfin-soup
+./scripts/stage-plugin.sh     # needs the .NET 9 SDK; output in docker/plugin/
+```
+
+Copy the contents of `docker/plugin/` into a new folder in your Jellyfin `plugins`
+directory (e.g. `plugins/Soup Auth_0.1.0.0/`) and restart Jellyfin. To try it out first,
+`task jellyfin:up` starts a throwaway Jellyfin on `http://localhost:8096` with the
+plugin already installed.
+
+### c. Connect the plugin to Soup Identity
+
+In Jellyfin, open **Soup Invites** from the dashboard menu, then **Settings**
+(top right):
+
+1. **Soup base URL:** your Soup Identity address.
+2. **Plugin id / secret:** the `BOOTSTRAP_PLUGIN_ID` / `BOOTSTRAP_PLUGIN_SECRET` from step a.
+3. **Server id** and **Audience:** any stable name, e.g. `home` and `jellyfin:home`.
+4. **Assertion issuer:** Soup Identity's `ASSERTION_ISSUER` (default `https://soup.local/identity`).
+5. Save, go back to **Invites**, and select **Register server**.
+
+### d. Invite a guest
+
+On **Soup Invites**, invite the guest's **Google email address**. It must match
+the Google account they'll sign in with. To use an existing Jellyfin user, put
+its name in **Jellyfin username hint**; otherwise the plugin creates a user for
+them the first time they sign in.
+
+### e. Guest signs in
+
+On the TV, the guest opens Soup and scans the QR code with their phone (or opens
+the address shown and types the code). On the phone they tap **Continue with
+Google**, and the TV signs itself in. The web app's sign-in page has the same QR
+code, plus a **Continue with Google** button for signing in on that computer.
+
+Point the apps at your Identity: in the web app, **Settings → General → Identity
+server** (or `soupIdentityBaseUrl` in `soup.config.json`); for the TV app, build with
+`--dart-define=SOUP_IDENTITY_BASE_URL=https://identity.example.com`.
+
+### f. Optional: Tailscale for remote guests
+
+If your Jellyfin isn't on the internet, the plugin can give each invited guest a
+single-use Tailscale key, and the TV app joins your tailnet on its own; there's no
+separate VPN app. Add a Tailscale OAuth client and guest tag in the plugin's
+Settings. See the [plugin README](plugins/jellyfin-soup/README.md) for the
+Tailscale setup and the access rules to add to your tailnet.
+
+## Build the TV app
+
+You need Flutter, the Android SDK and NDK, Go (for the embedded Tailscale library)
+and [Task](https://taskfile.dev/).
+
+```sh
+task setup                                  # submodules + dependencies
+task v2:build                               # debug APK
+task v2:install DEVICE=<adb-serial>         # build and install on a device/emulator
+task emulator:tv:start                      # boot an Android TV emulator
+```
+
+LG webOS builds run in Docker; see the [TV app README](apps/android-v2/README.md#webos).
+
+## Repository layout
+
+| Path | Contents |
 | --- | --- |
-| ![Automatically discovered Jellyfin server with a manual address option](docs/screenshots/onboarding/jellyfin-discovery-tv.png) | ![Jellyfin sign-in with Quick Connect and username and password options](docs/screenshots/onboarding/jellyfin-sign-in-tv.png) |
+| `apps/web` | Web app (Nuxt) |
+| `apps/android-v2` | TV app (Flutter, Android TV and webOS) |
+| `apps/android` | Original Android phone/TV app ([README](apps/android/README.md)) |
+| `services/soup-identity` | Soup Identity service |
+| `plugins/jellyfin-soup` | Jellyfin plugin |
+| `packages/` | Shared Dart code: `soup_core`, `soup_identity`, `soup_tailscale` (Tailscale FFI), `jellyfin_api` (generated) |
+| `docs/` | Design notes, branding, development reports, screenshots |
 
-### Sample signed-in homepage
-
-![Festival homepage with a featured film and sample Continue Watching row](docs/screenshots/festival/home-light-tv.png)
-
-Browse the [complete onboarding gallery](docs/screenshots/onboarding/README.md)
-and [Festival gallery](docs/screenshots/festival/README.md) for phone layouts,
-additional setup steps, and light and dark themes.
-
-## Supported target
-
-- Android 12+ mobile and Android TV: Flutter/Dart in `apps/android`.
-- Embedded networking: Tailscale's C library through the FFI package in `packages/soup_tailscale`.
-
-The Android prototype includes the complete setup path: optional embedded Tailscale,
-direct or authenticated app-local SOCKS5 networking, Jellyfin 10.11 discovery, and
-Quick Connect or username/password sign-in. The UI depends on a substitutable
-`TailscaleClient` boundary and adapts between touch-sized phone layouts and
-D-pad-friendly TV layouts. After sign-in, Soup restores the secure session and loads Continue
-Watching, Recently Added Movies, and Recently Added TV, including artwork,
-through the same selected connection. Libraries open into browsable grids, and item details
-show artwork, metadata, overview, Play/Resume, plus season and episode navigation
-for series. Playback negotiates direct play with Jellyfin and falls back to HLS
-transcoding when required, with resume seeking, transport controls, progress
-reporting, and selectable WebVTT subtitles. The authenticated loopback playback
-bridge uses the same selected connection as the rest of the app. Tailscale setup
-uses an authorization QR code scanned with another device on both mobile and TV. Server
-discovery searches the local network and, when connected, visible Tailscale devices.
-Soup tries Jellyfin's built-in discovery first, then standard Jellyfin ports and
-Tailscale HTTPS addresses on known devices. Verified servers appear as selectable
-cards; manual entry is always available. Discovery is bounded and may not find
-unadvertised custom ports, reverse-proxy hostnames or servers behind subnet routers.
-It never scans arbitrary LAN address ranges or runs after a saved sign-in is restored.
-Manual entry separates the HTTPS/HTTP selector from the address and recognises a
-protocol typed into the field. Connection and sign-in errors stay pinned above
-the scrollable form so they remain readable at constrained heights.
-
-## Customisable interface
-
-After the first successful Jellyfin sign-in, Soup asks how the authenticated
-experience should look. The choice is stored for the device and can be changed
-later from Settings without reconnecting or changing accounts.
-
-- **Fruity** is a spacious, artwork-led interface inspired by Apple TV. On TV,
-  its top navigation is Home, TV, Movies, and Settings; phones use the same
-  destinations in compact bottom navigation.
-- **Blockbuster** is a denser, browse-led interface inspired by Netflix. It uses
-  a billboard home and an expanding navigation rail on Android TV.
-- **Festival** is the default theme: paper, cobalt and acid yellow, condensed
-  poster headings and crisp controls. Its light version continues the onboarding
-  identity; a coordinated dark version is available for evening viewing.
-- Both layouts support Festival, Soup, Ocean, Grove, and Mono palettes, each with
-  an explicit light and dark version. Existing saved choices are retained.
-- Settings → Use default selects Festival/light with the Fruity layout. Changes
-  take effect when you select Apply appearance.
-
-Onboarding and sign-in always use Soup's fixed setup design. Appearance choices
-apply only after authentication. The current customisation boundary is layout,
-palette, and brightness; custom row ordering, typography, density, and a freeform
-layout builder are intentionally deferred.
-
-Secrets are handled deliberately:
-
-- Interactive registration sends no Tailscale credential through Soup. The
-  embedded node supplies an HTTPS authorization URL that Soup renders as a QR
-  code. Browser-launch and auth-key options are not offered in Soup onboarding.
-- The Jellyfin password is cleared immediately after submission or backward navigation and is never
-  persisted.
-- The Jellyfin access token and Soup device ID are stored with Android-backed
-  secure storage; Android cloud backup is disabled for the app.
-- Persistent Tailscale node state lives in the app support directory so a valid
-  node can reconnect without another sign-in. The connection choice is stored
-  separately; direct sessions never start the embedded Tailscale node.
-
-## Android development
-
-Development workflows are collected in the root `Taskfile.yml`. Install
-[Task](https://taskfile.dev/), then discover every available command with:
+## Development
 
 ```sh
-task --list
+task --list   # every task, with descriptions
+task qa       # format check, analysis and tests across the Dart packages
 ```
 
-The common workflow is:
-
-```sh
-task setup       # Initialize libtailscale and install package dependencies.
-task qa          # Check formatting, analyze, and run every test suite.
-task build       # Build the debug APK.
-task run         # Run on the selected Flutter device.
-```
-
-Use `task devices` to find a device ID, then pass it as a Task variable when
-needed, for example `task run DEVICE=emulator-5554`. Android TV image setup,
-keyboard configuration, boot, wait, and shutdown commands are grouped under
-`emulator:tv:*`; the defaults create the API 34 ARM64
-`Soup_Android_TV_API_34` AVD. This development image boots without Google TV
-account onboarding, and the Taskfile explicitly enables host keyboard input.
-Run `task --list` for descriptions of package-specific QA, release builds, API
-generation, coverage, logging, and cleanup commands.
-
-The equivalent commands without Task are:
-
-```sh
-git submodule update --init --recursive
-cd apps/android
-flutter pub get
-flutter analyze
-flutter test
-flutter build apk --debug
-```
-
-The debug APK is written to `apps/android/build/app/outputs/flutter-apk/app-debug.apk`.
-See [headless Linux setup](docs/development/android-linux.md) for SDK configuration
-and building on a machine with limited memory.
-The build hook compiles the pinned upstream `libtailscale` source with Go and
-the Android NDK for every ABI requested by Flutter. Android 12 / API 31 is the
-minimum supported version.
-
-On first launch, **Use Tailscale** is off. Select **Next** to find a Jellyfin
-10.11+ server reachable from your device, or enable Tailscale to reveal its
-sign-in QR code. Scan with another device and finish authorization. If device
-approval is required, Soup waits for the administrator; after connection,
-select **Next**. You can turn Tailscale off at any point in that connection step.
-
-Soup checks the server before offering Quick Connect (when enabled on the
-server) or username and password sign-in. **Back** lets you edit the server or
-connection choice. Both HTTP and HTTPS URLs are supported, with normal
-certificate validation and no automatic fallback from Tailscale to direct
-networking. Existing saved accounts remain on Tailscale
-until you explicitly change the connection choice.
-
-The onboarding layout supports touch, D-pad focus, reduced motion,
-and constrained TV heights. [Review screenshots and regeneration instructions](docs/screenshots/onboarding/README.md)
-are available for the actual Flutter widgets rendered with demonstration data.
-The [discovery verification report](docs/development/android-tv-discovery-2026-09-09.md)
-documents network limits, automated coverage and Chromecast checks.
-
-## Jellyfin API generation
-
-The narrow Dart API used by the prototype is generated from
-`tool/openapi/jellyfin-10.11-prototype.yaml`. That contract is derived from
-Jellyfin's published 10.11.1 OpenAPI snapshot. Generated operations currently
-cover public system information and username authentication; the handwritten
-facade contains the authenticated library queries and stable app models.
-
-```sh
-./tool/generate_jellyfin_api.sh
-```
-
-The generated package is committed at `packages/jellyfin_api`. The handwritten
-application facade owns authorization headers, version checks, timeouts, and
-mapping generated wire models into stable app models.
-
-## Tailscale FFI package
-
-```sh
-cd packages/soup_tailscale
-flutter analyze
-flutter test
-```
-
-Upstream library: https://github.com/tailscale/libtailscale
-
-Soup pins the upstream source as a Git submodule. On Android, a small bridge
-supplies network-interface information using Java's `NetworkInterface` API,
-matching the approach used by the official Tailscale Android client. This is
-required because Android sandboxes direct netlink interface discovery.
+- Web app: `task web:dev`, `task web:typecheck`.
+- Soup Identity: `npm test` in `services/soup-identity` (needs its Postgres running).
+- Jellyfin API bindings: `./tool/generate_jellyfin_api.sh` regenerates `packages/jellyfin_api`.
+- Android emulator setup and limited-memory builds: [headless Linux setup](docs/development/android-linux.md).

@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:socks5_proxy/socks_server.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_client_factory.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/session/connection_preferences_store.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_client_factory.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/session/connection_preferences_store.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
 void main() {

@@ -3,8 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_metadata_repository.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_metadata_repository.dart';
 import 'package:soup/src/features/library/library_screen.dart';
 
 void main() {

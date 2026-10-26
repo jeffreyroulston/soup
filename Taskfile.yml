@@ -6,9 +6,14 @@ vars:
   AVDMANAGER: '{{.ANDROID_SDK}}/cmdline-tools/latest/bin/avdmanager'
   EMULATOR: '{{.ANDROID_SDK}}/emulator/emulator'
   SDKMANAGER: '{{.ANDROID_SDK}}/cmdline-tools/latest/bin/sdkmanager'
-  TV_AVD: '{{.TV_AVD | default "Soup_Android_TV_API_34"}}'
+  # Linux/x86_64 hosts need the x86_64 TV image; Apple Silicon can override:
+  #   task emulator:tv:start TV_AVD=Soup_Android_TV_API_34 \
+  #     TV_IMAGE=system-images;android-34;android-tv;arm64-v8a
+  HOST_ARCH:
+    sh: uname -m
+  TV_AVD: '{{.TV_AVD | default (eq .HOST_ARCH "arm64" | ternary "Soup_Android_TV_API_34" "Soup_Android_TV_x86_64")}}'
   TV_DEVICE: '{{.TV_DEVICE | default "tv_1080p"}}'
-  TV_IMAGE: '{{.TV_IMAGE | default "system-images;android-34;android-tv;arm64-v8a"}}'
+  TV_IMAGE: '{{.TV_IMAGE | default (eq .HOST_ARCH "arm64" | ternary "system-images;android-34;android-tv;arm64-v8a" "system-images;android-36;android-tv;x86_64")}}'
   EMULATOR_SERIAL: '{{.EMULATOR_SERIAL | default "emulator-5554"}}'
 
 tasks:
@@ -42,11 +47,12 @@ tasks:
       - git submodule update --init --recursive
 
   deps:all:
-    desc: Install dependencies for the app and both Dart packages
+    desc: Install dependencies for the app and Dart packages
     cmds:
       - task: deps:app
       - task: deps:tailscale
       - task: deps:jellyfin
+      - task: deps:soup-identity
 
   deps:app:
     desc: Install Flutter dependencies for the Android app
@@ -66,6 +72,12 @@ tasks:
     cmds:
       - dart pub get
 
+  deps:soup-identity:
+    desc: Install Dart dependencies for the Soup Identity client package
+    dir: packages/soup_identity
+    cmds:
+      - dart pub get
+
   format:
     desc: Format handwritten and generated Dart source and tests
     cmds:
@@ -73,6 +85,7 @@ tasks:
         dart format
         apps/android/lib apps/android/test
         packages/soup_tailscale/lib packages/soup_tailscale/test
+        packages/soup_identity/lib packages/soup_identity/test
         packages/jellyfin_api/lib packages/jellyfin_api/test
 
   format:check:
@@ -82,18 +95,34 @@ tasks:
         dart format --output=none --set-exit-if-changed
         apps/android/lib apps/android/test
         packages/soup_tailscale/lib packages/soup_tailscale/test
+        packages/soup_identity/lib packages/soup_identity/test
         packages/jellyfin_api/lib packages/jellyfin_api/test
 
   analyze:
-    desc: Run static analysis for the app and both packages
+    desc: Run static analysis for the app and packages
     cmds:
       - task: analyze:app
+      - task: analyze:v2
+      - task: analyze:core
       - task: analyze:tailscale
       - task: analyze:jellyfin
+      - task: analyze:soup-identity
 
   analyze:app:
     desc: Analyze the Flutter Android app
     dir: apps/android
+    cmds:
+      - flutter analyze
+
+  analyze:v2:
+    desc: Analyze the Flutter Android v2 app
+    dir: apps/android-v2
+    cmds:
+      - flutter analyze
+
+  analyze:core:
+    desc: Analyze the shared soup_core package
+    dir: packages/soup_core
     cmds:
       - flutter analyze
 
@@ -109,17 +138,31 @@ tasks:
     cmds:
       - dart analyze
 
+  analyze:soup-identity:
+    desc: Analyze the Soup Identity Dart client package
+    dir: packages/soup_identity
+    cmds:
+      - dart analyze
+
   test:
     aliases: [test:all]
-    desc: Run tests for the app and both packages
+    desc: Run tests for the app and packages
     cmds:
       - task: test:app
+      - task: test:v2
       - task: test:tailscale
       - task: test:jellyfin
+      - task: test:soup-identity
 
   test:app:
     desc: Run Android app tests; pass extra flags after --
     dir: apps/android
+    cmds:
+      - flutter test {{.CLI_ARGS}}
+
+  test:v2:
+    desc: Run Android v2 app tests; pass extra flags after --
+    dir: apps/android-v2
     cmds:
       - flutter test {{.CLI_ARGS}}
 
@@ -134,6 +177,12 @@ tasks:
     dir: packages/jellyfin_api
     cmds:
       - flutter test {{.CLI_ARGS}}
+
+  test:soup-identity:
+    desc: Run Soup Identity client package tests
+    dir: packages/soup_identity
+    cmds:
+      - dart test {{.CLI_ARGS}}
 
   test:coverage:
     desc: Run Android app tests and write an LCOV coverage report
@@ -169,7 +218,7 @@ tasks:
 
   db:generate:
     desc: Regenerate the Drift database bindings
-    dir: apps/android
+    dir: packages/soup_core
     cmds:
       - dart run build_runner build
 
@@ -177,7 +226,7 @@ tasks:
     desc: Regenerate Drift bindings and fail if committed output is stale
     cmds:
       - task: db:generate
-      - git diff --exit-code -- apps/android/lib/src/data/cache
+      - git diff --exit-code -- packages/soup_core/lib/src/data/cache
 
   build:apk:debug:
     aliases: [build]
@@ -185,6 +234,99 @@ tasks:
     dir: apps/android
     cmds:
       - flutter build apk --debug {{.CLI_ARGS}}
+
+  v2:build:
+    desc: Build the Android v2 debug APK
+    dir: apps/android-v2
+    cmds:
+      - flutter build apk --debug {{.CLI_ARGS}}
+
+  v2:run:
+    desc: Run Soup v2 on a selected device; optionally pass DEVICE=<id>
+    dir: apps/android-v2
+    cmds:
+      - 'flutter run {{if .DEVICE}}--device-id "{{.DEVICE}}"{{end}} {{.CLI_ARGS}}'
+
+  v2:install:
+    desc: Build and install the v2 debug APK; optionally pass DEVICE=<adb-serial>
+    deps: [v2:build]
+    cmds:
+      - '"{{.ADB}}" {{if .DEVICE}}-s "{{.DEVICE}}"{{end}} install -r apps/android-v2/build/app/outputs/flutter-apk/app-debug.apk'
+
+  # webOS builds run in an Ubuntu container (tool/webos/Dockerfile) with LG's
+  # flutter-webOS. It keeps its own .dart_tool, pub cache and lockfile
+  # (webos/pubspec.lock: flutter-webOS pins Flutter 3.38) so the host's Android
+  # setup is untouched.
+  v2:webos:image:
+    desc: Build the flutter-webOS image; needs WEBOS_NDK_ACCEPT_EULA=1 (LG SDK licence)
+    dir: tool/webos
+    cmds:
+      - >-
+        docker build -t soup-flutter-webos
+        --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)
+        --build-arg WEBOS_NDK_ACCEPT_EULA=${WEBOS_NDK_ACCEPT_EULA:-}
+        .
+    # Built once; rebuild with `docker rmi soup-flutter-webos` first.
+    status:
+      - docker image inspect soup-flutter-webos >/dev/null 2>&1
+
+  v2:webos:volumes:
+    internal: true
+    deps: [v2:webos:image]
+    cmds:
+      # New named volumes are root-owned; hand them to the container user.
+      - >-
+        docker run --rm -u root
+        -v soup-webos-dart-tool:/v/dart-tool -v soup-webos-pub-cache:/v/pub-cache
+        -v soup-webos-config:/v/config -v soup-webos-ssh:/v/ssh
+        -v soup-webos-ares:/v/ares
+        soup-flutter-webos chown -R soup /v
+
+  v2:webos:build:
+    desc: Build the Soup v2 webOS IPK in the flutter-webOS container; pass MODE=debug|profile|release
+    deps: [v2:webos:volumes]
+    cmds:
+      - test -f apps/android-v2/webos/pubspec.lock || cp apps/android-v2/pubspec.lock apps/android-v2/webos/pubspec.lock
+      - >-
+        docker run --rm
+        -v "$PWD":/soup
+        -v "$PWD/apps/android-v2/webos/pubspec.lock":/soup/apps/android-v2/pubspec.lock
+        -v soup-webos-dart-tool:/soup/apps/android-v2/.dart_tool
+        -v soup-webos-pub-cache:/home/soup/.pub-cache
+        soup-flutter-webos
+        bash -c '. "$WEBOS_FLUTTER_NDK_ENV" && flutter-webos build webos --{{.MODE | default "release"}} {{.CLI_ARGS}}'
+      - ls apps/android-v2/build/webos/*/{{.MODE | default "release"}}/ipk/
+
+  v2:webos:run:
+    desc: Build, install and launch Soup v2 on a registered webOS TV; pass DEVICE=<id> and MODE=debug|profile|release
+    deps: [v2:webos:volumes]
+    cmds:
+      - >-
+        docker run --rm -it --network host
+        -v "$PWD":/soup
+        -v "$PWD/apps/android-v2/webos/pubspec.lock":/soup/apps/android-v2/pubspec.lock
+        -v soup-webos-dart-tool:/soup/apps/android-v2/.dart_tool
+        -v soup-webos-pub-cache:/home/soup/.pub-cache
+        -v soup-webos-config:/home/soup/.config
+        -v soup-webos-ssh:/home/soup/.ssh
+        -v soup-webos-ares:/home/soup/.webos
+        soup-flutter-webos
+        bash -c '. "$WEBOS_FLUTTER_NDK_ENV" && flutter-webos run {{if .DEVICE}}-d "{{.DEVICE}}"{{end}} --{{.MODE | default "release"}} {{.CLI_ARGS}}'
+
+  v2:webos:shell:
+    desc: Open a shell in the flutter-webOS container (register a TV, flutter-webos devices)
+    deps: [v2:webos:volumes]
+    cmds:
+      - >-
+        docker run --rm -it --network host
+        -v "$PWD":/soup
+        -v "$PWD/apps/android-v2/webos/pubspec.lock":/soup/apps/android-v2/pubspec.lock
+        -v soup-webos-dart-tool:/soup/apps/android-v2/.dart_tool
+        -v soup-webos-pub-cache:/home/soup/.pub-cache
+        -v soup-webos-config:/home/soup/.config
+        -v soup-webos-ssh:/home/soup/.ssh
+        -v soup-webos-ares:/home/soup/.webos
+        soup-flutter-webos bash
 
   build:apk:release:
     desc: Build a release APK using the prototype signing configuration
@@ -287,6 +429,46 @@ tasks:
     cmds:
       - '"{{.ADB}}" -s "{{.EMULATOR_SERIAL}}" emu kill'
 
+  jellyfin:stage:
+    desc: Publish Soup Auth plugin into plugins/jellyfin-soup/docker/plugin
+    dir: plugins/jellyfin-soup
+    cmds:
+      - ./scripts/stage-plugin.sh
+
+  jellyfin:build:
+    desc: Stage the plugin and build soup-jellyfin:local
+    deps: [jellyfin:stage]
+    dir: plugins/jellyfin-soup
+    cmds:
+      - docker build -f docker/Dockerfile -t soup-jellyfin:local .
+
+  jellyfin:rebuild:
+    desc: Restage plugin, rebuild image, and recreate the Jellyfin container
+    deps: [jellyfin:build]
+    dir: plugins/jellyfin-soup
+    cmds:
+      # Project name "docker" matches volumes created by compose in docker/ (keeps admin user).
+      - docker compose -p docker -f docker/docker-compose.yml up -d --force-recreate
+
+  jellyfin:up:
+    desc: Build and start local Jellyfin with Soup Auth (http://localhost:8096)
+    deps: [jellyfin:build]
+    dir: plugins/jellyfin-soup
+    cmds:
+      - docker compose -p docker -f docker/docker-compose.yml up -d
+
+  jellyfin:down:
+    desc: Stop local Soup Jellyfin container
+    dir: plugins/jellyfin-soup
+    cmds:
+      - docker compose -f docker/docker-compose.yml down
+
+  jellyfin:logs:
+    desc: Tail Soup Jellyfin container logs
+    dir: plugins/jellyfin-soup
+    cmds:
+      - docker compose -f docker/docker-compose.yml logs -f --tail=100
+
   clean:
     desc: Remove Flutter build outputs for the app and Tailscale package
     cmds:
@@ -304,3 +486,53 @@ tasks:
     dir: packages/soup_tailscale
     cmds:
       - flutter clean
+
+  web:deps:
+    desc: Install npm dependencies for the Soup web app
+    dir: apps/web
+    cmds:
+      - npm install
+
+  web:dev:
+    desc: Run the Soup Nuxt web app in development
+    dir: apps/web
+    cmds:
+      - npm run dev
+
+  web:dev:mock:
+    desc: Run the web app with an in-memory mock catalog (no Identity/Jellyfin)
+    dir: apps/web
+    cmds:
+      - NUXT_PUBLIC_MOCK=true npm run dev
+
+  web:build:
+    desc: Build the Soup Nuxt web app
+    dir: apps/web
+    cmds:
+      - npm run build
+
+  web:generate:
+    desc: Build the Soup web app as a static SPA for central hosting (.output/public)
+    dir: apps/web
+    cmds:
+      - npm run generate
+
+  web:generate:nas:
+    desc: Build the static SPA for the Asustor NAS (/soup/ on 192.168.68.100) using apps/web/.env.nas
+    dir: apps/web
+    cmds:
+      - npm run generate -- --dotenv .env.nas
+      - cp deploy/nas/.htaccess .output/public/.htaccess
+      - cp deploy/nas/soup.config.json .output/public/soup.config.json
+
+  web:preview:
+    desc: Serve the generated static SPA with history fallback on :3001
+    dir: apps/web
+    cmds:
+      - npx --yes serve@14 -s .output/public -l 3001
+
+  web:typecheck:
+    desc: Typecheck the Soup Nuxt web app
+    dir: apps/web
+    cmds:
+      - npm run typecheck

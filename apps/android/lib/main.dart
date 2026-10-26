@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:soup/src/app.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_discovery.dart';
-import 'package:soup/src/platform/android_network_interfaces.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_discovery.dart';
+import 'package:soup_core/src/platform/android_network_interfaces.dart';
 import 'package:soup_tailscale/soup_tailscale.dart';
 
 Future<void> main() async {

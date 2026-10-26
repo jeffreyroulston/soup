@@ -5,11 +5,11 @@ import 'package:soup/src/features/library/festival_hero.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:soup/src/data/appearance/appearance_settings.dart';
-import 'package:soup/src/data/artwork/artwork_cache.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_metadata_repository.dart';
+import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_metadata_repository.dart';
 import 'package:soup/src/features/appearance/soup_theme.dart';
-import 'package:soup/src/features/library/library_view_model.dart';
+import 'package:soup_core/src/features/library/library_view_model.dart';
 import 'package:soup/src/features/shared/adaptive_backdrop_contrast.dart';
 import 'package:soup/src/features/shared/artwork_placeholder.dart';
 import 'package:soup/src/features/shared/fading_artwork.dart';
@@ -41,6 +41,7 @@ const _blockbusterFocusedCardBottomClearance = 12.0;
 const _blockbusterRailTransitionDuration = Duration(milliseconds: 180);
 const _blockbusterRailClipFallbackFraction = 0.62;
 const _blockbusterRailFadeExtent = 64.0;
+const _heroScrollBlackoutExtent = 240.0;
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({
@@ -740,28 +741,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
           );
     final heroWidget = heroContentItem == null
         ? null
-        : _FruityHero(
-            blockbuster: blockbuster,
-            item: heroContentItem,
-            userName: widget.session.userName,
-            image: heroContentImage!,
-            onOpen: () => _open(heroContentItem),
-            onHeroFocused: blockbuster
-                ? () => _restoreFullHero(selectedBlockbusterHero!)
-                : null,
-            focusNode: blockbusterWide
-                ? _blockbusterHeroFocusNode
-                : _festivalHeroFocus,
-            heroIndex: blockbusterWide ? effectiveHeroIndex : null,
-            heroCount: blockbusterWide ? blockbusterHeroItems.length : null,
-            onPreviousHero: blockbusterHeroItems.length > 1
-                ? () => _moveBlockbusterHero(blockbusterHeroItems, -1)
-                : null,
-            onNextHero: blockbusterHeroItems.length > 1
-                ? () => _moveBlockbusterHero(blockbusterHeroItems, 1)
-                : null,
-            showBackdrop: !blockbusterWide,
-            showContent: !hasFocusedRail,
+        : ListenableBuilder(
+            listenable: _homeScrollController,
+            builder: (context, _) => _FruityHero(
+              blockbuster: blockbuster,
+              item: heroContentItem,
+              userName: widget.session.userName,
+              image: heroContentImage!,
+              onOpen: () => _open(heroContentItem),
+              onHeroFocused: blockbuster
+                  ? () => _restoreFullHero(selectedBlockbusterHero!)
+                  : null,
+              focusNode: blockbusterWide
+                  ? _blockbusterHeroFocusNode
+                  : _festivalHeroFocus,
+              heroIndex: blockbusterWide ? effectiveHeroIndex : null,
+              heroCount: blockbusterWide ? blockbusterHeroItems.length : null,
+              onPreviousHero: blockbusterHeroItems.length > 1
+                  ? () => _moveBlockbusterHero(blockbusterHeroItems, -1)
+                  : null,
+              onNextHero: blockbusterHeroItems.length > 1
+                  ? () => _moveBlockbusterHero(blockbusterHeroItems, 1)
+                  : null,
+              showBackdrop: !blockbusterWide,
+              showContent: !hasFocusedRail,
+              scrollFade: _homeHeroScrollFade(),
+            ),
           );
     final homeContent = CustomScrollView(
       key: const ValueKey('library-home'),
@@ -818,10 +823,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return Stack(
       children: [
         Positioned.fill(
-          child: _BlockbusterHomeBackground(
-            artworkKey: backdropItem.id,
-            image: heroContentImage!,
-            blurHash: backdropItem.backdropBlurHash,
+          child: ListenableBuilder(
+            listenable: _homeScrollController,
+            builder: (context, _) => _BlockbusterHomeBackground(
+              artworkKey: backdropItem.id,
+              image: heroContentImage!,
+              blurHash: backdropItem.backdropBlurHash,
+              scrollFade: _homeHeroScrollFade(),
+            ),
           ),
         ),
         clippedHomeContent,
@@ -830,12 +839,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
             key: _blockbusterPinnedHeroKey,
             item: heroContentItem!,
             userName: widget.session.userName,
-            image: heroContentImage,
+            image: heroContentImage!,
             onOpen: () => _open(heroContentItem),
             focusNode: _blockbusterHeroFocusNode,
             onFocused: () => _restoreFullHero(selectedBlockbusterHero!),
           ),
       ],
+    );
+  }
+
+  double _homeHeroScrollFade() {
+    if (!_homeScrollController.hasClients) return 0;
+    return (_homeScrollController.offset / _heroScrollBlackoutExtent).clamp(
+      0.0,
+      1.0,
     );
   }
 
@@ -1813,6 +1830,7 @@ class _FruityHero extends StatelessWidget {
     this.onNextHero,
     this.showBackdrop = true,
     this.showContent = true,
+    this.scrollFade = 0,
   });
 
   final bool blockbuster;
@@ -1828,6 +1846,7 @@ class _FruityHero extends StatelessWidget {
   final VoidCallback? onNextHero;
   final bool showBackdrop;
   final bool showContent;
+  final double scrollFade;
 
   @override
   Widget build(BuildContext context) {
@@ -1835,6 +1854,7 @@ class _FruityHero extends StatelessWidget {
     final wide = size.width >= 840;
     final theme = Theme.of(context);
     final tokens = theme.extension<AuthenticatedThemeTokens>();
+    final fade = scrollFade.clamp(0.0, 1.0);
     if ((tokens?.festival ?? false) && !blockbuster) {
       return FestivalHero(
         item: item,
@@ -1842,6 +1862,7 @@ class _FruityHero extends StatelessWidget {
         image: image,
         onOpen: onOpen,
         focusNode: focusNode,
+        scrollFade: fade,
       );
     }
     final heroHeight = blockbuster && wide
@@ -1982,6 +2003,24 @@ class _FruityHero extends StatelessWidget {
                 ),
               ),
             ),
+          if (showBackdrop)
+            IgnorePointer(
+              child: DecoratedBox(
+                key: const ValueKey('fruity-hero-scroll-blackout'),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: fade * 0.25),
+                      Colors.black.withValues(alpha: 0.2 + fade * 0.5),
+                      Colors.black.withValues(alpha: 0.55 + fade * 0.45),
+                    ],
+                    stops: const [0.35, 0.7, 1],
+                  ),
+                ),
+              ),
+            ),
           if (showContent)
             Align(
               alignment: Alignment.bottomLeft,
@@ -2102,15 +2141,18 @@ class _BlockbusterHomeBackground extends StatelessWidget {
     required this.artworkKey,
     required this.image,
     required this.blurHash,
+    this.scrollFade = 0,
   });
 
   final String artworkKey;
   final Future<CachedArtwork?> image;
   final String? blurHash;
+  final double scrollFade;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final fade = scrollFade.clamp(0.0, 1.0);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -2141,10 +2183,27 @@ class _BlockbusterHomeBackground extends StatelessWidget {
               end: Alignment.bottomCenter,
               colors: [
                 Colors.transparent,
-                theme.scaffoldBackgroundColor.withValues(alpha: 0.12),
-                theme.scaffoldBackgroundColor.withValues(alpha: 0.9),
+                Colors.black.withValues(alpha: 0.18 + fade * 0.25),
+                Colors.black.withValues(alpha: 0.82 + fade * 0.18),
               ],
               stops: const [0.38, 0.7, 1],
+            ),
+          ),
+        ),
+        IgnorePointer(
+          child: DecoratedBox(
+            key: const ValueKey('blockbuster-background-scroll-blackout'),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: fade * 0.35),
+                  Colors.black.withValues(alpha: fade * 0.75),
+                  Colors.black.withValues(alpha: fade),
+                ],
+                stops: const [0, 0.55, 1],
+              ),
             ),
           ),
         ),

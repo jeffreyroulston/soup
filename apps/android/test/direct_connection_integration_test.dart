@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_client_factory.dart';
-import 'package:soup/src/data/playback/playback_bridge.dart';
-import 'package:soup/src/data/session/connection_preferences_store.dart';
-import 'package:soup/src/features/connectivity/connectivity_view_model.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_client_factory.dart';
+import 'package:soup_core/src/data/playback/playback_bridge.dart';
+import 'package:soup_core/src/data/session/connection_preferences_store.dart';
+import 'package:soup_core/src/features/connectivity/connectivity_view_model.dart';
 
 import 'support/connectivity_fakes.dart';
 

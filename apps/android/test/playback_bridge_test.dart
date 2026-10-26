@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/playback/playback_bridge.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/playback/playback_bridge.dart';
 
 void main() {
   test(

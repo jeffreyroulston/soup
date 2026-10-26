@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter/services.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup/src/features/appearance/soup_theme.dart';
-import 'package:soup/src/data/playback/playback_bridge.dart';
-import 'package:soup/src/features/playback/video_controller.dart';
+import 'package:soup_core/src/data/playback/playback_bridge.dart';
+import 'package:soup_core/src/features/playback/video_controller.dart';
 
 class PlaybackScreen extends StatefulWidget {
   const PlaybackScreen({

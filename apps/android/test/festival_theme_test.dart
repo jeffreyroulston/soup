@@ -6,8 +6,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup/src/data/appearance/appearance_settings.dart';
-import 'package:soup/src/data/artwork/artwork_cache.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup/src/features/appearance/soup_theme.dart';
 import 'package:soup/src/features/details/details_screen.dart';
 import 'package:soup/src/features/library/library_screen.dart';
@@ -162,6 +162,14 @@ void main() {
           expect(tester.takeException(), isNull);
           expect(
             find.byKey(const ValueKey('festival-hero-panel')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const ValueKey('festival-hero-product-gradient')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const ValueKey('festival-hero-scroll-blackout')),
             findsOneWidget,
           );
           Future<void> capture(String page) async {

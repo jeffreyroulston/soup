@@ -1,0 +1,22 @@
+# Soup web on a NAS (or any Docker host).
+#   docker compose up -d --build
+# Set the public values in a .env next to this file (see .env.example);
+# they are baked into the static bundle, so rebuild after changing them.
+
+name: soup-web
+
+services:
+  soup-web:
+    build:
+      context: .
+      args:
+        NUXT_PUBLIC_SOUP_IDENTITY_BASE_URL: ${NUXT_PUBLIC_SOUP_IDENTITY_BASE_URL:-https://soup-idm.bestiestudios.com}
+        NUXT_PUBLIC_APP_ORIGIN: ${NUXT_PUBLIC_APP_ORIGIN:-http://localhost:3000}
+        NUXT_PUBLIC_APP_NAME: ${NUXT_PUBLIC_APP_NAME:-Soup}
+        NUXT_PUBLIC_JELLYFIN_URL: ${NUXT_PUBLIC_JELLYFIN_URL:-}
+        NUXT_PUBLIC_MOCK: ${NUXT_PUBLIC_MOCK:-false}
+    image: soup-web:local
+    container_name: soup-web
+    ports:
+      - "3000:80"
+    restart: unless-stopped

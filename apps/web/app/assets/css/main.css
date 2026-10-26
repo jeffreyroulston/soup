@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #0a0a0b;
+  --color-surface: #1c1c1e;
+  --color-elevated: #2c2c2e;
+  --color-ink: #f5f5f7;
+  --color-ink-2: #d2d2d7;
+  --color-muted: #a1a1a6;
+  --color-accent: #fc7814;
+  --color-ok: #30d158;
+  --font-sans: Manrope, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-card: 14px;
+  --radius-btn: 12px;
+  --radius-panel: 22px;
+}
+
+@utility glass {
+  background-color: rgb(40 40 44 / 0.6);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+
+  &:is(button, a) {
+    transition: background-color 150ms, border-color 150ms;
+  }
+
+  &:is(button, a):not(:disabled):hover {
+    background-color: rgb(72 72 78 / 0.75);
+    border-color: rgb(255 255 255 / 0.22);
+  }
+}
+
+@utility glass-strong {
+  background-color: rgb(30 30 32 / 0.82);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+
+/* Thin translucent scrollbar for panels on glass. */
+@utility scrollbar-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.22) transparent;
+
+  &:hover {
+    scrollbar-color: rgb(255 255 255 / 0.4) transparent;
+  }
+
+  /* Safari, which lacks scrollbar-color */
+  &::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: rgb(255 255 255 / 0.22);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 0.4);
+  }
+}
+
+@utility rail {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+html,
+body,
+#__nuxt {
+  min-height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+video::cue {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  background: rgb(0 0 0 / 0.6);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-ink);
+  outline-offset: 3px;
+}

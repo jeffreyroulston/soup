@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_metadata_repository.dart';
-import 'package:soup/src/features/details/details_view_model.dart';
-import 'package:soup/src/features/library/library_view_model.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_metadata_repository.dart';
+import 'package:soup_core/src/features/details/details_view_model.dart';
+import 'package:soup_core/src/features/library/library_view_model.dart';
 
 import 'jellyfin_metadata_repository_test.dart' show FakeMetadataSource;
 import 'support/connectivity_fakes.dart' show testSession;

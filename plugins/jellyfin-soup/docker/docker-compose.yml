@@ -1,0 +1,43 @@
+# Local Jellyfin with Soup Auth plugin.
+# From plugins/jellyfin-soup:
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# UI: http://localhost:8096
+# Point Soup base URL at http://host.docker.internal:8787 (or soup-identity on a shared network).
+
+name: soup-jellyfin
+
+services:
+  jellyfin:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        JELLYFIN_TAG: "10.11.5"
+    image: soup-jellyfin:local
+    container_name: soup-jellyfin
+    # Host networking so LAN clients can discover the server: Jellyfin answers
+    # "Who is JellyfinServer?" broadcasts on UDP 7359, which Docker's port
+    # publishing never forwards. Serves 8096 (HTTP) and 8920 (HTTPS) directly;
+    # open them and 7359/udp in the host firewall.
+    network_mode: host
+    volumes:
+      - soup_jellyfin_config:/config
+      - soup_jellyfin_cache:/cache
+      # External HDD "Parity" (ntfs-3g read-only mount)
+      - /tmp/Parity-mount:/media:ro
+    environment:
+      # Reach Soup Identity on the host (docker compose in services/soup-identity).
+      # Configure in Dashboard → Plugins → Soup Auth → Soup base URL.
+      TZ: UTC
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  soup_jellyfin_config:
+    external: true
+    name: docker_soup_jellyfin_config
+  soup_jellyfin_cache:
+    external: true
+    name: docker_soup_jellyfin_cache

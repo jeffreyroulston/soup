@@ -4,7 +4,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 
 void main() {
   test('normalises a server URL with a Jellyfin base path', () {
@@ -84,6 +84,126 @@ void main() {
       expect(jsonDecode(captured.body), {'Username': 'Alex', 'Pw': 'password'});
       expect(session.accessToken, 'secret-token');
       expect(session.userName, 'Alex');
+    },
+  );
+
+  test(
+    'plugin-shaped AuthenticationResult (incl. SessionInfo) maps and '
+    'authenticates with Soup DeviceId',
+    () async {
+      // Mimics ISessionManager.AuthenticateDirect JSON (plugin /SoupAuth/Exchange).
+      const pluginBody = '''
+{
+  "AccessToken": "plugin-minted-token",
+  "ServerId": "jf-server",
+  "User": {"Id": "user-1", "Name": "Guest"},
+  "SessionInfo": {
+    "Id": "session-1",
+    "UserId": "user-1",
+    "UserName": "Guest",
+    "Client": "Soup",
+    "DeviceId": "soup-device",
+    "DeviceName": "Soup Android",
+    "ApplicationVersion": "0.1.0"
+  }
+}''';
+      final libraryRequests = <http.Request>[];
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('/Users/AuthenticateByName')) {
+          return http.Response(pluginBody, 200);
+        }
+        libraryRequests.add(request);
+        if (request.url.path.endsWith('/Views')) {
+          return http.Response('{"Items":[]}', 200);
+        }
+        if (request.url.path.endsWith('/Items/Resume')) {
+          return http.Response('{"Items":[]}', 200);
+        }
+        return http.Response('[]', 200);
+      });
+      addTearDown(client.close);
+      final api = JellyfinApi(
+        client,
+        deviceId: 'soup-device',
+        deviceName: 'Living room TV',
+      );
+
+      final session = await api.authenticate(
+        serverUrl: Uri.parse('http://jellyfin:8096/'),
+        username: 'ignored',
+        password: 'ignored',
+      );
+
+      expect(session.accessToken, 'plugin-minted-token');
+      expect(session.serverId, 'jf-server');
+      expect(session.userId, 'user-1');
+      expect(session.userName, 'Guest');
+
+      final headers = api.authenticatedHeaders(session);
+      expect(headers['X-Emby-Token'], 'plugin-minted-token');
+      expect(
+        headers['Authorization'],
+        'MediaBrowser Client="Soup", Device="Living room TV", '
+        'DeviceId="soup-device", Version="0.1.0", Token="plugin-minted-token"',
+      );
+
+      await api.getHome(session);
+
+      expect(libraryRequests, isNotEmpty);
+      expect(
+        libraryRequests.every(
+          (request) =>
+              request.headers['x-emby-token'] == 'plugin-minted-token' &&
+              (request.headers['authorization'] ?? '').contains(
+                'DeviceId="soup-device"',
+              ) &&
+              (request.headers['authorization'] ?? '').contains(
+                'Token="plugin-minted-token"',
+              ),
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'exchangeSoupAuth posts assertion with Soup DeviceId metadata',
+    () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          '{"AccessToken":"exchanged","ServerId":"jf","User":{"Id":"u","Name":"Guest"},"SessionInfo":{"Id":"s"}}',
+          200,
+        );
+      });
+      addTearDown(client.close);
+      final api = JellyfinApi(
+        client,
+        deviceId: 'soup-device',
+        deviceName: 'LG OLED65C5',
+      );
+
+      final session = await api.exchangeSoupAuth(
+        serverUrl: Uri.parse('http://jellyfin:8096/'),
+        assertion: 'jwt.assertion',
+      );
+
+      expect(captured.method, 'POST');
+      expect(captured.url.path, '/SoupAuth/Exchange');
+      expect(jsonDecode(captured.body), {
+        'assertion': 'jwt.assertion',
+        'deviceId': 'soup-device',
+        'deviceName': 'LG OLED65C5',
+        'app': 'Soup',
+        'appVersion': '0.1.0',
+      });
+      expect(
+        captured.headers['authorization'],
+        contains('DeviceId="soup-device"'),
+      );
+      expect(session.accessToken, 'exchanged');
+      expect(session.userId, 'u');
     },
   );
 

@@ -1,0 +1,85 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  deviceLinkDevForm,
+  deviceLinkEnterCode,
+  deviceLinkError,
+  deviceLinkStart,
+  deviceLinkSuccess,
+  escapeHtml,
+} from "../src/lib/device_link_html.ts";
+
+test("escapeHtml escapes markup", () => {
+  assert.equal(escapeHtml(`<"&>`), "&lt;&quot;&amp;&gt;");
+});
+
+test("dev form matches the web sign-in and escapes the user code", () => {
+  const html = deviceLinkDevForm({
+    userCode: `AB<>"`,
+    emailPlaceholder: "a@b.c",
+  });
+  assert.match(html, /family=Manrope/);
+  assert.match(html, /--canvas:\s*#0a0a0b/);
+  assert.match(html, /brand-mark">soup</);
+  assert.match(html, /aria-label="Code AB&lt;&gt;&quot;"/);
+  assert.match(html, /value="AB&lt;&gt;&quot;"/);
+  assert.match(html, /Approve device/);
+  assert.match(html, /name="email"/);
+  assert.doesNotMatch(html, /google_sub/);
+});
+
+test("enter-code form posts TV code with link token and never dumps tokens", () => {
+  const html = deviceLinkEnterCode({
+    identity: "dev@example.com",
+    linkToken: "proof.jwt.here",
+    prefillUserCode: "ABCD-EFGH",
+  });
+  assert.match(html, /Enter your TV code/);
+  assert.match(html, /action="\/auth\/google\/link-device"/);
+  assert.match(html, /name="link_token"/);
+  assert.match(html, /name="user_code"/);
+  assert.match(html, /ABCD-EFGH/);
+  assert.match(html, /dev@example\.com/);
+  assert.doesNotMatch(html, /access_token|refresh_token|pre class="tokens"/);
+});
+
+test("success and error pages share shell", () => {
+  const ok = deviceLinkSuccess({
+    heading: "Device linked",
+    messageHtml: "Linked <strong>a@b.c</strong>.",
+  });
+  const err = deviceLinkError({
+    heading: "Code expired",
+    messageHtml: "Try again.",
+  });
+  assert.match(ok, /status-success/);
+  assert.match(err, /status-error/);
+  assert.match(ok, /Identity/);
+  assert.match(err, /Identity/);
+  assert.match(ok, /return to Soup on the TV/);
+});
+
+test("link page offers each provider as a submit button", () => {
+  const html = deviceLinkStart({
+    userCode: "ABCD-EFGH",
+    providers: [
+      { id: "google", label: "Continue with Google" },
+      { id: "dev", label: "Dev sign-in" },
+    ],
+  });
+  assert.match(html, /action="\/link"/);
+  assert.match(html, /name="provider" value="google">\s*<svg/);
+  assert.match(html, /value="dev" class="btn-secondary">Dev sign-in/);
+  assert.match(html, /aria-label="Code ABCD-EFGH"/);
+});
+
+test("link page shows the error instead of code tiles and handles no providers", () => {
+  const html = deviceLinkStart({
+    userCode: "ABCD-EFGH",
+    providers: [],
+    errorHtml: "That code wasn’t found.",
+  });
+  assert.match(html, /role="alert">That code wasn’t found/);
+  assert.doesNotMatch(html, /aria-label="Code/);
+  assert.match(html, /No sign-in methods are configured/);
+});

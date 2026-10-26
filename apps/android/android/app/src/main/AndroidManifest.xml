@@ -8,7 +8,8 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/soup_launcher"
-        android:roundIcon="@mipmap/soup_launcher">
+        android:roundIcon="@mipmap/soup_launcher"
+        android:banner="@drawable/soup_banner">
         <activity
             android:name=".MainActivity"
             android:exported="true"

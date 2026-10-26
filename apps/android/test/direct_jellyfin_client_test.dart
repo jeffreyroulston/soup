@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_client_factory.dart';
-import 'package:soup/src/data/session/connection_preferences_store.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_client_factory.dart';
+import 'package:soup_core/src/data/session/connection_preferences_store.dart';
 
 void main() {
   test('Tailscale mode never falls back to a direct connection', () {

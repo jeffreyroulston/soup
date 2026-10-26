@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:soup/src/data/appearance/appearance_settings.dart';
-import 'package:soup/src/data/artwork/artwork_cache.dart';
-import 'package:soup/src/data/jellyfin/jellyfin_api.dart';
+import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup/src/features/library/library_screen.dart';
 
 void main() {
@@ -918,6 +918,10 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('blockbuster-background-crossfade')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('blockbuster-background-scroll-blackout')),
       findsOneWidget,
     );
     expect(

@@ -65,8 +65,7 @@ class _TitleArtState extends State<TitleArt> {
       future: _future,
       builder: (context, snapshot) {
         final loading =
-            _future != null &&
-            snapshot.connectionState != ConnectionState.done;
+            _future != null && snapshot.connectionState != ConnectionState.done;
         final bytes = _future == null ? null : snapshot.data;
         // Every state goes through the one switcher so the logo fades in over
         // the held space, and a text title fades into a logo (or the reverse)

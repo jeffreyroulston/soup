@@ -142,6 +142,16 @@ class SettingsScreen extends StatelessWidget {
                 ],
                 onChanged: (v) => prefs.update(subtitleLanguage: v),
               ),
+              const SizedBox(height: 14),
+              _Picker<String>(
+                label: 'Subtitle size',
+                value: prefs.subtitleSize,
+                options: [
+                  for (final z in PlaybackPrefs.subtitleSizes)
+                    SelectOption(z.id, z.label),
+                ],
+                onChanged: (v) => prefs.update(subtitleSize: v),
+              ),
             ],
           ),
           if (scope.device case final device?) ...[

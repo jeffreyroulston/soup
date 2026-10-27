@@ -50,6 +50,21 @@ void main() {
     expect(direct['VideoCodec'], 'hevc,h264,av1,vp9');
   });
 
+  test('converted streams use the segment format the player handles', () {
+    const lg = DeviceCapabilities(
+      platform: 'webOS',
+      videoCodecs: {'h264', 'hevc'},
+      audioDecoders: {'aac', 'ac3'},
+      hevcMain10: true,
+      hdr10: true,
+      hlsSegmentContainer: 'ts',
+    );
+    final profile = JellyfinDeviceProfile(capabilities: lg);
+    expect(_transcoding(profile)['Container'], 'ts');
+    expect(profile.transcodeQuery()['SegmentContainer'], 'ts');
+    expect(_transcoding(profile)['VideoCodec'], 'hevc,h264');
+  });
+
   test('copies HEVC into fMP4 HLS instead of re-encoding to H.264', () {
     final profile = JellyfinDeviceProfile(capabilities: _tv);
     final transcoding = _transcoding(profile);

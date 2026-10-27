@@ -42,6 +42,8 @@ class SidePanel extends StatelessWidget {
     required this.title,
     required this.sections,
     required this.onClose,
+    this.leftSections = const [],
+    this.leftTitle,
     this.header,
     this.footer,
     super.key,
@@ -50,6 +52,12 @@ class SidePanel extends StatelessWidget {
   final String title;
   final List<PanelSection> sections;
   final VoidCallback onClose;
+
+  /// When set, the panel widens into two columns: these sit in an inset well
+  /// on the left, headed by [leftTitle], with [sections] on the right. Each
+  /// column scrolls on its own.
+  final List<PanelSection> leftSections;
+  final String? leftTitle;
 
   /// Pinned in the panel's top-left corner, above the title.
   final Widget? header;
@@ -61,9 +69,15 @@ class SidePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = (MediaQuery.sizeOf(context).width * 0.42).clamp(280.0, 440.0);
+    final twoColumn = leftSections.isNotEmpty;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final width = twoColumn
+        ? (screenWidth * 0.72).clamp(280.0, 860.0)
+        : (screenWidth * 0.42).clamp(280.0, 440.0);
     // The first selected row (else the first enabled one) takes focus on open.
-    final all = [for (final s in sections) ...s.options];
+    final all = [
+      for (final s in [...sections, ...leftSections]) ...s.options,
+    ];
     final target =
         all.where((o) => o.selected && o.enabled).firstOrNull ??
         all.where((o) => o.enabled).firstOrNull;
@@ -77,7 +91,7 @@ class SidePanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _SectionTitle(s.title),
+            if (s.title.isNotEmpty) _SectionTitle(s.title),
             if (s.chips)
               Row(
                 children: [
@@ -102,6 +116,120 @@ class SidePanel extends StatelessWidget {
       );
     }
 
+    Widget column(List<PanelSection> list, {bool divided = false}) => ListView(
+      padding: const EdgeInsets.fromLTRB(_ringRoom, _ringRoom, _ringRoom, 12),
+      children: [
+        for (final (i, s) in list.indexed) ...[
+          if (divided && i > 0)
+            Container(
+              height: 1,
+              margin: const EdgeInsets.only(bottom: 12),
+              color: const Color(0x14FFFFFF),
+            ),
+          sectionWidget(s),
+        ],
+      ],
+    );
+
+    Widget titleText(String text, {double size = 22}) => Text(
+      text,
+      style: SoupType.style(size: size, weight: 800, letterSpacing: -0.5),
+    );
+
+    final footerText = footer == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(_ringRoom, 0, _ringRoom, 10),
+            child: Text(
+              footer!,
+              style: SoupType.style(size: 12, color: SoupColors.muted),
+            ),
+          );
+
+    final Widget body;
+    if (twoColumn) {
+      body = Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 11,
+            child: DecoratedBox(
+              key: const ValueKey('panel-well'),
+              decoration: BoxDecoration(
+                color: const Color(0x52000000),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0x0FFFFFFF)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (leftTitle != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        10 + _ringRoom,
+                        14,
+                        10 + _ringRoom,
+                        12 - _ringRoom,
+                      ),
+                      child: titleText(leftTitle!, size: 20),
+                    ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: column(leftSections, divided: true),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 16 - _ringRoom),
+          Expanded(
+            flex: 10,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    _ringRoom,
+                    4,
+                    _ringRoom,
+                    14 - _ringRoom,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(child: titleText(title)),
+                      ?header,
+                    ],
+                  ),
+                ),
+                Expanded(child: column(sections)),
+                ?footerText,
+              ],
+            ),
+          ),
+        ],
+      );
+    } else {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (header != null)
+            Padding(
+              padding: const EdgeInsets.only(left: _ringRoom, bottom: 12),
+              child: header,
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: _ringRoom),
+            child: titleText(title),
+          ),
+          const SizedBox(height: 12 - _ringRoom),
+          Expanded(child: column(sections)),
+          ?footerText,
+        ],
+      );
+    }
+
     return FocusScope(
       child: Focus(
         onKeyEvent: (node, event) {
@@ -123,58 +251,15 @@ class SidePanel extends StatelessWidget {
           width: width,
           child: Glass(
             strong: true,
-            padding: const EdgeInsets.fromLTRB(
-              20 - _ringRoom,
-              18,
-              20 - _ringRoom,
-              8,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (header != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: _ringRoom, bottom: 12),
-                    child: header,
+            padding: twoColumn
+                ? const EdgeInsets.fromLTRB(16, 16, 16 - _ringRoom, 8)
+                : const EdgeInsets.fromLTRB(
+                    20 - _ringRoom,
+                    18,
+                    20 - _ringRoom,
+                    8,
                   ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: _ringRoom),
-                  child: Text(
-                    title,
-                    style: SoupType.style(
-                      size: 22,
-                      weight: 800,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12 - _ringRoom),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(
-                      _ringRoom,
-                      _ringRoom,
-                      _ringRoom,
-                      12,
-                    ),
-                    children: [for (final s in sections) sectionWidget(s)],
-                  ),
-                ),
-                if (footer != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      _ringRoom,
-                      0,
-                      _ringRoom,
-                      10,
-                    ),
-                    child: Text(
-                      footer!,
-                      style: SoupType.style(size: 12, color: SoupColors.muted),
-                    ),
-                  ),
-              ],
-            ),
+            child: body,
           ),
         ),
       ),
@@ -240,7 +325,11 @@ class PanelRow extends StatelessWidget {
               ),
             ),
             if (option.selected)
-              const Icon(Icons.check_rounded, size: 20, color: SoupColors.ink),
+              const Icon(
+                Icons.check_rounded,
+                size: 20,
+                color: SoupColors.accent,
+              ),
           ],
         ),
       ),

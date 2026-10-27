@@ -139,6 +139,7 @@ class SoupDevice {
       maxVideoHeight: uhd
           ? const {}
           : const {'h264': 1080, 'hevc': 1080, 'vp9': 1080, 'av1': 1080},
+      hlsSegmentContainer: 'ts',
     );
   }
 

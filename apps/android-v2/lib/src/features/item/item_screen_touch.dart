@@ -431,12 +431,14 @@ class _Actions extends StatelessWidget {
           onTap: () => openWatch(context, target, fromStart: true),
         ),
       if (item.type != 'BoxSet')
-        _Tile(
-          icon: Icons.check_rounded,
-          label: watchTarget.played ? 'Watched' : 'Mark as watched',
-          filled: watchTarget.played,
-          onTap: () =>
-              scope.catalog.setPlayed(watchTarget.id, !watchTarget.played),
+        WatchedToggle(
+          target: watchTarget,
+          builder: (context, played, toggle) => _Tile(
+            icon: Icons.check_rounded,
+            label: played ? 'Watched' : 'Mark as watched',
+            filled: played,
+            onTap: toggle,
+          ),
         ),
       _Tile(
         icon: Icons.more_horiz_rounded,

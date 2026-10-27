@@ -453,25 +453,25 @@ class _Actions extends StatelessWidget {
           const SizedBox(width: 16),
         ],
         if (watchable) ...[
-          if (isEpisode)
-            _RoundAction(
-              key: ValueKey(('watched', loading)),
-              icon: Icons.check_rounded,
-              semanticsLabel: item.played ? 'Watched' : 'Mark as watched',
-              filled: item.played,
-              autofocus: fallbackFocus,
-              onTap: () => scope.catalog.setPlayed(item.id, !item.played),
-            )
-          else
-            _PillAction(
-              key: ValueKey(('watched', loading)),
-              icon: Icons.check_rounded,
-              label: watchTarget.played ? 'Watched' : 'Mark as watched',
-              filled: watchTarget.played,
-              autofocus: fallbackFocus,
-              onTap: () =>
-                  scope.catalog.setPlayed(watchTarget.id, !watchTarget.played),
-            ),
+          WatchedToggle(
+            key: ValueKey(('watched', loading)),
+            target: watchTarget,
+            builder: (context, played, toggle) => isEpisode
+                ? _RoundAction(
+                    icon: Icons.check_rounded,
+                    semanticsLabel: played ? 'Watched' : 'Mark as watched',
+                    filled: played,
+                    autofocus: fallbackFocus,
+                    onTap: toggle,
+                  )
+                : _PillAction(
+                    icon: Icons.check_rounded,
+                    label: played ? 'Watched' : 'Mark as watched',
+                    filled: played,
+                    autofocus: fallbackFocus,
+                    onTap: toggle,
+                  ),
+          ),
           const SizedBox(width: 16),
         ],
         _RoundAction(
@@ -524,6 +524,68 @@ class _Actions extends StatelessWidget {
   }
 }
 
+/// A watched toggle that flips the moment it's pressed rather than after the
+/// server write and refetch, and reverts if the write fails.
+class WatchedToggle extends StatefulWidget {
+  const WatchedToggle({required this.target, required this.builder, super.key});
+  final CatalogItem target;
+  final Widget Function(BuildContext context, bool played, VoidCallback toggle)
+  builder;
+
+  @override
+  State<WatchedToggle> createState() => _WatchedToggleState();
+}
+
+class _WatchedToggleState extends State<WatchedToggle> {
+  bool? _shown; // pressed state, until the refetched item agrees
+  bool _writing = false;
+
+  bool get _played => _shown ?? widget.target.played;
+
+  @override
+  void didUpdateWidget(WatchedToggle old) {
+    super.didUpdateWidget(old);
+    if (widget.target.id != old.target.id ||
+        (!_writing && widget.target.played == _shown)) {
+      _shown = null;
+    }
+  }
+
+  void _toggle() {
+    setState(() => _shown = !_played);
+    if (!_writing) unawaited(_write());
+  }
+
+  /// One request at a time, until the server has the latest pressed state,
+  /// so quick presses can't land out of order.
+  Future<void> _write() async {
+    final catalog = SoupScope.of(context).catalog;
+    final id = widget.target.id;
+    _writing = true;
+    bool? sent;
+    try {
+      while (mounted && widget.target.id == id) {
+        final want = _shown;
+        if (want == null || want == sent) break;
+        await catalog.setPlayed(id, want);
+        sent = want;
+      }
+    } on Object {
+      if (mounted) setState(() => _shown = null);
+      return;
+    } finally {
+      _writing = false;
+    }
+    if (mounted && widget.target.played == _shown) {
+      setState(() => _shown = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      widget.builder(context, _played, _toggle);
+}
+
 class _PillAction extends StatelessWidget {
   const _PillAction({
     required this.icon,
@@ -531,7 +593,6 @@ class _PillAction extends StatelessWidget {
     required this.onTap,
     this.filled = false,
     this.autofocus = false,
-    super.key,
   });
   final IconData icon;
   final String label;

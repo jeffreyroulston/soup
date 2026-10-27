@@ -9,6 +9,7 @@ import '../theme/soup_tokens.dart';
 import 'catalog_builder.dart';
 import 'focusable.dart';
 import 'glass.dart';
+import 'page_scaffold.dart';
 import 'soup_wordmark.dart';
 
 enum NavSection { home, library, myStuff, search, settings, none }
@@ -32,6 +33,16 @@ class GlassNav extends StatelessWidget {
   /// Frosted canvas once the page has scrolled.
   final bool solid;
 
+  /// Last libraries seen per catalog, so a new page's bar draws its tabs on
+  /// the first frame instead of flashing placeholders while they load.
+  static final _libraries = Expando<List<CatalogItem>>();
+
+  /// Opens a page from the bar, keeping focus on the bar.
+  static void _open(VoidCallback open) {
+    PageScaffold.holdNavFocus();
+    open();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = SoupScope.of(context);
@@ -47,63 +58,70 @@ class GlassNav extends StatelessWidget {
             child: Center(
               child: CatalogBuilder<List<CatalogItem>>(
                 load: (c) => c.libraries(),
-                builder: (context, libraries, _) => Glass(
-                  radius: 28,
-                  padding: const EdgeInsets.all(5),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _Tab(
-                        'Home',
-                        section == NavSection.home,
-                        () => openHome(context),
-                        autofocus: section == NavSection.home,
-                        focusNode: section == NavSection.home
-                            ? activeFocusNode
-                            : null,
-                      ),
-                      if (libraries == null)
-                        for (var i = 0; i < 2; i++)
-                          Container(
-                            width: 90,
-                            height: 38,
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0x14FFFFFF),
-                              borderRadius: BorderRadius.circular(19),
+                builder: (context, loaded, _) {
+                  final libraries = loaded ?? _libraries[scope.catalog];
+                  if (loaded != null) _libraries[scope.catalog] = loaded;
+                  return Glass(
+                    radius: 28,
+                    padding: const EdgeInsets.all(5),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _Tab(
+                          'Home',
+                          section == NavSection.home,
+                          () {
+                            openHome(context);
+                            PageScaffold.focusNav();
+                          },
+                          autofocus: section == NavSection.home,
+                          focusNode: section == NavSection.home
+                              ? activeFocusNode
+                              : null,
+                        ),
+                        if (libraries == null)
+                          for (var i = 0; i < 2; i++)
+                            Container(
+                              width: 90,
+                              height: 38,
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0x14FFFFFF),
+                                borderRadius: BorderRadius.circular(19),
+                              ),
+                            )
+                        else
+                          for (final lib in libraries)
+                            _Tab(
+                              lib.name,
+                              section == NavSection.library &&
+                                  libraryId == lib.id,
+                              () => _open(() => openLibrary(context, lib)),
+                              focusNode:
+                                  section == NavSection.library &&
+                                      libraryId == lib.id
+                                  ? activeFocusNode
+                                  : null,
                             ),
-                          )
-                      else
-                        for (final lib in libraries)
-                          _Tab(
-                            lib.name,
-                            section == NavSection.library &&
-                                libraryId == lib.id,
-                            () => openLibrary(context, lib),
-                            focusNode:
-                                section == NavSection.library &&
-                                    libraryId == lib.id
-                                ? activeFocusNode
-                                : null,
-                          ),
-                      _Tab(
-                        'My Stuff',
-                        section == NavSection.myStuff,
-                        () => openFavourites(context),
-                        focusNode: section == NavSection.myStuff
-                            ? activeFocusNode
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
+                        _Tab(
+                          'My Stuff',
+                          section == NavSection.myStuff,
+                          () => _open(() => openFavourites(context)),
+                          focusNode: section == NavSection.myStuff
+                              ? activeFocusNode
+                              : null,
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ),
           _IconButton(
             icon: Icons.search_rounded,
             active: section == NavSection.search,
-            onTap: () => openSearch(context),
+            onTap: () => _open(() => openSearch(context)),
             focusNode: section == NavSection.search ? activeFocusNode : null,
           ),
           const SizedBox(width: 12),
@@ -255,7 +273,7 @@ class _Avatar extends StatelessWidget {
                 scope: scope,
                 onSettings: () {
                   Navigator.of(dialog).pop();
-                  openSettings(context);
+                  GlassNav._open(() => openSettings(context));
                 },
                 onSignOut: () {
                   Navigator.of(dialog).pop();

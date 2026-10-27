@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,13 +20,30 @@ import 'package:soup_v2/src/ui/widgets/media_card.dart';
 import 'package:soup_v2/src/ui/widgets/pill_tabs.dart';
 import 'package:soup_v2/src/utils/media.dart';
 
-Widget _app(Widget home) {
-  final catalog = MockCatalog();
+/// A library big enough to scroll: a dozen titles under every letter.
+class _BigLibraryCatalog extends MockCatalog {
+  @override
+  Future<List<CatalogItem>> libraryItems(
+    CatalogItem library,
+    LibrarySort sort,
+  ) async => [
+    for (var l = 0; l < 26; l++)
+      for (var i = 0; i < 12; i++)
+        CatalogItem(
+          id: 'big-$l-$i',
+          name: '${String.fromCharCode(65 + l)} title $i',
+          type: 'Movie',
+        ),
+  ];
+}
+
+Widget _app(Widget home, {MockCatalog? catalog}) {
+  final scopeCatalog = catalog ?? MockCatalog();
   final prefs = PlaybackPrefs();
   return MaterialApp(
     theme: SoupTheme.dark,
     builder: (context, child) => SoupScope(
-      catalog: catalog,
+      catalog: scopeCatalog,
       prefs: prefs,
       userLabel: 'mock@soup.dev',
       onSignOut: () async {},
@@ -34,11 +53,15 @@ Widget _app(Widget home) {
   );
 }
 
-Future<void> _pump(WidgetTester tester, Widget home) async {
+Future<void> _pump(
+  WidgetTester tester,
+  Widget home, {
+  MockCatalog? catalog,
+}) async {
   tester.view.physicalSize = const Size(1440, 810);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(_app(home));
+  await tester.pumpWidget(_app(home, catalog: catalog));
   // Mock artwork renders through dart:ui, which needs real async.
   await tester.runAsync(
     () => Future<void>.delayed(const Duration(milliseconds: 200)),
@@ -76,6 +99,112 @@ void main() {
     expect(focused?.findAncestorWidgetOfExactType<GlassNav>(), isNotNull);
   });
 
+  testWidgets('holding Down outruns the scroll without snapping to the nav', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const MockApp());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    bool inNav() =>
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<GlassNav>() !=
+        null;
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump(const Duration(milliseconds: 40));
+    var left = !inNav();
+    for (var i = 0; i < 40; i++) {
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump(const Duration(milliseconds: 40));
+      if (!inNav()) left = true;
+      if (left) expect(inNav(), isFalse, reason: 'snapped back at repeat $i');
+    }
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(left, isTrue);
+    expect(inNav(), isFalse);
+  });
+
+  testWidgets('nav tabs open pages with the bar in place and focus kept', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const MockApp());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    String? focusedLabel() {
+      String? label;
+      void visit(Element e) {
+        if (label != null) return;
+        final w = e.widget;
+        if (w is Text) {
+          label = w.data;
+        } else {
+          e.visitChildren(visit);
+        }
+      }
+
+      (FocusManager.instance.primaryFocus?.context as Element?)?.visitChildren(
+        visit,
+      );
+      return label;
+    }
+
+    // Home opens on the hero; Back moves up to the bar.
+    final dynamic app = tester.state(find.byType(WidgetsApp));
+    await app.didPopRoute();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(focusedLabel(), 'Home');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(focusedLabel(), 'Movies');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pump();
+    // The new page's bar has its library tabs on the first frame, and focus
+    // is already on its Movies tab.
+    await tester.pump(); // the pushed page's first frame
+    final libraryNav = find.descendant(
+      of: find.byType(LibraryScreen),
+      matching: find.byType(GlassNav),
+    );
+    expect(
+      find.descendant(of: libraryNav, matching: find.text('Movies')),
+      findsOneWidget,
+    );
+    expect(focusedLabel(), 'Movies');
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    // Loading the grid doesn't pull focus into the content.
+    expect(focusedLabel(), 'Movies');
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<LibraryScreen>(),
+      isNotNull,
+    );
+
+    // Back from the bar goes Home and lands on its Home tab.
+    await app.didPopRoute();
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byType(LibraryScreen), findsNothing);
+    expect(focusedLabel(), 'Home');
+  });
+
   testWidgets('library filters narrow the grid', (tester) async {
     final catalog = MockCatalog();
     final lib = (await catalog.libraries()).first;
@@ -106,7 +235,7 @@ void main() {
   });
 
   testWidgets('A–Z strip: Right enters at the card letter, ends hold, '
-      'Left returns to that letter', (tester) async {
+      'browsing holds the grid, OK jumps to the letter', (tester) async {
     final lib = (await MockCatalog().libraries()).first;
     await _pump(tester, LibraryScreen(library: lib));
     String? focused() => FocusManager.instance.primaryFocus?.debugLabel;
@@ -129,15 +258,67 @@ void main() {
       await tester.pump();
     }
     expect(focused(), startsWith('letter '));
+
+    // Moving along the strip only moves focus; the grid stays put.
+    final scrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
+    final before = scrollable.position.pixels;
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(scrollable.position.pixels, before);
     final letter = focused()!.substring('letter '.length);
 
-    // Left goes into the grid at that letter's first title.
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-    for (var i = 0; i < 4; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
+    // OK goes straight into the grid at that letter's first title.
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.pump();
     expect(focused(), 'letter target');
     expect(sortLetter(focusedItem()!), letter);
+  });
+
+  testWidgets('A–Z strip: Left returns to the card it was entered from, '
+      'after jumping down the grid', (tester) async {
+    final catalog = _BigLibraryCatalog();
+    final lib = (await catalog.libraries()).first;
+    await _pump(tester, LibraryScreen(library: lib), catalog: catalog);
+    String? focused() => FocusManager.instance.primaryFocus?.debugLabel;
+    bool onStrip() => RegExp(r'^letter .$').hasMatch(focused() ?? '');
+    CatalogItem? focusedItem() => FocusManager.instance.primaryFocus?.context
+        ?.findAncestorWidgetOfExactType<MediaCard>()
+        ?.item;
+    Future<void> rightToStrip() async {
+      for (var i = 0; i < 12 && !onStrip(); i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+      }
+    }
+
+    // Onto the strip, down to a later letter, OK to jump the grid there.
+    await rightToStrip();
+    for (var i = 0; i < 14; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    // Back onto the strip from the end of that row, then down the strip.
+    CatalogItem? from;
+    for (var i = 0; i < 12 && !onStrip(); i++) {
+      from = focusedItem() ?? from;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+    }
+    expect(onStrip(), isTrue);
+    for (var i = 0; i < 6; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(focusedItem()?.id, from!.id);
   });
 
   testWidgets('item screen shows series seasons and episodes', (tester) async {
@@ -203,6 +384,42 @@ void main() {
     expect(find.text('After Kitchen'), findsOneWidget);
   });
 
+  testWidgets('watched toggles at once; quick presses settle in order', (
+    tester,
+  ) async {
+    final catalog = _SlowPlayedCatalog();
+    await _pump(tester, const ItemScreen(itemId: 'm1'), catalog: catalog);
+    await tester.tap(find.text('Mark as watched'));
+    await tester.pump();
+    expect(find.text('Watched'), findsOneWidget);
+    // Pressed again while the first write is still out.
+    await tester.tap(find.text('Watched'));
+    await tester.pump();
+    expect(find.text('Mark as watched'), findsOneWidget);
+    expect(catalog.writes, [true]);
+    catalog.release();
+    await tester.pump();
+    expect(catalog.writes, [true, false]);
+    catalog.release();
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Mark as watched'), findsOneWidget);
+    expect((await catalog.item('m1')).played, isFalse);
+  });
+
+  testWidgets('a failed watched write reverts the toggle', (tester) async {
+    final catalog = _SlowPlayedCatalog();
+    await _pump(tester, const ItemScreen(itemId: 'm1'), catalog: catalog);
+    await tester.tap(find.text('Mark as watched'));
+    await tester.pump();
+    expect(find.text('Watched'), findsOneWidget);
+    catalog.release(fail: true);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Mark as watched'), findsOneWidget);
+  });
+
   testWidgets('item More menu toggles the favourite', (tester) async {
     await _pump(tester, const ItemScreen(itemId: 'm1'));
     expect(find.text('Play'), findsOneWidget);
@@ -219,4 +436,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Remove from Favourites'), findsOneWidget);
   });
+}
+
+/// Holds each watched write until [release], to see the UI before the server
+/// answers.
+class _SlowPlayedCatalog extends MockCatalog {
+  final writes = <bool>[];
+  final _gates = <Completer<void>>[];
+
+  @override
+  Future<void> setPlayed(String itemId, bool value) async {
+    writes.add(value);
+    final gate = Completer<void>();
+    _gates.add(gate);
+    await gate.future;
+    await super.setPlayed(itemId, value);
+  }
+
+  void release({bool fail = false}) {
+    final gate = _gates.removeAt(0);
+    fail ? gate.completeError(StateError('offline')) : gate.complete();
+  }
 }

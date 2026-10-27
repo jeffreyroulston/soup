@@ -405,9 +405,10 @@ class CatalogItem {
     lastPlayedDate: lastPlayedDate ?? this.lastPlayedDate,
   );
 
-  /// 2:3 key art; episodes use their series poster instead of the still.
+  /// 2:3 key art; episodes use their series poster instead of the still,
+  /// as do seasons that have no poster of their own.
   ImageRef get poster {
-    if (type == 'Episode' &&
+    if ((type == 'Episode' || (type == 'Season' && primaryImageTag == null)) &&
         seriesId != null &&
         seriesPrimaryImageTag != null) {
       return ImageRef(seriesId!, 'Primary', seriesPrimaryImageTag);

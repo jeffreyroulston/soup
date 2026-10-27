@@ -66,6 +66,7 @@ class DeviceCapabilities {
     this.hdr10Plus = false,
     this.dolbyVision = false,
     this.maxVideoHeight = const {},
+    this.hlsSegmentContainer = 'mp4',
   });
 
   /// Shown in Settings, e.g. `Android` or `webOS 10`.
@@ -104,6 +105,10 @@ class DeviceCapabilities {
   /// Largest frame height per video codec the device decodes smoothly;
   /// missing means no limit.
   final Map<String, int> maxVideoHeight;
+
+  /// Segment format for converted (HLS) streams. fMP4 by default; LG's player
+  /// fails on fMP4 carrying copied 4K HEVC/Dolby Vision but plays MPEG-TS.
+  final String hlsSegmentContainer;
 
   /// What any Android device can play: the codecs Android requires plus 8-bit
   /// HEVC, stereo out. Used until detection finishes and in tests.
@@ -172,6 +177,7 @@ class DeviceCapabilities {
     'hdr10Plus': hdr10Plus,
     'dolbyVision': dolbyVision,
     'maxVideoHeight': maxVideoHeight,
+    'hlsSegmentContainer': hlsSegmentContainer,
   };
 
   static const _passthroughOrder = ['ac3', 'eac3', 'truehd', 'dts'];
@@ -294,9 +300,9 @@ class JellyfinDeviceProfile {
       ],
       'TranscodingProfiles': [
         {
-          // fMP4 HLS carries HEVC, HDR10 and Dolby Vision when the video is
-          // copied rather than re-encoded.
-          'Container': 'mp4',
+          // HEVC and HDR10 are copied rather than re-encoded, in fMP4 or TS
+          // segments depending on what the player handles.
+          'Container': capabilities.hlsSegmentContainer,
           'Type': 'Video',
           'VideoCodec': _transcodeVideoCodecs.join(','),
           'AudioCodec': transcodeAudioCodecs.join(','),
@@ -398,7 +404,7 @@ class JellyfinDeviceProfile {
       'VideoCodec': _transcodeVideoCodecs.join(','),
       'AudioCodec': transcodeAudioCodecs.join(','),
       'TranscodingMaxAudioChannels': '$_transcodeChannels',
-      'SegmentContainer': 'mp4',
+      'SegmentContainer': caps.hlsSegmentContainer,
       'MinSegments': '1',
       'BreakOnNonKeyFrames': 'true',
       'AllowVideoStreamCopy': 'true',

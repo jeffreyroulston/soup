@@ -53,14 +53,18 @@ class MediaCard extends StatelessWidget {
         ? (item.playedPercentage ?? 0) / 100
         : 0.0;
     final code = episodeCode(item);
+    // A season reads as its show, with the season ("Season 2") underneath.
+    final season = poster && item.type == 'Season' && item.seriesName != null;
     final detailText =
         detail ??
-        (poster
+        (season
+            ? item.name
+            : poster
             ? yearLabel(item)
             : (timeLeftLabel(item) ?? runtimeLabel(item.runTimeTicks)));
     final title =
         titleOverride ??
-        (poster && item.type == 'Episode'
+        (poster && (item.type == 'Episode' || season)
             ? (item.seriesName ?? item.name)
             : item.name);
 
@@ -105,7 +109,7 @@ class MediaCard extends StatelessWidget {
                       CatalogImage(
                         image: poster ? item.poster : item.landscape,
                         maxWidth: poster ? 360 : 720,
-                        fallbackTitle: item.name,
+                        fallbackTitle: season ? title : item.name,
                       ),
                       if (item.played)
                         const Positioned(

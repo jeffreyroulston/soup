@@ -6,6 +6,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:soup_core/soup_core.dart';
 
 import '../../app_scope.dart';
+import '../../data/playback_prefs.dart';
 import '../../data/models.dart';
 import '../../form_factor.dart';
 import '../../platform.dart';
@@ -116,12 +117,22 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   CatalogItem? _next;
 
   // chrome / focus
-  bool _chrome = true;
+  /// Starts hidden so playback opens on a clean picture; any key or tap
+  /// brings it up.
+  bool _chrome = false;
   _Panel? _panel;
   Timer? _hideTimer;
   final _rootFocus = FocusNode(debugLabel: 'playback root');
   final _seekFocus = FocusNode(debugLabel: 'playback seek');
   final _playFocus = FocusNode(debugLabel: 'playback play');
+  final _skipFocus = FocusNode(debugLabel: 'playback skip');
+
+  /// The skip pill floats on its own for [_skipPillFor] after a segment
+  /// starts, then only shows with the rest of the controls.
+  static const _skipPillFor = Duration(seconds: 5);
+  SkipRange? _skipSeen;
+  bool _skipFresh = false;
+  Timer? _skipTimer;
   final _settingsFocus = FocusNode(debugLabel: 'playback settings');
   final _chaptersFocus = FocusNode(debugLabel: 'playback chapters');
   final _episodesFocus = FocusNode(debugLabel: 'playback episodes');
@@ -140,11 +151,16 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
   // seeking / reporting
   Duration? _pendingSeek;
+  Timer? _seekTimer;
+  bool _seeking = false;
   Duration _lastReported = Duration.zero;
   Timer? _reportDebounce;
   bool? _reportedPlaying; // playing state Jellyfin last heard
   Timer? _pausedPing;
   Duration? _retryFrom; // where Try again picks up
+  /// The player as it was when a reload began: the chrome keeps showing this
+  /// until the new player has seeked back, instead of a bar dropping to 0.
+  SoupVideoValue? _held;
 
   // trickplay
   final _sheets = <int, Future<Uint8List?>>{};
@@ -188,6 +204,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     setState(() {
       _loading = true;
       _error = null;
+      _held = null;
     });
     final startAt =
         _retryFrom ?? Duration(microseconds: widget.startTicks ~/ 10);
@@ -334,7 +351,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     if (!current) return;
     _method = method;
     if (!mounted) return;
-    setState(() => _loading = false);
+    setState(() {
+      _loading = false;
+      _held = null;
+    });
     _restartHide();
     unawaited(
       _api!
@@ -424,7 +444,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     final plan = _plan;
     if (controller == null || plan == null) return;
     final position = _pendingSeek ?? controller.value.position;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _held = _snapshot(controller.value, position);
+    });
     final load = ++_reloads;
     try {
       final wantsTranscode = _audioIndex != null || _maxBitrate != null;
@@ -439,12 +462,25 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       if (!mounted || load != _reloads) return;
       setState(() {
         _loading = false;
+        _held = null;
         _error = error is JellyfinApiException
             ? error.message
             : 'Could not change playback. $error';
       });
     }
   }
+
+  /// [value] frozen at [position], with the caption dropped: the chrome shows
+  /// it while a reload swaps players.
+  static SoupVideoValue _snapshot(SoupVideoValue value, Duration position) =>
+      SoupVideoValue(
+        initialized: value.initialized,
+        playing: value.playing,
+        buffering: value.buffering,
+        position: position,
+        duration: value.duration,
+        aspectRatio: value.aspectRatio,
+      );
 
   Future<void> _loadSegments() async {
     try {
@@ -493,6 +529,17 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         _item.chapters,
         durationSeconds: v.duration.inMilliseconds / 1000,
       );
+    }
+    final active = _activeSkip(v.position);
+    if (active != _skipSeen) {
+      _skipSeen = active;
+      _skipFresh = active != null;
+      _skipTimer?.cancel();
+      if (active != null) {
+        _skipTimer = Timer(_skipPillFor, () {
+          if (mounted) setState(() => _skipFresh = false);
+        });
+      }
     }
     final seconds = v.position.inMilliseconds / 1000;
     if (_scope.prefs.autoSkipIntros) {
@@ -549,14 +596,19 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       return;
     }
     _fellBack = true;
-    final position = _c?.value.position ?? Duration.zero;
-    setState(() => _loading = true);
+    final current = _c?.value;
+    final position = current?.position ?? Duration.zero;
+    setState(() {
+      _loading = true;
+      _held = current == null ? null : _snapshot(current, position);
+    });
     try {
       await _load(JellyfinPlayMethod.transcode, position);
     } on Object catch (error) {
       if (mounted) {
         setState(() {
           _loading = false;
+          _held = null;
           _error = 'Could not start playback. $error';
         });
       }
@@ -598,6 +650,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
   void _startCountdown(int from) {
     _nextActive = true;
+    // The card holds focus now; a pending chrome hide would yank it back to
+    // the root node.
+    _hideTimer?.cancel();
+    _hideTimer = null;
     _countdown = from;
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
@@ -643,6 +699,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
   void _goTo(CatalogItem episode, {bool resume = false}) {
     _countdownTimer?.cancel();
+    _silence();
     Navigator.of(context).pushReplacement(
       PlaybackScreen.route(
         _scope,
@@ -655,7 +712,16 @@ class _PlaybackScreenState extends State<PlaybackScreen>
 
   void _exit() {
     if (!mounted) return;
+    _silence();
     Navigator.of(context).pop();
+  }
+
+  /// Stops sound the moment the player is left: the controller is only
+  /// closed in [dispose], after the route transition has finished.
+  void _silence() {
+    final c = _c;
+    if (c == null || !c.value.playing) return;
+    unawaited(c.pause().catchError((Object _) {}));
   }
 
   // ── controls ─────────────────────────────────────────────────────────────
@@ -680,20 +746,57 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     _pendingSeek = target;
     if (!_touch) _flashSeekPreview();
     setState(() {});
-    unawaited(
-      c.seekTo(target).whenComplete(() {
-        if (_pendingSeek == target) {
-          _pendingSeek = null;
-          if (mounted) setState(() {});
-        }
-      }),
-    );
+    // TV: a held D-pad repeats every ~50 ms; seek the player once the
+    // presses stop rather than on every one.
+    _seekTimer?.cancel();
+    if (_touch) {
+      unawaited(_commitSeek());
+    } else {
+      _seekTimer = Timer(
+        const Duration(milliseconds: 400),
+        () => unawaited(_commitSeek()),
+      );
+    }
     _reportDebounce?.cancel();
     _reportDebounce = Timer(
       const Duration(milliseconds: 600),
       () => unawaited(_report(paused: !c.value.playing)),
     );
     _restartHide();
+  }
+
+  /// Seeks the player to [_pendingSeek], one seek at a time: a burst of
+  /// overlapping seeks makes webOS's player fail and tear down the stream.
+  Future<void> _commitSeek() async {
+    if (_seeking) return; // the running seek picks up the newer target
+    _seeking = true;
+    try {
+      while (mounted) {
+        final c = _c;
+        final target = _pendingSeek;
+        if (c == null || target == null) break;
+        try {
+          await c.seekTo(target);
+        } on Object {
+          // A media error surfaces through the player's value. Drop the
+          // target, or the position would read as frozen there from now on.
+          if (_pendingSeek == target) {
+            _pendingSeek = null;
+            if (mounted) setState(() {});
+          }
+          break;
+        }
+        if (_pendingSeek == target) {
+          _pendingSeek = null;
+          if (mounted) setState(() {});
+          break;
+        }
+        // Still scrubbing: the debounce timer seeks when it settles.
+        if (_seekTimer?.isActive ?? false) break;
+      }
+    } finally {
+      _seeking = false;
+    }
   }
 
   ({String sourceId, Trickplay info})? get _trickplay =>
@@ -881,11 +984,45 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     if (mounted) setState(() {});
   }
 
+  void _setSubtitleSize(String id) {
+    setState(() {});
+    unawaited(_scope.prefs.update(subtitleSize: id));
+  }
+
   void _setSubtitle(JellyfinSubtitleTrack? track) {
     if (track == _subtitle) return;
     _subtitle = track;
     _closePanel();
-    unawaited(_reload());
+    final controller = _c;
+    // Subtitles are a caption overlay on the same stream, so a live player
+    // just swaps them; only a player still loading gets them via its load.
+    if (controller is SubtitleControllable && !_loading && !_mock) {
+      unawaited(_swapSubtitle(controller as SubtitleControllable, track));
+    } else {
+      unawaited(_reload());
+    }
+  }
+
+  Future<void> _swapSubtitle(
+    SubtitleControllable controller,
+    JellyfinSubtitleTrack? track,
+  ) async {
+    Future<String>? vtt;
+    if (track != null) {
+      // Fetch first, so a quicker later choice isn't overwritten by this one.
+      final text = await _api!
+          .getSubtitle(_session!, track)
+          .catchError((Object _) => 'WEBVTT\n');
+      if (_disposed || _subtitle != track || !identical(_c, controller)) {
+        return;
+      }
+      vtt = Future.value(text);
+    }
+    try {
+      await controller.setSubtitle(vtt);
+    } on Object {
+      // The caption overlay failing isn't worth interrupting playback.
+    }
   }
 
   void _setAudio(MediaStreamInfo stream) {
@@ -934,7 +1071,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     if (!mounted || _panel != null) return;
     _hideTimer = null;
     setState(() => _chrome = false);
-    _rootFocus.requestFocus();
+    if (!_nextActive) _rootFocus.requestFocus();
   }
 
   void _openPanel(_Panel panel) {
@@ -965,6 +1102,11 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     if (_locked) return _showLockHint();
     if (_nextActive) return _dismissNext();
     if (_panel != null) return _closePanel();
+    // TV: the first Back brings up the controls, the next one leaves; while
+    // loading there's nothing to bring up, so it leaves straight away.
+    if (!_touch && !_chrome && !_loading && _error == null) {
+      return _showChrome(focus: _playFocus);
+    }
     _exit();
   }
 
@@ -972,6 +1114,28 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     if (event is KeyUpEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
     if (_panel == null) _restartHide();
+
+    // The skip pill sits off to the side, so directional traversal never
+    // picks it: route Down from play to it, and on to the seek bar. A node
+    // keeps its context after its widget unmounts, so check it's mounted or
+    // Down would stall on the detached pill once the segment has passed.
+    final skipShown = _skipFocus.context?.mounted ?? false;
+    if (skipShown && event is KeyDownEvent) {
+      if (key == LogicalKeyboardKey.arrowDown && _playFocus.hasPrimaryFocus) {
+        _skipFocus.requestFocus();
+        return KeyEventResult.handled;
+      }
+      if (_skipFocus.hasPrimaryFocus) {
+        if (key == LogicalKeyboardKey.arrowUp) {
+          _playFocus.requestFocus();
+          return KeyEventResult.handled;
+        }
+        if (key == LogicalKeyboardKey.arrowDown && _seekFocus.context != null) {
+          _seekFocus.requestFocus();
+          return KeyEventResult.handled;
+        }
+      }
+    }
 
     // Media keys work from anywhere.
     if (event is KeyDownEvent) {
@@ -1014,7 +1178,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         key == LogicalKeyboardKey.numpadEnter;
     if (isSelect && event is KeyDownEvent) {
       final skip = _activeSkip(_c?.value.position ?? Duration.zero);
-      if (skip != null && !_chrome) {
+      if (skip != null && !_chrome && _skipFresh) {
         unawaited(_skipTo(skip));
       } else {
         unawaited(_togglePlayback());
@@ -1045,20 +1209,23 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     final controller = _c;
     final plan = _plan;
     if (controller != null) {
+      final position = _pendingSeek ?? controller.value.position;
+      // Release the player before reporting: waiting on the server first
+      // keeps the audio running for the whole round trip.
+      controller.removeListener(_playerChanged);
+      await controller.close();
       if (plan != null && !_mock) {
         try {
           await _api!.reportPlaybackStopped(
             _session!,
             plan,
             method: _method,
-            position: _pendingSeek ?? controller.value.position,
+            position: position,
           );
         } on Object {
-          // Closing the player must not be blocked by presence reporting.
+          // Presence reporting is best effort.
         }
       }
-      controller.removeListener(_playerChanged);
-      await controller.close();
     }
     await _bridge?.close();
   }
@@ -1083,8 +1250,10 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     _flashTimer?.cancel();
     _lockTimer?.cancel();
     _hideTimer?.cancel();
+    _skipTimer?.cancel();
     _countdownTimer?.cancel();
     _reportDebounce?.cancel();
+    _seekTimer?.cancel();
     _seekPreviewTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _pausedPing?.cancel();
@@ -1096,6 +1265,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       _rootFocus,
       _seekFocus,
       _playFocus,
+      _skipFocus,
       _settingsFocus,
       _chaptersFocus,
       _episodesFocus,
@@ -1109,7 +1279,21 @@ class _PlaybackScreenState extends State<PlaybackScreen>
   @override
   Widget build(BuildContext context) {
     final controller = _c;
-    final v = controller?.value ?? const SoupVideoValue();
+    final live = controller?.value ?? const SoupVideoValue();
+    // Mid-reload the new player reads 0:00 until it has seeked back; show
+    // where the old one was (and its play state) until then.
+    final held = _loading ? _held : null;
+    final v = held == null
+        ? live
+        : SoupVideoValue(
+            initialized: live.initialized,
+            playing: held.playing,
+            buffering: live.buffering,
+            position: held.position,
+            duration: held.duration,
+            aspectRatio: live.aspectRatio,
+            error: live.error,
+          );
     final position = _scrub ?? _pendingSeek ?? v.position;
     final skip = _activeSkip(position);
     // Touch sheets cover the chrome; TV side panels sit beside it.
@@ -1126,6 +1310,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
         backgroundColor: videoBackdrop,
         body: Focus(
           focusNode: _rootFocus,
+          autofocus: true,
           onKeyEvent: _rootKey,
           child: Stack(
             fit: StackFit.expand,
@@ -1186,7 +1371,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                         children: [
                           Icon(
                             _flashSide < 0
-                                ? PhosphorIconsRegular.arrowCounterClockwise
+                                ? PhosphorIconsRegular.clockCounterClockwise
                                 : PhosphorIconsRegular.clockClockwise,
                             size: 28,
                           ),
@@ -1217,11 +1402,17 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                         color: const Color(0xA6000000),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Text(
-                        v.caption,
-                        key: const ValueKey('playback-caption'),
-                        textAlign: TextAlign.center,
-                        style: SoupType.style(size: 22, weight: 700),
+                      child: ListenableBuilder(
+                        listenable: _scope.prefs,
+                        builder: (context, _) => Text(
+                          v.caption,
+                          key: const ValueKey('playback-caption'),
+                          textAlign: TextAlign.center,
+                          style: SoupType.style(
+                            size: 22 * _scope.prefs.subtitleScale,
+                            weight: 700,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1296,13 +1487,16 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                         seconds: _countdown,
                         onPlayNow: _playNext,
                         onCancel: _dismissNext,
+                        takeFocus: _panel == null,
                       )
                     else if (skip != null &&
+                        (showChrome || _skipFresh) &&
                         _panel == null &&
                         !_locked &&
                         _scrub == null)
                       SkipButton(
                         key: const ValueKey('skip-button'),
+                        focusNode: _skipFocus,
                         label: skip.kind.label,
                         onPressed: () => unawaited(_skipTo(skip)),
                       ),
@@ -1417,7 +1611,7 @@ class _PlaybackScreenState extends State<PlaybackScreen>
     mainAxisSize: MainAxisSize.min,
     children: [
       ChromeButton(
-        icon: PhosphorIconsRegular.arrowCounterClockwise,
+        icon: PhosphorIconsRegular.clockCounterClockwise,
         label: 'Back 10 seconds',
         size: 56,
         iconSize: 28,
@@ -1820,21 +2014,22 @@ class _PlaybackScreenState extends State<PlaybackScreen>
       footer: _method == JellyfinPlayMethod.transcode
           ? 'Transcoding: the server converts this stream.'
           : null,
-      sections: [
+      leftTitle: 'Subtitles',
+      leftSections: [
         PanelSection(
-          title: 'Speed',
+          title: 'Size',
           chips: true,
           options: [
-            for (final s in const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0])
+            for (final z in PlaybackPrefs.subtitleSizes)
               PanelOption(
-                label: '${s == s.truncate() ? s.toInt() : s}×',
-                selected: _speed == s,
-                onSelect: () => unawaited(_setSpeed(s)),
+                label: z.label,
+                selected: _scope.prefs.subtitleSize == z.id,
+                onSelect: () => _setSubtitleSize(z.id),
               ),
           ],
         ),
         PanelSection(
-          title: 'Subtitles',
+          title: '',
           note: hasImageSubs ? "Image-based subtitles can't be shown." : null,
           options: [
             PanelOption(
@@ -1850,11 +2045,26 @@ class _PlaybackScreenState extends State<PlaybackScreen>
               ),
           ],
         ),
-        if (audio.length > 1 && plan != null)
+      ],
+      sections: [
+        PanelSection(
+          title: 'Speed',
+          chips: true,
+          options: [
+            for (final s in const [0.5, 0.75, 1.0, 1.25, 1.5, 2.0])
+              PanelOption(
+                label: '${s == s.truncate() ? s.toInt() : s}×',
+                selected: _speed == s,
+                onSelect: () => unawaited(_setSpeed(s)),
+              ),
+          ],
+        ),
+        if (audio.isNotEmpty && plan != null)
           PanelSection(
             title: 'Audio',
-            note:
-                'Switching away from the default track transcodes the stream.',
+            note: audio.length > 1
+                ? 'Switching away from the default track transcodes the stream.'
+                : null,
             options: [
               for (final s in audio)
                 PanelOption(
@@ -2070,6 +2280,17 @@ class _PlaybackScreenState extends State<PlaybackScreen>
                     ),
                   ),
                 if (hasImageSubs) note("Image-based subtitles can't be shown."),
+                if (_subtitle != null) ...[
+                  const SheetLabel('Size'),
+                  for (final z in PlaybackPrefs.subtitleSizes)
+                    PanelRow(
+                      option: PanelOption(
+                        label: z.label,
+                        selected: _scope.prefs.subtitleSize == z.id,
+                        onSelect: () => _setSubtitleSize(z.id),
+                      ),
+                    ),
+                ],
               ],
             ),
           ),

@@ -593,4 +593,38 @@ void main() {
     expect(progress['IsPaused'], isTrue);
     expect(progress['PlayMethod'], 'Transcode');
   });
+
+  test('decodes subtitles as UTF-8 when Jellyfin sends no charset', () async {
+    // Jellyfin serves Stream.vtt as bare `text/vtt`; without a charset the
+    // http package would decode `response.body` as Latin-1 and mangle every
+    // non-ASCII character into mojibake.
+    final client = MockClient((request) async {
+      return http.Response.bytes(
+        utf8.encode('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n Élan…\n'),
+        200,
+        headers: {'content-type': 'text/vtt'},
+      );
+    });
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+    final track = JellyfinSubtitleTrack(
+      index: 2,
+      label: 'English',
+      codec: 'srt',
+      isDefault: false,
+      uri: Uri.parse('http://jellyfin/Videos/i/s/Subtitles/2/Stream.vtt'),
+    );
+
+    final vtt = await api.getSubtitle(session, track);
+
+    expect(vtt, contains(' Élan…'));
+    expect(vtt, isNot(contains('Â')));
+  });
 }

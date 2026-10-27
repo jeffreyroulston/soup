@@ -131,8 +131,9 @@ class _Rows extends StatelessWidget {
                           kicker: resumeIds.contains(item.id)
                               ? 'Continue'
                               : 'Next',
-                          showPlay: true,
-                          onTap: () => item.isPlayable
+                          showPlay: item.type != 'Episode',
+                          // Episodes open their page; films play directly.
+                          onTap: () => item.isPlayable && item.type != 'Episode'
                               ? openWatch(context, item)
                               : openItem(context, item),
                         ),

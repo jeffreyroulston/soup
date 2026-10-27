@@ -11,6 +11,13 @@ abstract interface class SpeedControllable {
   Future<void> setSpeed(double speed);
 }
 
+/// A [SoupVideoController] that can swap its subtitle track in place, so
+/// turning subtitles on or off needs no new player (and no seek back).
+abstract interface class SubtitleControllable {
+  /// Shows the WebVTT [vtt] from now on; null turns subtitles off.
+  Future<void> setSubtitle(Future<String>? vtt);
+}
+
 class SpeedVideoControllerFactory implements SoupVideoControllerFactory {
   const SpeedVideoControllerFactory();
 
@@ -20,7 +27,7 @@ class SpeedVideoControllerFactory implements SoupVideoControllerFactory {
 }
 
 class SpeedVideoController extends ChangeNotifier
-    implements SoupVideoController, SpeedControllable {
+    implements SoupVideoController, SpeedControllable, SubtitleControllable {
   SpeedVideoController(Uri uri, {Future<String>? subtitleVtt})
     : _controller = VideoPlayerController.networkUrl(
         uri,
@@ -74,6 +81,10 @@ class SpeedVideoController extends ChangeNotifier
   @override
   Future<void> setSpeed(double speed) =>
       _guard(() => _controller.setPlaybackSpeed(speed));
+
+  @override
+  Future<void> setSubtitle(Future<String>? vtt) =>
+      _controller.setClosedCaptionFile(vtt?.then(WebVTTCaptionFile.new));
 
   /// webOS destroys its player on a media error, so every later call fails
   /// with "Player not found". Report the media error that caused it instead.

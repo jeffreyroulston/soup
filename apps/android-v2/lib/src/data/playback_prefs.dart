@@ -25,6 +25,23 @@ class PlaybackPrefs extends ChangeNotifier {
   /// ISO 639-2 code; null = subtitles off.
   String? subtitleLanguage;
 
+  /// Key into [subtitleSizes]; local to this device, since the right size
+  /// depends on the screen.
+  String subtitleSize = 'medium';
+
+  /// Caption sizes offered in the player and Settings, as a scale on the
+  /// player's base caption size.
+  static const subtitleSizes = <({String id, String label, double scale})>[
+    (id: 'small', label: 'Small', scale: 0.8),
+    (id: 'medium', label: 'Medium', scale: 1.0),
+    (id: 'large', label: 'Large', scale: 1.35),
+    (id: 'xlarge', label: 'Extra large', scale: 1.75),
+  ];
+
+  double get subtitleScale =>
+      subtitleSizes.where((s) => s.id == subtitleSize).firstOrNull?.scale ??
+      1.0;
+
   bool loaded = false;
   Future<void>? _loading;
 
@@ -87,6 +104,7 @@ class PlaybackPrefs extends ChangeNotifier {
       maxBitrate = await _s.getInt('pp.maxBitrate');
       audioLanguage = await _s.getString('pp.audioLanguage');
       subtitleLanguage = await _s.getString('pp.subtitleLanguage');
+      subtitleSize = await _s.getString('pp.subtitleSize') ?? 'medium';
     } on Object {
       // Defaults apply for this run.
     }
@@ -100,8 +118,10 @@ class PlaybackPrefs extends ChangeNotifier {
     Object? maxBitrate = _keep,
     Object? audioLanguage = _keep,
     Object? subtitleLanguage = _keep,
+    String? subtitleSize,
   }) async {
     if (autoplayNext != null) this.autoplayNext = autoplayNext;
+    if (subtitleSize != null) this.subtitleSize = subtitleSize;
     if (autoSkipIntros != null) this.autoSkipIntros = autoSkipIntros;
     if (!identical(maxBitrate, _keep)) this.maxBitrate = maxBitrate as int?;
     final languagesBefore = (this.audioLanguage, this.subtitleLanguage);
@@ -127,6 +147,7 @@ class PlaybackPrefs extends ChangeNotifier {
       await _persist('pp.maxBitrate', this.maxBitrate);
       await _persist('pp.audioLanguage', this.audioLanguage);
       await _persist('pp.subtitleLanguage', this.subtitleLanguage);
+      await _s.setString('pp.subtitleSize', this.subtitleSize);
     } on Object {
       // Applies for this run even if storage is unavailable.
     }

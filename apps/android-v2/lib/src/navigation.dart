@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_scope.dart';
 import 'data/models.dart';
+import 'form_factor.dart';
 import 'features/collection/collection_screen.dart';
 import 'features/favourites/favourites_screen.dart';
 import 'features/favourites/history_screen.dart';
@@ -15,9 +16,20 @@ PageRoute<T> _route<T>(
   BuildContext context,
   Widget screen, {
   bool fade = false,
+  bool page = true,
 }) {
   final scope = SoupScope.of(context);
   final wrapped = scope.rewrap(screen);
+  // TV pages share one fixed nav bar: the route itself doesn't move, and
+  // PageScaffold fades only the content under the bar.
+  if (page && !context.isTouch) {
+    return PageRouteBuilder<T>(
+      pageBuilder: (_, _, _) => wrapped,
+      transitionDuration: const Duration(milliseconds: 160),
+      reverseTransitionDuration: const Duration(milliseconds: 120),
+      transitionsBuilder: (_, _, _, child) => child,
+    );
+  }
   if (fade) {
     return PageRouteBuilder<T>(
       pageBuilder: (_, _, _) => wrapped,
@@ -94,6 +106,7 @@ Future<void> openWatch(
   return Navigator.of(context).push(
     _route<void>(
       context,
+      page: false,
       PlaybackScreen(
         item: item,
         startTicks: resume ? item.playbackPositionTicks : 0,

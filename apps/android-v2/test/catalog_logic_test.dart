@@ -81,6 +81,23 @@ void main() {
       expect(canResume(item), isTrue);
     });
 
+    test('seasons without a poster fall back to the series poster', () {
+      CatalogItem season(Map<String, Object?> tags) => CatalogItem.fromJson({
+        'Id': 'se1',
+        'Name': 'Season 2',
+        'Type': 'Season',
+        'SeriesId': 's1',
+        'SeriesName': 'Show',
+        'SeriesPrimaryImageTag': 'st',
+        'ImageTags': tags,
+      })!;
+      expect(season({}).poster, const ImageRef('s1', 'Primary', 'st'));
+      expect(
+        season({'Primary': 'own'}).poster,
+        const ImageRef('se1', 'Primary', 'own'),
+      );
+    });
+
     test('rejects entries with no id or name', () {
       expect(CatalogItem.fromJson({'Name': 'x'}), isNull);
       expect(CatalogItem.fromJson({'Id': 'x'}), isNull);
@@ -180,6 +197,24 @@ void main() {
         );
         expect([for (final i in out.resume) i.id], ['a1', 'm']);
         expect([for (final i in out.nextUp) i.id], ['b1']); // A already shown
+      },
+    );
+
+    test(
+      'collapseKeepWatching drops watched episodes with a saved position',
+      () {
+        final rewatched = CatalogItem(
+          id: 'd1',
+          name: 'd1',
+          type: 'Episode',
+          seriesId: 'D',
+          parentIndexNumber: 1,
+          indexNumber: 1,
+          played: true,
+          playedPercentage: 40,
+        );
+        final out = collapseKeepWatching([rewatched], const []);
+        expect(out.resume, isEmpty);
       },
     );
 

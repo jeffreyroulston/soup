@@ -1136,7 +1136,10 @@ class JellyfinApi
         statusCode: response.statusCode,
       );
     }
-    return response.body;
+    // Jellyfin serves Stream.vtt as `text/vtt` with no charset, and
+    // `response.body` falls back to Latin-1 without one, turning every
+    // UTF-8 character into mojibake ("Â " for a non-breaking space).
+    return utf8.decode(response.bodyBytes, allowMalformed: true);
   }
 
   @override

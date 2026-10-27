@@ -98,13 +98,14 @@ export async function loadSigningKeys(
 export async function signAccessToken(
   keys: SigningKeys,
   env: Env,
-  claims: { email: string },
+  claims: { email: string; sessionId?: string },
 ): Promise<{ token: string; expiresIn: number }> {
   const expiresIn = env.ACCESS_TOKEN_TTL_SECONDS;
   const email = claims.email.trim().toLowerCase();
   const token = await new SignJWT({
     typ: "soup_access",
     email,
+    ...(claims.sessionId ? { sid: claims.sessionId } : {}),
   })
     .setProtectedHeader({ alg: keys.alg, kid: keys.kid, typ: "JWT" })
     .setSubject(email)
@@ -120,7 +121,7 @@ export async function verifyAccessToken(
   keys: SigningKeys,
   env: Env,
   token: string,
-): Promise<{ email: string }> {
+): Promise<{ email: string; sessionId: string | null }> {
   const { payload } = await jwtVerify(token, keys.publicKey, {
     issuer: env.ASSERTION_ISSUER,
     audience: "soup-app",
@@ -128,7 +129,9 @@ export async function verifyAccessToken(
   const email =
     (typeof payload.email === "string" && payload.email) || payload.sub;
   if (!email) throw new Error("missing email");
-  return { email: email.trim().toLowerCase() };
+  // Tokens minted before sessions were tracked carry no sid.
+  const sessionId = typeof payload.sid === "string" ? payload.sid : null;
+  return { email: email.trim().toLowerCase(), sessionId };
 }
 
 export async function signAssertion(

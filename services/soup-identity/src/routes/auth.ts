@@ -19,6 +19,7 @@ import {
   isValidEmail,
   normalizeEmail,
   normalizeUserCode,
+  parseDeviceInfo,
   pollDeviceLink,
   refreshSession,
   revokeSession,
@@ -74,6 +75,7 @@ export function buildAuthRoutes(deps: {
     const providers = linkProviders(deps.env);
     const userCode = rawUserCode ? normalizeUserCode(rawUserCode) : "";
     let errorHtml = providerError;
+    let device: { name: string | null; platform: string | null } | undefined;
     if (userCode && !errorHtml) {
       const check = await checkDeviceLinkCode(deps.db, userCode);
       if (!check.ok) {
@@ -81,11 +83,13 @@ export function buildAuthRoutes(deps: {
           check.reason === "not_found"
             ? "That code wasn’t found. Check the TV and try again."
             : "That code has expired or was already used. Get a new code on the TV.";
+      } else {
+        device = { name: check.deviceName, platform: check.platform };
       }
     }
     const status = !providers.length ? 503 : errorHtml ? 400 : 200;
     return {
-      html: deviceLinkStart({ userCode, providers, errorHtml }),
+      html: deviceLinkStart({ userCode, providers, errorHtml, device }),
       status: status as 200 | 400 | 503,
       ok: status === 200,
       userCode,
@@ -117,7 +121,9 @@ export function buildAuthRoutes(deps: {
   });
 
   app.post("/auth/device/link", linkStartLimit, async (c) => {
-    const started = await startDeviceLink(deps.db, deps.env);
+    // The body is optional: older clients start a link without describing themselves.
+    const body = await c.req.json().catch(() => null);
+    const started = await startDeviceLink(deps.db, deps.env, parseDeviceInfo(body));
     return c.json(started);
   });
 

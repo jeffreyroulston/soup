@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
+import '../../data/seerr.dart';
+import '../../data/seerr_models.dart';
 import '../../navigation.dart';
 import '../theme/soup_tokens.dart';
 import '../widgets/catalog_builder.dart';
@@ -68,6 +72,7 @@ class _TouchScaffoldState extends State<TouchScaffold> {
     final tab =
         widget.section == NavSection.library ||
         widget.section == NavSection.myStuff ||
+        widget.section == NavSection.explore ||
         widget.section == NavSection.search ||
         widget.section == NavSection.settings;
     final padding = MediaQuery.paddingOf(context);
@@ -212,97 +217,115 @@ class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.section});
   final NavSection section;
 
-  static const _sections = [
-    NavSection.home,
-    NavSection.library,
-    NavSection.myStuff,
-    NavSection.search,
-    NavSection.settings,
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final seerr = Seerr.of(context);
+    if (seerr.status.value == null) {
+      unawaited(seerr.loadStatus().then<void>((_) {}, onError: (Object _) {}));
+    }
     return CatalogBuilder<List<CatalogItem>>(
       load: (c) => c.libraries(),
-      builder: (context, libraries, _) => DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Color(0xF20A0A0B),
-          border: Border(top: BorderSide(color: Color(0x14FFFFFF))),
-        ),
-        child: NavigationBarTheme(
-          data: NavigationBarThemeData(
-            backgroundColor: Colors.transparent,
-            indicatorColor: const Color(0x26FFFFFF),
-            height: 64,
-            labelTextStyle: WidgetStateProperty.resolveWith(
-              (states) => SoupType.style(
-                size: 12,
-                weight: states.contains(WidgetState.selected) ? 800 : 600,
-                color: states.contains(WidgetState.selected)
-                    ? SoupColors.ink
-                    : SoupColors.muted,
+      builder: (context, libraries, _) => ValueListenableBuilder<SeerrStatus?>(
+        valueListenable: seerr.status,
+        builder: (context, seerrStatus, _) {
+          final explore = seerrStatus?.usable ?? false;
+          final sections = [
+            NavSection.home,
+            NavSection.library,
+            if (explore) NavSection.explore,
+            NavSection.myStuff,
+            NavSection.search,
+            NavSection.settings,
+          ];
+          return DecoratedBox(
+            decoration: const BoxDecoration(
+              color: Color(0xF20A0A0B),
+              border: Border(top: BorderSide(color: Color(0x14FFFFFF))),
+            ),
+            child: NavigationBarTheme(
+              data: NavigationBarThemeData(
+                backgroundColor: Colors.transparent,
+                indicatorColor: const Color(0x26FFFFFF),
+                height: 64,
+                labelTextStyle: WidgetStateProperty.resolveWith(
+                  (states) => SoupType.style(
+                    size: 12,
+                    weight: states.contains(WidgetState.selected) ? 800 : 600,
+                    color: states.contains(WidgetState.selected)
+                        ? SoupColors.ink
+                        : SoupColors.muted,
+                  ),
+                ),
+                iconTheme: WidgetStateProperty.resolveWith(
+                  (states) => IconThemeData(
+                    color: states.contains(WidgetState.selected)
+                        ? SoupColors.ink
+                        : SoupColors.muted,
+                  ),
+                ),
+              ),
+              child: NavigationBar(
+                selectedIndex: sections
+                    .indexOf(section)
+                    .clamp(0, sections.length - 1),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                onDestinationSelected: (i) {
+                  final target = sections[i];
+                  if (target == section) return;
+                  switch (target) {
+                    case NavSection.home:
+                      openHome(context);
+                    case NavSection.library:
+                      final first = libraries?.firstOrNull;
+                      if (first != null) openLibrary(context, first);
+                    case NavSection.explore:
+                      openExplore(context);
+                    case NavSection.myStuff:
+                      openFavourites(context);
+                    case NavSection.search:
+                      openSearch(context);
+                    case NavSection.settings:
+                      openSettings(context);
+                    case NavSection.none:
+                      break;
+                  }
+                },
+                destinations: [
+                  const NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home_rounded),
+                    label: 'Home',
+                  ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.video_library_outlined),
+                    selectedIcon: Icon(Icons.video_library_rounded),
+                    label: 'Library',
+                  ),
+                  if (explore)
+                    const NavigationDestination(
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore_rounded),
+                      label: 'Explore',
+                    ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.favorite_border_rounded),
+                    selectedIcon: Icon(Icons.favorite_rounded),
+                    label: 'My Stuff',
+                  ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.search_rounded),
+                    label: 'Search',
+                  ),
+                  const NavigationDestination(
+                    icon: Icon(Icons.person_outline_rounded),
+                    selectedIcon: Icon(Icons.person_rounded),
+                    label: 'Account',
+                  ),
+                ],
               ),
             ),
-            iconTheme: WidgetStateProperty.resolveWith(
-              (states) => IconThemeData(
-                color: states.contains(WidgetState.selected)
-                    ? SoupColors.ink
-                    : SoupColors.muted,
-              ),
-            ),
-          ),
-          child: NavigationBar(
-            selectedIndex: _sections
-                .indexOf(section)
-                .clamp(0, _sections.length - 1),
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            onDestinationSelected: (i) {
-              final target = _sections[i];
-              if (target == section) return;
-              switch (target) {
-                case NavSection.home:
-                  openHome(context);
-                case NavSection.library:
-                  final first = libraries?.firstOrNull;
-                  if (first != null) openLibrary(context, first);
-                case NavSection.myStuff:
-                  openFavourites(context);
-                case NavSection.search:
-                  openSearch(context);
-                case NavSection.settings:
-                  openSettings(context);
-                case NavSection.none:
-                  break;
-              }
-            },
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home_rounded),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.video_library_outlined),
-                selectedIcon: Icon(Icons.video_library_rounded),
-                label: 'Library',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.favorite_border_rounded),
-                selectedIcon: Icon(Icons.favorite_rounded),
-                label: 'My Stuff',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.search_rounded),
-                label: 'Search',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline_rounded),
-                selectedIcon: Icon(Icons.person_rounded),
-                label: 'Account',
-              ),
-            ],
-          ),
-        ),
+          );
+        },
       ),
     );
   }

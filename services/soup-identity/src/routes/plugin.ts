@@ -36,7 +36,9 @@ export function buildPluginRoutes(deps: { db: Db; env: Env }) {
       );
     }
 
-    await deps.db.query(
+    // A server id belongs to the plugin that first registered it; another
+    // plugin must not take it over (and redirect its guests' base_url).
+    const result = await deps.db.query(
       `INSERT INTO servers (server_id, name, base_url, magic_dns, audience, plugin_id, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
        ON CONFLICT (server_id) DO UPDATE SET
@@ -44,9 +46,9 @@ export function buildPluginRoutes(deps: { db: Db; env: Env }) {
          base_url = EXCLUDED.base_url,
          magic_dns = EXCLUDED.magic_dns,
          audience = EXCLUDED.audience,
-         plugin_id = EXCLUDED.plugin_id,
          metadata = EXCLUDED.metadata,
-         updated_at = now()`,
+         updated_at = now()
+       WHERE servers.plugin_id = EXCLUDED.plugin_id`,
       [
         serverId,
         body.name,
@@ -57,6 +59,15 @@ export function buildPluginRoutes(deps: { db: Db; env: Env }) {
         JSON.stringify(body.metadata ?? {}),
       ],
     );
+    if ((result.rowCount ?? 0) === 0) {
+      return c.json(
+        {
+          error: "conflict",
+          message: "Server id is registered by another plugin",
+        },
+        409,
+      );
+    }
 
     return c.json({
       server_id: serverId,

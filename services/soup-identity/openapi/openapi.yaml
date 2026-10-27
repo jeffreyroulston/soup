@@ -478,6 +478,8 @@ paths:
                 $ref: "#/components/schemas/ServerRecord"
         "401":
           description: Invalid plugin credentials
+        "409":
+          description: Server id is registered by another plugin
     delete:
       tags: [plugin]
       summary: Delete server and its entitlements

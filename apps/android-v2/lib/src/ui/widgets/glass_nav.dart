@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app_scope.dart';
 import '../../data/models.dart';
+import '../../data/seerr.dart';
+import '../../data/seerr_models.dart';
 import '../../navigation.dart';
 import '../../utils/media.dart';
 import '../soup_focus_policy.dart';
@@ -12,7 +16,7 @@ import 'glass.dart';
 import 'page_scaffold.dart';
 import 'soup_wordmark.dart';
 
-enum NavSection { home, library, myStuff, search, settings, none }
+enum NavSection { home, library, myStuff, explore, search, settings, none }
 
 /// Top navigation: wordmark, glass pill of Home + libraries, search, account.
 class GlassNav extends StatelessWidget {
@@ -21,6 +25,7 @@ class GlassNav extends StatelessWidget {
     this.libraryId,
     this.solid = false,
     this.activeFocusNode,
+    this.entryFocus,
     super.key,
   });
 
@@ -29,6 +34,10 @@ class GlassNav extends StatelessWidget {
 
   /// Attached to the item for [section], so the page can focus it on Back.
   final FocusNode? activeFocusNode;
+
+  /// Where Down from the bar lands, when the page has a header control that
+  /// geometry alone would skip (see [SoupFocusPolicy.entryBelow]).
+  final FocusNode? entryFocus;
 
   /// Frosted canvas once the page has scrolled.
   final bool solid;
@@ -46,6 +55,12 @@ class GlassNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scope = SoupScope.of(context);
+    final seerr = Seerr.of(context);
+    // Explore only shows once the server says Seerr is set up; asked once
+    // per session, and a failed probe just leaves the tab out.
+    if (seerr.status.value == null) {
+      unawaited(seerr.loadStatus().then<void>((_) {}, onError: (Object _) {}));
+    }
     final bar = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: SoupSpacing.gutter,
@@ -61,57 +76,71 @@ class GlassNav extends StatelessWidget {
                 builder: (context, loaded, _) {
                   final libraries = loaded ?? _libraries[scope.catalog];
                   if (loaded != null) _libraries[scope.catalog] = loaded;
-                  return Glass(
-                    radius: 28,
-                    padding: const EdgeInsets.all(5),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _Tab(
-                          'Home',
-                          section == NavSection.home,
-                          () {
-                            openHome(context);
-                            PageScaffold.focusNav();
-                          },
-                          autofocus: section == NavSection.home,
-                          focusNode: section == NavSection.home
-                              ? activeFocusNode
-                              : null,
-                        ),
-                        if (libraries == null)
-                          for (var i = 0; i < 2; i++)
-                            Container(
-                              width: 90,
-                              height: 38,
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0x14FFFFFF),
-                                borderRadius: BorderRadius.circular(19),
+                  return ValueListenableBuilder<SeerrStatus?>(
+                    valueListenable: seerr.status,
+                    builder: (context, seerrStatus, _) => Glass(
+                      radius: 28,
+                      padding: const EdgeInsets.all(5),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _Tab(
+                            'Home',
+                            section == NavSection.home,
+                            () {
+                              openHome(context);
+                              PageScaffold.focusNav();
+                            },
+                            autofocus: section == NavSection.home,
+                            focusNode: section == NavSection.home
+                                ? activeFocusNode
+                                : null,
+                          ),
+                          if (libraries == null)
+                            for (var i = 0; i < 2; i++)
+                              Container(
+                                width: 90,
+                                height: 38,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0x14FFFFFF),
+                                  borderRadius: BorderRadius.circular(19),
+                                ),
+                              )
+                          else
+                            for (final lib in libraries)
+                              _Tab(
+                                lib.name,
+                                section == NavSection.library &&
+                                    libraryId == lib.id,
+                                () => _open(() => openLibrary(context, lib)),
+                                focusNode:
+                                    section == NavSection.library &&
+                                        libraryId == lib.id
+                                    ? activeFocusNode
+                                    : null,
                               ),
-                            )
-                        else
-                          for (final lib in libraries)
+                          if (seerrStatus?.usable ?? false)
                             _Tab(
-                              lib.name,
-                              section == NavSection.library &&
-                                  libraryId == lib.id,
-                              () => _open(() => openLibrary(context, lib)),
-                              focusNode:
-                                  section == NavSection.library &&
-                                      libraryId == lib.id
+                              'Explore',
+                              section == NavSection.explore,
+                              () => _open(() => openExplore(context)),
+                              focusNode: section == NavSection.explore
                                   ? activeFocusNode
                                   : null,
                             ),
-                        _Tab(
-                          'My Stuff',
-                          section == NavSection.myStuff,
-                          () => _open(() => openFavourites(context)),
-                          focusNode: section == NavSection.myStuff
-                              ? activeFocusNode
-                              : null,
-                        ),
-                      ],
+                          _Tab(
+                            'My Stuff',
+                            section == NavSection.myStuff,
+                            () => _open(() => openFavourites(context)),
+                            focusNode: section == NavSection.myStuff
+                                ? activeFocusNode
+                                : null,
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -144,7 +173,10 @@ class GlassNav extends StatelessWidget {
                 colors: [Color(0x99000000), Color(0x00000000)],
               ),
       ),
-      child: FocusTraversalGroup(policy: SoupFocusPolicy(), child: bar),
+      child: FocusTraversalGroup(
+        policy: SoupFocusPolicy(entryBelow: entryFocus),
+        child: bar,
+      ),
     );
   }
 }

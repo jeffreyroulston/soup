@@ -11,7 +11,13 @@ import 'package:flutter/widgets.dart';
 /// * Left/right stays within the current row; at its end focus stays put.
 /// * Off-screen items are only reachable through the list they scroll in.
 class SoupFocusPolicy extends ReadingOrderTraversalPolicy {
-  SoupFocusPolicy();
+  SoupFocusPolicy({this.entryBelow});
+
+  /// Where Down lands from this group whatever the geometry says: a page's
+  /// header control (Explore's section tabs) that would otherwise lose to
+  /// a wider control further down the same column. Only used while it's on
+  /// screen and focusable.
+  final FocusNode? entryBelow;
 
   // Shared by every group so "came from" survives crossing group boundaries.
   static final _history =
@@ -44,7 +50,14 @@ class SoupFocusPolicy extends ReadingOrderTraversalPolicy {
       last.from.requestFocus();
       return true;
     }
-    final target = _best(from, candidates, direction);
+    final entry = entryBelow;
+    final target =
+        direction == TraversalDirection.down &&
+            entry != null &&
+            entry.canRequestFocus &&
+            entry.context?.mounted == true
+        ? entry
+        : _best(from, candidates, direction);
     if (target == null) return false;
     // A fresh move from anywhere but the end of the path starts a new path.
     if (last != null && !identical(last.to, currentNode)) _history.clear();

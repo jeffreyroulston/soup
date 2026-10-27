@@ -834,6 +834,22 @@ export function createJellyfin(client: JellyfinClient) {
   }
 
   /**
+   * The library's copy of a TMDB title, matched on provider id so a remake with the same name
+   * doesn't pass for it. Null when the library doesn't have it.
+   */
+  async function findByTmdbId(tmdbId: number, type: 'Movie' | 'Series', name: string): Promise<JellyfinItem | null> {
+    if (mock) return null
+    const items = asItems(await userItems(listQuery('Primary,Backdrop', {
+      searchTerm: name,
+      Recursive: 'true',
+      IncludeItemTypes: type,
+      Fields: `${LIST_FIELDS},ProviderIds`,
+      Limit: '20',
+    })))
+    return items.find(item => item.providerIds?.Tmdb === String(tmdbId)) ?? null
+  }
+
+  /**
    * Intro/credits/recap markers. Jellyfin itself only stores them; a provider plugin
    * (usually Intro Skipper) detects them. Servers before 10.10 have no endpoint, so an
    * error just means no segments.
@@ -914,6 +930,7 @@ export function createJellyfin(client: JellyfinClient) {
     getEpisodes,
     getSeriesNextUp,
     getPersonItems,
+    findByTmdbId,
     getMediaSegments,
     getExtras,
     search,

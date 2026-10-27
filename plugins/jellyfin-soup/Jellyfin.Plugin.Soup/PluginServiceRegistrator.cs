@@ -15,8 +15,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.AddHttpClient(SoupApiClient.HttpClientName);
         serviceCollection.AddHttpClient(TailscaleApiClient.HttpClientName);
+        // Catalogue reads should fail fast: a slow Seerr must not hold a Jellyfin request thread for long.
+        serviceCollection.AddHttpClient(SeerrApiClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(20));
         serviceCollection.AddSingleton<SoupApiClient>();
         serviceCollection.AddSingleton<TailscaleApiClient>();
+        serviceCollection.AddSingleton<SeerrApiClient>();
         serviceCollection.AddSingleton<AssertionVerifier>();
         serviceCollection.AddSingleton<AssertionReplayStore>();
         serviceCollection.AddSingleton<EntitlementService>();

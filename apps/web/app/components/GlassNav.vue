@@ -9,8 +9,11 @@ const scrolled = ref(false)
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
 
+const { available: exploreAvailable } = useSeerrStatus()
+
 const initial = computed(() => (auth.email.value || 'S').charAt(0).toUpperCase())
-const mobileLibraries = computed(() => libraries.value.slice(0, 2))
+/** Phones have room for two library tabs, or one when Explore takes a slot. */
+const mobileLibraries = computed(() => libraries.value.slice(0, exploreAvailable.value ? 1 : 2))
 
 watch(() => route.fullPath, () => {
   menuOpen.value = false
@@ -113,6 +116,15 @@ async function onLogout() {
         :class="isActive(`/library/${lib.id}`) ? 'bg-ink font-bold text-canvas' : 'font-semibold text-ink-2 hover:text-ink'"
       >
         {{ lib.name }}
+      </NuxtLink>
+      <NuxtLink
+        v-if="exploreAvailable"
+        to="/explore"
+        :aria-current="isActive('/explore') ? 'page' : undefined"
+        class="inline-flex h-[38px] shrink-0 items-center whitespace-nowrap rounded-full px-[18px] text-[15px] transition"
+        :class="isActive('/explore') ? 'bg-ink font-bold text-canvas' : 'font-semibold text-ink-2 hover:text-ink'"
+      >
+        Explore
       </NuxtLink>
       <NuxtLink
         to="/favourites"
@@ -251,6 +263,18 @@ async function onLogout() {
         <path d="M4 4h16v16H4zM8 4v16M16 4v16" />
       </svg>
       <span class="max-w-full truncate px-1">{{ lib.name }}</span>
+    </NuxtLink>
+    <NuxtLink
+      v-if="exploreAvailable"
+      to="/explore"
+      :aria-current="isActive('/explore') ? 'page' : undefined"
+      class="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[26px] text-[11px] font-bold"
+      :class="isActive('/explore') ? 'bg-white/15 text-ink' : 'text-muted'"
+    >
+      <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" /><path d="M15.5 8.5l-2 5-5 2 2-5z" />
+      </svg>
+      Explore
     </NuxtLink>
     <NuxtLink
       to="/favourites"

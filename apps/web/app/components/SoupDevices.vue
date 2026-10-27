@@ -207,8 +207,8 @@ async function onSignOutOthers() {
       <li
         v-for="device in devices"
         :key="device.id"
-        class="flex items-center gap-3 rounded-btn px-3 py-2.5 transition-colors"
-        :class="editing ? '' : 'hover:bg-white/[0.04]'"
+        class="flex gap-3 rounded-btn px-3 py-2.5 transition-colors"
+        :class="editing ? 'items-start' : 'items-center hover:bg-white/[0.04]'"
       >
         <span
           class="grid size-10 shrink-0 place-items-center rounded-[12px]"
@@ -237,7 +237,11 @@ async function onSignOutOthers() {
           <span class="truncate text-[13px] font-semibold text-muted">{{ subtitleOf(device) }}</span>
         </span>
 
-        <span v-if="device.current" class="shrink-0 rounded-full bg-ok/15 px-3 py-1 text-xs font-extrabold text-ok max-sm:sr-only">
+        <span
+          v-if="device.current"
+          class="shrink-0 rounded-full bg-ok/15 px-3 py-1 text-xs font-extrabold text-ok max-sm:sr-only"
+          :class="editing ? 'mt-2' : ''"
+        >
           This browser
         </span>
         <button
@@ -245,7 +249,7 @@ async function onSignOutOthers() {
           type="button"
           :disabled="busy !== null"
           :aria-label="confirming === device.id ? `Confirm signing out ${nameOf(device)}` : `Sign out ${nameOf(device)}`"
-          class="grid h-9 min-w-9 shrink-0 place-items-center rounded-full text-[13px] font-bold transition disabled:opacity-50"
+          class="mt-0.5 grid h-9 min-w-9 shrink-0 place-items-center rounded-full text-[13px] font-bold transition disabled:opacity-50"
           :class="confirming === device.id || busy === device.id ? 'bg-accent px-3.5 text-canvas' : 'text-muted hover:bg-white/10 hover:text-ink'"
           @click="onSignOut(device)"
           @blur="confirming === device.id && (confirming = null)"

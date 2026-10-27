@@ -14,4 +14,5 @@ owner: "soup"
 artifacts:
   - "Jellyfin.Plugin.Soup.dll"
 changelog: >
+  Seerr bridge (/SoupSeerr) for the Explore tab: browse and request through Jellyseerr as the user's own account.
   Dashboard main-menu "Soup Invites" page; Plugins → Soup Auth keeps connection/Tailscale settings.

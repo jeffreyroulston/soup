@@ -113,6 +113,31 @@
                     <div class="fieldDescription">Recommend 1800. Soup grant TTL is set slightly shorter.</div>
                 </div>
 
+                <div class="sectionTitleContainer flex align-items-center" style="margin-top:1.5em;">
+                    <h2 class="sectionTitle">Seerr (Explore tab)</h2>
+                </div>
+                <p class="fieldDescription">
+                    Point at a Jellyseerr/Overseerr server and Soup clients get an Explore tab: browse and request
+                    titles as the Seerr account linked to each Jellyfin user (users sign in to Seerr with Jellyfin once).
+                    The API key stays on this host. Leave the URL blank to hide the tab.
+                </p>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="SeerrBaseUrl">Seerr URL</label>
+                    <input id="SeerrBaseUrl" type="text" is="emby-input" />
+                    <div class="fieldDescription">Example: http://jellyseerr:5055 (as reachable from this Jellyfin host)</div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="SeerrApiKey">Seerr API key</label>
+                    <input id="SeerrApiKey" type="password" is="emby-input" autocomplete="new-password" />
+                    <div class="fieldDescription">Seerr → Settings → General → API Key. Leave blank to keep the current key.</div>
+                </div>
+                <div style="margin-bottom:1em;">
+                    <button is="emby-button" type="button" class="raised emby-button" id="SeerrTestButton">
+                        <span>Test Seerr connection</span>
+                    </button>
+                    <span id="SeerrTestResult" class="fieldDescription" style="margin-left:1em;"></span>
+                </div>
+
                 <div>
                     <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                         <span>Save</span>
@@ -152,6 +177,9 @@
                     document.querySelector('#TailscaleGuestTags').value = config.TailscaleGuestTags || 'tag:soup-guest';
                     document.querySelector('#TailscaleAuthKeyExpirySeconds').value =
                         config.TailscaleAuthKeyExpirySeconds || 1800;
+                    document.querySelector('#SeerrBaseUrl').value = config.SeerrBaseUrl || '';
+                    document.querySelector('#SeerrApiKey').value = '';
+                    document.querySelector('#SeerrTestResult').textContent = '';
                     Dashboard.hideLoadingMsg();
                 });
             });
@@ -189,12 +217,38 @@
                     config.TailscaleGuestTags = document.querySelector('#TailscaleGuestTags').value;
                     config.TailscaleAuthKeyExpirySeconds =
                         parseInt(document.querySelector('#TailscaleAuthKeyExpirySeconds').value, 10) || 1800;
+                    config.SeerrBaseUrl = document.querySelector('#SeerrBaseUrl').value.trim();
+                    var seerrApiKey = document.querySelector('#SeerrApiKey').value;
+                    if (seerrApiKey) {
+                        config.SeerrApiKey = seerrApiKey;
+                    }
                     ApiClient.updatePluginConfiguration(SoupAuthConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
                 });
                 e.preventDefault();
                 return false;
+            });
+
+        // Tries the fields as typed (blank key = the saved one), so a key can be checked before saving.
+        document.querySelector('#SeerrTestButton')
+            .addEventListener('click', function () {
+                var result = document.querySelector('#SeerrTestResult');
+                result.textContent = 'Testing…';
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('SoupSeerr/Test'),
+                    contentType: 'application/json',
+                    dataType: 'json',
+                    data: JSON.stringify({
+                        baseUrl: document.querySelector('#SeerrBaseUrl').value.trim(),
+                        apiKey: document.querySelector('#SeerrApiKey').value
+                    })
+                }).then(function (response) {
+                    result.textContent = (response.ok ? '✓ ' : '✗ ') + (response.message || '');
+                }, function () {
+                    result.textContent = '✗ The test request failed';
+                });
             });
     </script>
 </div>

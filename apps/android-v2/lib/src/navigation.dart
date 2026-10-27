@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import 'app_scope.dart';
 import 'data/models.dart';
 import 'form_factor.dart';
+import 'data/seerr_models.dart';
 import 'features/collection/collection_screen.dart';
+import 'features/explore/explore_requests_screen.dart';
+import 'features/explore/explore_screen.dart';
+import 'features/explore/explore_title_screen.dart';
 import 'features/favourites/favourites_screen.dart';
 import 'features/favourites/history_screen.dart';
 import 'features/item/item_screen.dart';
@@ -70,6 +74,19 @@ void openSearch(BuildContext context, {String? query, Person? person}) =>
 
 void openSettings(BuildContext context) =>
     _goTop(context, const SettingsScreen());
+
+/// Explore opens on Discover; Requests is its other tab.
+void openExplore(BuildContext context, {String? query}) =>
+    _goTop(context, ExploreScreen(initialQuery: query));
+
+void openExploreRequests(BuildContext context) =>
+    _goTop(context, const ExploreRequestsScreen());
+
+/// A Seerr title's page stacks like a Jellyfin item's.
+void openExploreTitle(BuildContext context, SeerrMediaType type, int tmdbId) =>
+    Navigator.of(context).push(
+      _route<void>(context, ExploreTitleScreen(mediaType: type, tmdbId: tmdbId)),
+    );
 
 /// Detail pages stack so Back returns to where you were.
 void openItem(BuildContext context, CatalogItem item) {

@@ -102,9 +102,7 @@ export function useServers() {
     const session = auth.jellyfin.value
     if (!session) return null
     if (session.direct) return `direct:${session.serverId}:${session.userId}`
-    // Sessions from before the picker don't carry the roster id, so match those by address.
-    const host = new URL(session.baseUrl).host
-    const id = session.soupServerId ?? auth.servers.value.find(server => serverHost(server) === host)?.id
+    const id = auth.activeSoupServerId.value
     return id ? `soup:${id}` : null
   })
 

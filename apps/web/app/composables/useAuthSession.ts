@@ -1,7 +1,7 @@
 import type { AuthSessionResponse, JellyfinSessionPayload } from '~/types/jellyfin'
 import { MOCK_EMAIL, MOCK_SESSION } from '~/utils/mockCatalog'
 import { isMockMode } from '~/utils/mockMode'
-import { exchangeForJellyfin, fetchServers, pickServer } from '~/utils/soupExchange'
+import { exchangeForJellyfin, fetchServers, pickServer, serverHost } from '~/utils/soupExchange'
 import {
   fetchRoster,
   googleSignInUrl,
@@ -10,6 +10,7 @@ import {
   refreshSoupSession,
   revokeSoupSession,
   startDeviceLink,
+  type DeviceInfo,
   type RosterServer,
 } from '~/utils/soupIdentity'
 
@@ -25,6 +26,11 @@ export const LAST_SERVER_KEY = 'soup.jellyfin.lastServer'
 const PREFERRED_SERVER_KEY = 'soup.server.preferred'
 /** Jellyfin servers added with a username and password, each with its own token. */
 const SAVED_KEY = 'soup.servers.direct'
+/**
+ * This tab's tokens for roster servers other than the active one, by roster id, so they can be
+ * called without switching. Per tab for the same reason as `STORAGE_KEY`.
+ */
+const POOL_KEY = 'soup.jellyfin.pool'
 
 /** A server signed in to directly, kept so the user can switch back without signing in again. */
 export type SavedServer = {
@@ -59,6 +65,8 @@ type DeviceLinkState = {
 let deviceLink: DeviceLinkState | null = null
 /** One re-exchange at a time, however many requests hit a 401 together. */
 let reexchanging: Promise<AuthSessionResponse> | null = null
+/** One pooled exchange per roster server at a time. */
+const minting = new Map<string, Promise<JellyfinSessionPayload>>()
 
 function readLocal(key: string): string | null {
   try {
@@ -109,6 +117,29 @@ function readSaved(): SavedServer[] {
   }
 }
 
+function readPool(): Record<string, JellyfinSessionPayload> {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(POOL_KEY) ?? '{}') as Record<string, JellyfinSessionPayload>
+    return saved && typeof saved === 'object' ? saved : {}
+  }
+  catch {
+    return {}
+  }
+}
+
+/** A saved server as a session, for calling it whether or not it's the active one. */
+export function savedSession(server: SavedServer): JellyfinSessionPayload {
+  return {
+    baseUrl: server.baseUrl,
+    userId: server.userId,
+    accessToken: server.accessToken,
+    serverId: server.serverId,
+    deviceId: server.deviceId,
+    direct: true,
+    serverName: server.name,
+  }
+}
+
 /** Jellyfin's own name for the server, else its host. */
 async function fetchServerName(baseUrl: string): Promise<string> {
   try {
@@ -138,10 +169,14 @@ function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
   return fn()
 }
 
-/** Stored Soup tokens, refreshed when within a minute of expiry; null when signed out. */
-async function freshTokens(identityBaseUrl: string): Promise<SoupTokens | null> {
+/**
+ * Stored Soup tokens, refreshed when within a minute of expiry; null when signed out.
+ * `rejectedToken` forces a refresh when Identity turned that access token down early.
+ */
+async function freshTokens(identityBaseUrl: string, rejectedToken?: string): Promise<SoupTokens | null> {
   const skewMs = 60_000
-  const isFresh = (tokens: SoupTokens) => tokens.expiresAt * 1000 > Date.now() + skewMs
+  const isFresh = (tokens: SoupTokens) =>
+    tokens.accessToken !== rejectedToken && tokens.expiresAt * 1000 > Date.now() + skewMs
   const current = readTokens()
   if (!current || isFresh(current)) return current
   return withRefreshLock(async () => {
@@ -186,6 +221,28 @@ function webDeviceId(): string {
   return id
 }
 
+/** "Firefox on macOS", so this browser is recognisable in the account's device list. */
+function webDeviceInfo(): DeviceInfo {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const browser = [
+    [/Edg\//, 'Edge'],
+    [/OPR\//, 'Opera'],
+    [/Firefox\/|FxiOS/, 'Firefox'],
+    [/Chrome\/|CriOS/, 'Chrome'],
+    [/Safari\//, 'Safari'],
+  ].find(([pattern]) => (pattern as RegExp).test(ua))?.[1] as string | undefined
+  const os = [
+    [/Windows/, 'Windows'],
+    [/Android/, 'Android'],
+    [/iPhone|iPad|iPod/, 'iOS'],
+    [/Mac OS X/, 'macOS'],
+    [/CrOS/, 'ChromeOS'],
+    [/Linux/, 'Linux'],
+  ].find(([pattern]) => (pattern as RegExp).test(ua))?.[1] as string | undefined
+  const name = [browser ?? 'Browser', os && `on ${os}`].filter(Boolean).join(' ')
+  return { device_name: name, platform: 'web' }
+}
+
 export function normalizeServerUrl(input: string): string {
   let value = input.trim().replace(/\/+$/, '')
   if (!value) return value
@@ -211,6 +268,28 @@ export function useAuthSession() {
   const savedServers = useState<SavedServer[]>('soup-saved-servers', readSaved)
   /** The Soup account, which can differ from `email` while a direct server is active. */
   const soupEmail = useState<string | null>('soup-account-email', () => readTokens()?.email ?? null)
+  /** Tokens for roster servers other than the active one; see `POOL_KEY`. */
+  const pool = useState<Record<string, JellyfinSessionPayload>>('soup-jellyfin-pool', readPool)
+
+  /** Roster id of the active Soup session; sessions from before the picker are matched by address. */
+  const activeSoupServerId = computed(() => {
+    const session = jellyfin.value
+    if (!session || session.direct) return null
+    if (session.soupServerId) return session.soupServerId
+    const host = new URL(session.baseUrl).host
+    return servers.value.find(server => serverHost(server) === host)?.id ?? null
+  })
+
+  function writePool(next: Record<string, JellyfinSessionPayload>) {
+    pool.value = next
+    try {
+      if (Object.keys(next).length) sessionStorage.setItem(POOL_KEY, JSON.stringify(next))
+      else sessionStorage.removeItem(POOL_KEY)
+    }
+    catch {
+      // storage blocked: the pool still works for this page
+    }
+  }
 
   function writeSaved(next: SavedServer[]) {
     savedServers.value = next
@@ -232,6 +311,18 @@ export function useAuthSession() {
   }
 
   function persistJellyfin(session: JellyfinSessionPayload | null) {
+    // The outgoing Soup token still works, so keep it for calls that don't switch back. The
+    // incoming server's pooled token is gone: Jellyfin ends a device's old session when it signs
+    // in again, and every exchange here uses this browser's one device id.
+    const previous = jellyfin.value
+    const previousId = activeSoupServerId.value
+    const nextId = session && !session.direct ? session.soupServerId ?? null : null
+    if (previousId !== nextId) {
+      const next = { ...pool.value }
+      if (previous && previousId) next[previousId] = previous
+      if (nextId) delete next[nextId]
+      writePool(next)
+    }
     jellyfin.value = session
     if (!import.meta.client) return
     if (session && !session.direct) {
@@ -324,6 +415,7 @@ export function useAuthSession() {
     catch (error) {
       if (!(error instanceof IdentityError && error.status === 401)) throw error
       writeTokens(null)
+      writePool({})
       return null
     }
   }
@@ -399,7 +491,7 @@ export function useAuthSession() {
         expiresIn: 600,
       }
     }
-    const started = await startDeviceLink(identityBaseUrl)
+    const started = await startDeviceLink(identityBaseUrl, webDeviceInfo())
     const interval = started.interval || 5
     deviceLink = {
       deviceCode: started.device_code,
@@ -507,15 +599,7 @@ export function useAuthSession() {
     email.value = server.username
     choosingServer.value = false
     serverError.value = null
-    persistJellyfin({
-      baseUrl: server.baseUrl,
-      userId: server.userId,
-      accessToken: server.accessToken,
-      serverId: server.serverId,
-      deviceId: server.deviceId,
-      direct: true,
-      serverName: server.name,
-    })
+    persistJellyfin(savedSession(server))
   }
 
   /** Switches to a saved server once its token checks out; a rejected token drops the entry. */
@@ -729,6 +813,83 @@ export function useAuthSession() {
     return reexchanging
   }
 
+  /**
+   * A session for roster server `serverId` without switching to it: the active one when it's
+   * that server, else this tab's pooled token, exchanged on first use. `failedToken` just got a
+   * 401, so it's replaced rather than handed back.
+   */
+  async function soupSession(serverId: string, failedToken?: string): Promise<JellyfinSessionPayload> {
+    if (isMockMode()) return MOCK_SESSION
+    if (activeSoupServerId.value === serverId && jellyfin.value) {
+      if (!failedToken || failedToken !== jellyfin.value.accessToken) return jellyfin.value
+      const payload = await reexchange(failedToken)
+      if (!payload.jellyfin) throw new Error('Choose a server')
+      return payload.jellyfin
+    }
+    // Signed out of Soup in another tab: the pooled tokens go with it.
+    if (!readTokens()) throw new Error('Your Soup session expired. Sign in again.')
+    const pooled = pool.value[serverId]
+    if (pooled && pooled.accessToken !== failedToken) return pooled
+    let pending = minting.get(serverId)
+    if (!pending) {
+      pending = mintPooled(serverId).finally(() => minting.delete(serverId))
+      minting.set(serverId, pending)
+    }
+    return pending
+  }
+
+  async function mintPooled(serverId: string): Promise<JellyfinSessionPayload> {
+    const tokens = await freshTokens(identityBaseUrl)
+    if (!tokens) throw new Error('Your Soup session expired. Sign in again.')
+    const roster = await loadServers()
+    const server = roster.find(entry => entry.id === serverId)
+    if (!server) {
+      writePool(Object.fromEntries(Object.entries(pool.value).filter(([id]) => id !== serverId)))
+      throw new Error('That server is no longer on your roster')
+    }
+    const session = await exchangeForJellyfin(identityBaseUrl, tokens.accessToken, webDeviceId(), server)
+    // Switched to this server meanwhile: one of the two tokens is already dead, and the active
+    // session's 401 handling is what recovers it.
+    if (activeSoupServerId.value === serverId && jellyfin.value) return jellyfin.value
+    writePool({ ...pool.value, [serverId]: session })
+    return session
+  }
+
+  /** A saved server's session without switching to it. A 401 on `failedToken` forgets the server, as switching would. */
+  async function directSession(id: string, failedToken?: string): Promise<JellyfinSessionPayload> {
+    const server = savedServers.value.find(entry => entry.id === id)
+    if (!server) throw new Error('That server is no longer saved')
+    if (failedToken && failedToken === server.accessToken) {
+      // The active server falls back to another one; any other is just dropped.
+      if (activeSavedId() === id) await reexchange(failedToken)
+      else await removeSaved(id)
+      throw new Error(`Your session on ${server.name} ended. Add it again to sign back in.`)
+    }
+    return savedSession(server)
+  }
+
+  /**
+   * Runs an Identity call with a fresh Soup access token. A 401 gets one forced refresh and a
+   * retry, since tokens from before device tracking are turned down by device management.
+   */
+  async function withSoupAccess<T>(call: (accessToken: string) => Promise<T>): Promise<T> {
+    const signedOut = () => {
+      soupEmail.value = null
+      return new Error('Your Soup session has ended. Sign in again.')
+    }
+    const tokens = await freshTokens(identityBaseUrl)
+    if (!tokens) throw signedOut()
+    try {
+      return await call(tokens.accessToken)
+    }
+    catch (error) {
+      if (!(error instanceof IdentityError && error.status === 401)) throw error
+    }
+    const retry = await freshTokens(identityBaseUrl, tokens.accessToken)
+    if (!retry) throw signedOut()
+    return call(retry.accessToken)
+  }
+
   /** Signs out of Soup and every saved server. */
   async function logout() {
     const saved = savedServers.value
@@ -753,6 +914,7 @@ export function useAuthSession() {
       soupEmail.value = null
       email.value = null
       persistJellyfin(null)
+      writePool({})
       servers.value = []
       choosingServer.value = false
       serverError.value = null
@@ -782,7 +944,13 @@ export function useAuthSession() {
     savedServers,
     soupEmail,
     switchToSaved,
+    pool,
+    activeSoupServerId,
+    soupSession,
+    directSession,
     removeSaved,
+    withSoupAccess,
+    identityBaseUrl,
     enterMockLibrary: applyMockSession,
   }
 }

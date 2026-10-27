@@ -41,6 +41,11 @@ function upNextLead(item: JellyfinItem) {
   return resumeIds.value.has(item.id) ? 'Continue' : 'Next'
 }
 
+/** Films play straight from the row; episodes open their page first. */
+function playsDirectly(item: JellyfinItem) {
+  return item.type !== 'Episode' && isPlayable(item)
+}
+
 function upNextDetail(item: JellyfinItem) {
   const left = timeLeftLabel(item)
   if (item.type === 'Episode') return left ? `${item.name}, ${left}` : item.name
@@ -66,8 +71,8 @@ function upNextDetail(item: JellyfinItem) {
                 variant="landscape"
                 :kicker="upNextLead(item)"
                 :detail="upNextDetail(item)"
-                :to="isPlayable(item) ? watchRoute(item) : undefined"
-                :play="isPlayable(item)"
+                :to="playsDirectly(item) ? watchRoute(item) : undefined"
+                :play="playsDirectly(item)"
                 :favorite-button="false"
               />
             </div>

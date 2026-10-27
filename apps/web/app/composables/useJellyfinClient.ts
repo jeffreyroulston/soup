@@ -4,8 +4,19 @@ import type { JellyfinSessionPayload } from '~/types/jellyfin'
 /** Whole-library scans can take a while on big servers; past this, give up. */
 const REQUEST_TIMEOUT_MS = 30_000
 
-function createJellyfinClient() {
-  const { jellyfin, reexchange } = useAuthSession()
+/** Where a client gets its Jellyfin session, and a fresh one after a 401. */
+export type SessionSource = {
+  /** The session in hand; null until `ensure` has one. */
+  current: () => JellyfinSessionPayload | null
+  /** The session, signing in first if this tab has no token for the server yet. */
+  ensure: () => Promise<JellyfinSessionPayload>
+  /** After a 401 on `failedToken`; `current` holds a newer token once it resolves, else it throws. */
+  renew: (failedToken: string) => Promise<unknown>
+}
+
+/** A client for whichever server `source` signs in to. */
+export function createJellyfinClient(source: SessionSource) {
+  const jellyfin = computed(source.current)
 
   function requireSession(): JellyfinSessionPayload {
     if (!jellyfin.value) throw new Error('Not signed in to Jellyfin')
@@ -29,7 +40,7 @@ function createJellyfinClient() {
     options: { query?: Record<string, string>, body?: unknown } = {},
     retried = false,
   ): Promise<Response> {
-    const session = requireSession()
+    const session = await source.ensure()
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'Authorization': mediaBrowserAuth(session.deviceId, session.accessToken),
@@ -44,7 +55,7 @@ function createJellyfinClient() {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (response.status === 401 && !retried) {
-      await reexchange(session.accessToken)
+      await source.renew(session.accessToken)
       return request(method, path, options, true)
     }
     return response
@@ -68,6 +79,7 @@ function createJellyfinClient() {
   return {
     jellyfin,
     requireSession,
+    ensure: source.ensure,
     url,
     mediaUrl,
     get,
@@ -79,12 +91,20 @@ export type JellyfinClient = ReturnType<typeof createJellyfinClient>
 
 const clients = new WeakMap<NuxtApp, JellyfinClient>()
 
-/** One client per app, so nothing is rebuilt per component. */
+/** The active server's client, one per app so nothing is rebuilt per component. */
 export function useJellyfinClient(): JellyfinClient {
   const nuxtApp = useNuxtApp()
   let client = clients.get(nuxtApp)
   if (!client) {
-    client = createJellyfinClient()
+    const { jellyfin, reexchange } = useAuthSession()
+    client = createJellyfinClient({
+      current: () => jellyfin.value,
+      ensure: async () => {
+        if (!jellyfin.value) throw new Error('Not signed in to Jellyfin')
+        return jellyfin.value
+      },
+      renew: reexchange,
+    })
     clients.set(nuxtApp, client)
   }
   return client

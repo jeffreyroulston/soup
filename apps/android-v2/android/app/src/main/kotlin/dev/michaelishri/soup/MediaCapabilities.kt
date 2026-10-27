@@ -56,6 +56,8 @@ object MediaCapabilities {
         val audio = mutableSetOf<String>()
         val maxHeight = mutableMapOf<String, Int>()
         var hevcMain10 = false
+        var vp9Profile2 = false
+        var av1Main10 = false
         var dolbyVisionDecoder = false
 
         for (info in MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos) {
@@ -73,6 +75,12 @@ object MediaCapabilities {
                 }
                 if (codec == "hevc" && caps.profileLevels.any { it.isHevc10Bit() }) {
                     hevcMain10 = true
+                }
+                if (codec == "vp9" && caps.profileLevels.any { it.isVp910Bit() }) {
+                    vp9Profile2 = true
+                }
+                if (codec == "av1" && caps.profileLevels.any { it.isAv110Bit() }) {
+                    av1Main10 = true
                 }
                 // Software decoders exist for most codecs but can't keep up at
                 // 4K, so only hardware ones raise the limit past 1080p.
@@ -102,6 +110,8 @@ object MediaCapabilities {
             "passthroughKnown" to true,
             "maxAudioChannels" to channels,
             "hevcMain10" to hevcMain10,
+            "vp9Profile2" to vp9Profile2,
+            "av1Main10" to av1Main10,
             "hdr10" to hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10),
             "hlg" to hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HLG),
             "hdr10Plus" to hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS),
@@ -125,4 +135,14 @@ object MediaCapabilities {
         profile == CodecProfileLevel.HEVCProfileMain10 ||
             profile == CodecProfileLevel.HEVCProfileMain10HDR10 ||
             profile == CodecProfileLevel.HEVCProfileMain10HDR10Plus
+
+    private fun CodecProfileLevel.isVp910Bit(): Boolean =
+        profile == CodecProfileLevel.VP9Profile2 ||
+            profile == CodecProfileLevel.VP9Profile2HDR ||
+            profile == CodecProfileLevel.VP9Profile2HDR10Plus
+
+    private fun CodecProfileLevel.isAv110Bit(): Boolean =
+        profile == CodecProfileLevel.AV1ProfileMain10 ||
+            profile == CodecProfileLevel.AV1ProfileMain10HDR10 ||
+            profile == CodecProfileLevel.AV1ProfileMain10HDR10Plus
 }

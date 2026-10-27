@@ -59,6 +59,8 @@ async function onLogout() {
       </div>
     </section>
 
+    <SoupDevices v-if="auth.soupEmail.value && !isMockMode()" />
+
     <section v-if="!isMockMode()" aria-labelledby="settings-identity" class="flex flex-col gap-3 rounded-panel bg-surface p-6">
       <h2 id="settings-identity" class="text-[13px] font-extrabold uppercase tracking-[0.6px] text-muted">
         Identity server

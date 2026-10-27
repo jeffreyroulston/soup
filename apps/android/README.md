@@ -1,4 +1,8 @@
-# Soup for Android
+# Soup for Android (legacy)
+
+> **Legacy.** This app is being retired in favour of
+> [`apps/android-v2`](../android-v2/README.md); don't add features here.
+> The shared code only it uses lives in `package:soup_core/legacy.dart`.
 
 Flutter client for Android 12+ mobile and Android TV, with direct Jellyfin
 networking and an optional embedded Tailscale node.

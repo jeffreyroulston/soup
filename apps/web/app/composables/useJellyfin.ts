@@ -42,6 +42,7 @@ import {
   mockTrickplayTileUrl,
 } from '~/utils/mockCatalog'
 import { isMockMode } from '~/utils/mockMode'
+import type { JellyfinClient } from '~/composables/useJellyfinClient'
 import { collapseKeepWatching, countGenres, orderKeepWatching, dailyShuffle, type GenreCount } from '~/utils/media'
 import {
   getCuratedPack,
@@ -327,20 +328,26 @@ function mapItem(raw: unknown): JellyfinItem | null {
   }
 }
 
+/** The active server's API. */
 export function useJellyfin() {
   const nuxtApp = useNuxtApp()
   let api = apis.get(nuxtApp)
   if (!api) {
-    api = createJellyfin()
+    api = createJellyfin(useJellyfinClient())
     apis.set(nuxtApp, api)
   }
   return api
 }
 
-const apis = new WeakMap<object, ReturnType<typeof createJellyfin>>()
+export type JellyfinApi = ReturnType<typeof createJellyfin>
 
-function createJellyfin() {
-  const client = useJellyfinClient()
+const apis = new WeakMap<object, JellyfinApi>()
+
+/**
+ * Every read and write against the server `client` talks to. Calls that need the user id read
+ * it up front, so the client must already hold a session (`useServerClients().apiFor` sees to that).
+ */
+export function createJellyfin(client: JellyfinClient) {
   const { jellyfin, requireSession, get } = client
   const mock = isMockMode()
 

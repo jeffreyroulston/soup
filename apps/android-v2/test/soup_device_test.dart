@@ -29,6 +29,7 @@ void main() {
       expect(caps.hdr10Plus, isFalse);
       expect(caps.audioDecoders, containsAll(['ac3', 'eac3', 'opus']));
       expect(caps.maxVideoHeight, isEmpty);
+      expect(caps.hlsSegmentContainer, 'ts');
     });
 
     test(

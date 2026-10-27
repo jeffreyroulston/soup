@@ -306,3 +306,228 @@ describe("/link page", () => {
     assert.match(await res.text(), /Choose a sign-in method/);
   });
 });
+
+describe("device sessions", () => {
+  let db: Db;
+  let app: ReturnType<typeof createApp>;
+  let keys: SigningKeys;
+  let env: ReturnType<typeof loadEnv>;
+  const EMAIL = "device-sessions@example.com";
+  const OTHER = "device-sessions-other@example.com";
+
+  before(async () => {
+    env = loadEnv({
+      ...process.env,
+      ALLOW_DEV_LOGIN: "false",
+      GOOGLE_CLIENT_ID: "test-client.apps.googleusercontent.com",
+      GOOGLE_CLIENT_SECRET: "test-secret",
+      DATABASE_URL:
+        process.env.DATABASE_URL ??
+        "postgres://soup:soup@localhost:5433/soup_identity",
+      PUBLIC_BASE_URL: "http://localhost:8787",
+    });
+    db = createPool(env.DATABASE_URL);
+    await applyMigrations(db);
+    keys = await loadSigningKeys(
+      env,
+      `/tmp/soup-identity-sessions-test-${randomBytes(4).toString("hex")}`,
+    );
+    app = createApp({ db, env, keys });
+  });
+
+  after(async () => {
+    for (const email of [EMAIL, OTHER]) {
+      await db.query(`DELETE FROM sessions WHERE email = $1`, [email]);
+      await db.query(`DELETE FROM device_links WHERE email = $1`, [email]);
+      await db.query(`DELETE FROM subjects WHERE email = $1`, [email]);
+    }
+    await db.end();
+  });
+
+  type Tokens = { access_token: string; refresh_token: string };
+
+  /** Run the whole TV flow: start with device info, approve, poll for tokens. */
+  async function linkDevice(email: string, device?: Record<string, unknown>) {
+    const startRes = await app.request("/auth/device/link", {
+      method: "POST",
+      ...(device
+        ? {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(device),
+          }
+        : {}),
+    });
+    assert.equal(startRes.status, 200);
+    const started = (await startRes.json()) as {
+      device_code: string;
+      user_code: string;
+    };
+    const linkToken = await signDeviceLinkProof(keys, env, {
+      email,
+      googleSub: null,
+      name: null,
+    });
+    const approve = await app.request("/auth/device/approve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ user_code: started.user_code, link_token: linkToken }),
+    });
+    assert.equal(approve.status, 200);
+    const poll = await app.request(`/auth/device/link/${started.device_code}`);
+    return (await poll.json()) as Tokens;
+  }
+
+  const authed = (tokens: Tokens, path: string, init: RequestInit = {}) =>
+    app.request(path, {
+      ...init,
+      headers: {
+        ...(init.headers as Record<string, string> | undefined),
+        authorization: `Bearer ${tokens.access_token}`,
+      },
+    });
+
+  type Listed = {
+    sessions: {
+      id: string;
+      device_name: string | null;
+      platform: string | null;
+      client_version: string | null;
+      current: boolean;
+    }[];
+  };
+
+  const list = async (tokens: Tokens) => {
+    const res = await authed(tokens, "/v1/me/sessions");
+    assert.equal(res.status, 200);
+    return ((await res.json()) as Listed).sessions;
+  };
+
+  it("carries device info from the link into the session", async () => {
+    const tv = await linkDevice(EMAIL, {
+      device_name: "  Living room\u0007 TV ",
+      platform: "webOS",
+      client_version: "2.4.0",
+    });
+    const sessions = await list(tv);
+    const me = sessions.find((s) => s.current);
+    assert.ok(me);
+    assert.equal(me.device_name, "Living room TV");
+    assert.equal(me.platform, "webos");
+    assert.equal(me.client_version, "2.4.0");
+  });
+
+  it("still links clients that send no device info", async () => {
+    const tokens = await linkDevice(EMAIL);
+    const me = (await list(tokens)).find((s) => s.current);
+    assert.ok(me);
+    assert.equal(me.device_name, null);
+    assert.equal(me.platform, null);
+  });
+
+  it("drops unknown platforms", async () => {
+    const tokens = await linkDevice(EMAIL, { platform: "toaster" });
+    const me = (await list(tokens)).find((s) => s.current);
+    assert.equal(me?.platform, null);
+  });
+
+  it("names the device on the /link approval page", async () => {
+    const res = await app.request("/auth/device/link", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device_name: "<b>Den</b>", platform: "android_tv" }),
+    });
+    const started = (await res.json()) as { user_code: string };
+    const page = await app.request(
+      `/link?user_code=${encodeURIComponent(started.user_code)}`,
+    );
+    const html = await page.text();
+    assert.match(html, /Linking <strong>&lt;b&gt;Den&lt;\/b&gt; \(Android TV\)<\/strong>/);
+  });
+
+  it("only lists the caller's own active sessions", async () => {
+    const mine = await linkDevice(EMAIL, { device_name: "Mine" });
+    const theirs = await linkDevice(OTHER, { device_name: "Theirs" });
+    const ids = new Set((await list(mine)).map((s) => s.id));
+    const otherIds = (await list(theirs)).map((s) => s.id);
+    assert.ok(otherIds.every((id) => !ids.has(id)));
+    assert.equal((await list(mine)).filter((s) => s.current).length, 1);
+  });
+
+  it("keeps the session id when a token is refreshed", async () => {
+    const tokens = await linkDevice(EMAIL, { device_name: "Refresher" });
+    const before = (await list(tokens)).find((s) => s.current)!.id;
+    const res = await app.request("/v1/sessions/refresh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+    });
+    const refreshed = (await res.json()) as Tokens;
+    const after = (await list(refreshed)).find((s) => s.current)!.id;
+    assert.equal(after, before);
+  });
+
+  it("renames a device", async () => {
+    const tokens = await linkDevice(EMAIL, { device_name: "Old name" });
+    const id = (await list(tokens)).find((s) => s.current)!.id;
+    const res = await authed(tokens, `/v1/me/sessions/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device_name: "Bedroom TV" }),
+    });
+    assert.equal(res.status, 204);
+    const me = (await list(tokens)).find((s) => s.id === id);
+    assert.equal(me?.device_name, "Bedroom TV");
+  });
+
+  it("404s on another user's session and on malformed ids", async () => {
+    const mine = await linkDevice(EMAIL);
+    const theirs = await linkDevice(OTHER);
+    const theirId = (await list(theirs)).find((s) => s.current)!.id;
+    for (const id of [theirId, "not-a-uuid"]) {
+      const del = await authed(mine, `/v1/me/sessions/${id}`, { method: "DELETE" });
+      assert.equal(del.status, 404);
+      const patch = await authed(mine, `/v1/me/sessions/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ device_name: "Hijacked" }),
+      });
+      assert.equal(patch.status, 404);
+    }
+    assert.ok((await list(theirs)).some((s) => s.id === theirId));
+  });
+
+  it("revoking a device blocks its refresh and its device management", async () => {
+    const phone = await linkDevice(EMAIL, { device_name: "Phone" });
+    const tv = await linkDevice(EMAIL, { device_name: "TV" });
+    const tvId = (await list(tv)).find((s) => s.current)!.id;
+
+    const del = await authed(phone, `/v1/me/sessions/${tvId}`, { method: "DELETE" });
+    assert.equal(del.status, 204);
+    assert.ok(!(await list(phone)).some((s) => s.id === tvId));
+
+    const refresh = await app.request("/v1/sessions/refresh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refresh_token: tv.refresh_token }),
+    });
+    assert.equal(refresh.status, 401);
+    // Its access token is still valid for a few minutes, but not for this.
+    const stale = await authed(tv, "/v1/me/sessions");
+    assert.equal(stale.status, 401);
+  });
+
+  it("revoke-others keeps only the current device", async () => {
+    await linkDevice(EMAIL, { device_name: "A" });
+    await linkDevice(EMAIL, { device_name: "B" });
+    const keeper = await linkDevice(EMAIL, { device_name: "Keeper" });
+    const res = await authed(keeper, "/v1/me/sessions/revoke-others", {
+      method: "POST",
+    });
+    assert.equal(res.status, 200);
+    assert.ok(((await res.json()) as { revoked: number }).revoked >= 2);
+    const left = await list(keeper);
+    assert.equal(left.length, 1);
+    assert.equal(left[0]!.device_name, "Keeper");
+    assert.equal(left[0]!.current, true);
+  });
+});

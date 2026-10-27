@@ -348,12 +348,33 @@ const PROVIDER_ICONS: Record<string, string> = {
 };
 
 /** Entry page (/link): enter the TV code, then pick a sign-in method. */
+const PLATFORM_LABELS: Record<string, string> = {
+  webos: "webOS TV",
+  android: "Android",
+  android_tv: "Android TV",
+  web: "Web",
+  ios: "iOS",
+};
+
+function describeDevice(device?: { name: string | null; platform: string | null }) {
+  if (!device) return "";
+  const platform = device.platform ? PLATFORM_LABELS[device.platform] : undefined;
+  if (device.name && platform) return `${device.name} (${platform})`;
+  return device.name ?? platform ?? "";
+}
+
 export function deviceLinkStart(opts: {
   userCode: string;
   providers: { id: string; label: string }[];
   errorHtml?: string;
+  /** What the TV said it was, so the user knows what they're approving. */
+  device?: { name: string | null; platform: string | null };
 }): string {
   const codeBlock = opts.userCode && !opts.errorHtml ? userCodeTiles(opts.userCode) : "";
+  const deviceLabel = describeDevice(opts.device);
+  const deviceNote = deviceLabel
+    ? `<p class="lead">Linking <strong>${escapeHtml(deviceLabel)}</strong>. Only continue if this is your device.</p>`
+    : "";
   const note = opts.errorHtml
     ? `<p class="note note-error" role="alert">${opts.errorHtml}</p>`
     : "";
@@ -376,6 +397,7 @@ export function deviceLinkStart(opts: {
     bodyHtml: `
 <p class="lead">Enter the code shown on your TV, then sign in to link it to your account.</p>
 ${codeBlock}
+${deviceNote}
 <form method="POST" action="/link">
   <label>TV code
     <input name="user_code" value="${escapeHtml(opts.userCode)}" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required placeholder="ABCD-EFGH" />

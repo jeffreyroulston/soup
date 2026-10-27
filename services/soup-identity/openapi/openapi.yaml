@@ -53,7 +53,26 @@ paths:
     post:
       tags: [auth]
       summary: Start Netflix-style device-link (TV QR / user code)
+      description: |
+        The body is optional. Device fields are shown on the /link approval page and
+        carried into the resulting session; unknown platforms are dropped and text is
+        trimmed to 64 characters.
       security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_name:
+                  type: string
+                  example: Living room TV
+                platform:
+                  type: string
+                  enum: [webos, android, android_tv, web, ios]
+                client_version:
+                  type: string
       responses:
         "200":
           description: Device codes for polling and display
@@ -316,6 +335,80 @@ paths:
                 $ref: "#/components/schemas/Subject"
         "401":
           description: Unauthorized
+
+  /v1/me/sessions:
+    get:
+      tags: [me]
+      summary: Devices signed in to this account
+      description: Active sessions, most recently used first. 401 if the caller's own session was revoked.
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionSummary"
+        "401":
+          description: Unauthorized or session no longer active
+
+  /v1/me/sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [me]
+      summary: Rename a device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_name]
+              properties:
+                device_name:
+                  type: string
+                  nullable: true
+      responses:
+        "204":
+          description: Renamed
+        "404":
+          description: Not one of the caller's active sessions
+    delete:
+      tags: [me]
+      summary: Sign a device out
+      description: The device's refresh token stops working at once; its access token lapses within ACCESS_TOKEN_TTL_SECONDS.
+      responses:
+        "204":
+          description: Revoked
+        "404":
+          description: Not one of the caller's active sessions
+
+  /v1/me/sessions/revoke-others:
+    post:
+      tags: [me]
+      summary: Sign out every device except this one
+      responses:
+        "200":
+          description: Number of sessions revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked]
+                properties:
+                  revoked:
+                    type: integer
 
   /v1/me/servers:
     get:
@@ -586,6 +679,32 @@ components:
         type: string
 
   schemas:
+    SessionSummary:
+      type: object
+      required: [id, device_name, platform, client_version, created_at, last_used_at, current]
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_name:
+          type: string
+          nullable: true
+        platform:
+          type: string
+          nullable: true
+          enum: [webos, android, android_tv, web, ios, null]
+        client_version:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+          description: True for the session making the request
     ErrorBody:
       type: object
       required: [error]

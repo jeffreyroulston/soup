@@ -1,10 +1,13 @@
+// Legacy: only apps/android uses this; it goes when that app does. See
+// package:soup_core/legacy.dart.
+
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:soup_core/src/data/cache/soup_database.dart';
+import 'package:soup_core/src/legacy/soup_database.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 
 const artworkGlobalByteLimit = 402653184;
@@ -144,7 +147,7 @@ class ArtworkCache implements ArtworkRepository {
     } on Object catch (error, stackTrace) {
       completer.completeError(error, stackTrace);
     } finally {
-      if (identical(_inFlight[key], future)) _inFlight.remove(key);
+      _inFlight.removeWhere((k, f) => k == key && identical(f, future));
     }
   }
 

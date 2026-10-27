@@ -24,7 +24,7 @@ class AndroidNetworkInterfaces {
     final json = jsonDecode(raw);
     if (json is! List) return const [];
     final result = <({InternetAddress address, InternetAddress broadcast})>[];
-    for (final interface in json.whereType<Map>()) {
+    for (final interface in json.whereType<Map<Object?, Object?>>()) {
       if (interface['up'] != true ||
           interface['loopback'] == true ||
           interface['pointToPoint'] == true) {
@@ -32,7 +32,7 @@ class AndroidNetworkInterfaces {
       }
       final addresses = interface['addrs'];
       if (addresses is! List) continue;
-      for (final entry in addresses.whereType<Map>()) {
+      for (final entry in addresses.whereType<Map<Object?, Object?>>()) {
         final address = InternetAddress.tryParse(entry['ip']?.toString() ?? '');
         final broadcast = InternetAddress.tryParse(
           entry['broadcastAddress']?.toString() ?? '',

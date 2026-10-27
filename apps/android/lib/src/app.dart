@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:soup/src/data/appearance/appearance_store.dart';
-import 'package:soup_core/src/data/artwork/artwork_cache.dart';
-import 'package:soup_core/src/data/cache/soup_database.dart';
+import 'package:soup_core/src/legacy/artwork_cache.dart';
+import 'package:soup_core/src/legacy/soup_database.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_client_factory.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_discovery.dart';
-import 'package:soup_core/src/data/jellyfin/jellyfin_metadata_repository.dart';
+import 'package:soup_core/src/legacy/jellyfin_metadata_repository.dart';
 import 'package:soup_core/src/data/session/session_store.dart';
 import 'package:soup_core/src/data/session/connection_preferences_store.dart';
 import 'package:soup_core/src/data/session/auth_path_preferences_store.dart';
@@ -78,8 +78,7 @@ class _SoupAppState extends State<SoupApp> {
     super.initState();
     _database = widget.database;
     _ownsDatabase = widget.database == null;
-    _authPathStore =
-        widget.authPathStore ?? SharedPreferencesAuthPathStore();
+    _authPathStore = widget.authPathStore ?? SharedPreferencesAuthPathStore();
     _viewModel = ConnectivityViewModel(
       widget.tailscaleClient,
       jellyfinClientFactory: widget.jellyfinClientFactory,
@@ -105,8 +104,7 @@ class _SoupAppState extends State<SoupApp> {
         jellyfinSessionStore: widget.sessionStore,
         jellyfinApiProvider: () => _viewModel.authenticatedApi(),
         tailscaleClient: widget.tailscaleClient,
-        connectTransportGrants:
-            widget.soupIdentityFlags.connectTransportGrants,
+        connectTransportGrants: widget.soupIdentityFlags.connectTransportGrants,
       )..initialize();
       unawaited(_loadAuthPath());
     } else {
@@ -233,9 +231,7 @@ class _SoupAppState extends State<SoupApp> {
                   _viewModel.initialized) {
                 _adoptedSoupJellyfin = true;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  unawaited(
-                    _viewModel.adoptSoupJellyfinSession(soupJellyfin),
-                  );
+                  unawaited(_viewModel.adoptSoupJellyfinSession(soupJellyfin));
                 });
               }
               if (soupAuth != null && soupJellyfin != null && session == null) {

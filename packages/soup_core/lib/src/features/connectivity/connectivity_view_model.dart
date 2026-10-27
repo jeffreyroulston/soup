@@ -227,7 +227,7 @@ class ConnectivityViewModel extends ChangeNotifier {
     _notify();
     try {
       final savedMode = await connectionStore.read();
-      final stored = await sessionStore.read();
+      final stored = await _readStoredSession();
       if (_disposed) return;
       // Existing authenticated installations always used embedded Tailscale.
       _mode =
@@ -256,6 +256,18 @@ class ConnectivityViewModel extends ChangeNotifier {
         searchServers();
         _notify();
       }
+    }
+  }
+
+  /// A stored session that can't be decoded (an older format, a damaged
+  /// write) won't fix itself on retry, so it's dropped and the user signs in
+  /// again. Storage errors, which can be transient, still surface.
+  Future<JellyfinSession?> _readStoredSession() async {
+    try {
+      return await sessionStore.read();
+    } on FormatException {
+      await sessionStore.clear();
+      return null;
     }
   }
 
@@ -560,6 +572,17 @@ class ConnectivityViewModel extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    if (_session case final session?) {
+      // Best effort and not awaited: sign-out shouldn't wait on, or fail
+      // because of, a server that may be unreachable.
+      unawaited(() async {
+        try {
+          await (await authenticatedApi()).logout(session);
+        } on Object {
+          // The token is gone locally either way.
+        }
+      }());
+    }
     _stopQuickConnect(clear: true);
     _formGeneration++;
     await _mutateSession(sessionStore.clear);

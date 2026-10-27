@@ -89,6 +89,8 @@ class SoupDevice {
       passthroughKnown: raw['passthroughKnown'] as bool? ?? false,
       maxAudioChannels: (raw['maxAudioChannels'] as num?)?.toInt() ?? 2,
       hevcMain10: raw['hevcMain10'] as bool? ?? false,
+      vp9Profile2: raw['vp9Profile2'] as bool? ?? false,
+      av1Main10: raw['av1Main10'] as bool? ?? false,
       hdr10: raw['hdr10'] as bool? ?? false,
       hlg: raw['hlg'] as bool? ?? false,
       hdr10Plus: raw['hdr10Plus'] as bool? ?? false,
@@ -127,6 +129,9 @@ class SoupDevice {
       },
       maxAudioChannels: 8,
       hevcMain10: uhd,
+      // UHD panels decode the 10-bit HDR flavours of the codecs they have.
+      vp9Profile2: uhd && year >= 2017,
+      av1Main10: uhd && year >= 2021,
       hdr10: hdr10,
       hlg: hdr10 && year >= 2017,
       // LG doesn't support HDR10+; those files play as HDR10.
@@ -134,6 +139,7 @@ class SoupDevice {
       maxVideoHeight: uhd
           ? const {}
           : const {'h264': 1080, 'hevc': 1080, 'vp9': 1080, 'av1': 1080},
+      hlsSegmentContainer: 'ts',
     );
   }
 

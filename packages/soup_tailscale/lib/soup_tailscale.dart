@@ -195,13 +195,21 @@ class NativeTailscaleClient implements TailscaleClient {
     required _RegistrationMode mode,
     String? authKey,
   }) async {
-    if (_status.phase == TailscaleConnectionPhase.connected) {
+    // A new auth key means joining as that key says, even when a restored
+    // node is already up (possibly on another tailnet), so only the other
+    // modes treat a live connection as done.
+    if (mode != _RegistrationMode.authKey &&
+        _status.phase == TailscaleConnectionPhase.connected) {
       return;
     }
     final previous = _pendingConnection;
     if (previous != null) {
       await disconnect();
-      await previous;
+      try {
+        await previous;
+      } on Object {
+        // The cancelled attempt's failure isn't this attempt's.
+      }
     }
     final operation = _runStart(mode, authKey);
     _pendingConnection = operation;
@@ -305,8 +313,12 @@ class NativeTailscaleClient implements TailscaleClient {
               return;
             }
             if (mode == _RegistrationMode.authKey) {
+              // The backend reports NeedsLogin while control is still
+              // checking the key, which can take well over a few seconds on
+              // a slow TV or mobile link. Giving up early closes the node
+              // after control may already have spent a one-time key.
               if (DateTime.now().difference(authKeyNeedsLoginSince) >
-                  const Duration(seconds: 3)) {
+                  _authKeyLoginTimeout) {
                 throw const TailscaleException(
                   'tailscale_start',
                   'invalid key or unable to validate API key',
@@ -334,6 +346,8 @@ class NativeTailscaleClient implements TailscaleClient {
       await Future<void>.delayed(const Duration(seconds: 1));
     }
   }
+
+  static const _authKeyLoginTimeout = Duration(seconds: 20);
 
   void _ensureCurrent(int generation) {
     if (generation != _connectionGeneration) throw const _ConnectionCancelled();
@@ -596,9 +610,7 @@ void _check(int server, String operation, int result) {
   final message = _nativeError(server);
   throw TailscaleException(
     operation,
-    redactNativeSecrets(
-      message.isEmpty ? 'native error $result' : message,
-    ),
+    redactNativeSecrets(message.isEmpty ? 'native error $result' : message),
   );
 }
 

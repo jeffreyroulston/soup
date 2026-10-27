@@ -31,9 +31,9 @@ class Glass extends StatelessWidget {
           decoration: BoxDecoration(
             color: strong
                 ? const Color(0xD11E1E20) // rgb(30 30 32 / .82)
-                : const Color(0x99282828), // rgb(40 40 44 / .6)
+                : SoupColors.glass, // rgb(40 40 44 / .6)
             borderRadius: borderRadius,
-            border: Border.all(color: const Color(0x1AFFFFFF)),
+            border: Border.all(color: SoupColors.faint),
           ),
           child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
         ),

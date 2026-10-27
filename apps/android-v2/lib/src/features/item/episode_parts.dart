@@ -237,9 +237,9 @@ class _StaticPill extends StatelessWidget {
         height: 46,
         padding: const EdgeInsets.symmetric(horizontal: 18),
         decoration: BoxDecoration(
-          color: surface ? SoupColors.surface : const Color(0x99282828),
+          color: surface ? SoupColors.surface : SoupColors.glass,
           borderRadius: BorderRadius.circular(23),
-          border: Border.all(color: const Color(0x1AFFFFFF)),
+          border: Border.all(color: SoupColors.faint),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -283,7 +283,7 @@ class EpisodeStill extends StatelessWidget {
         position: DecorationPosition.foreground,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: const Color(0x1AFFFFFF)),
+          border: Border.all(color: SoupColors.faint),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(radius),
@@ -300,7 +300,7 @@ class EpisodeStill extends StatelessWidget {
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
-                    color: const Color(0x99282828),
+                    color: SoupColors.glass,
                     shape: BoxShape.circle,
                     border: Border.all(color: const Color(0x2EFFFFFF)),
                   ),
@@ -506,7 +506,7 @@ class _AdjacentCard extends StatelessWidget {
       child: Focusable(
         radius: 14,
         scale: 1.02,
-        onActivate: () => openItem(context, episode),
+        onActivate: () => replaceItem(context, episode),
         builder: (context, focused) => Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(

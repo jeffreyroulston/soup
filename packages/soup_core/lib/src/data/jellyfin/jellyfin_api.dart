@@ -599,6 +599,23 @@ class JellyfinApi
     await _getJson(session, 'Users/${session.userId}');
   }
 
+  /// Ends [session] on the server, so its token stops working (sign-out).
+  /// Jellyfin tokens never expire on their own.
+  Future<void> logout(JellyfinSession session) async {
+    final response = await _client
+        .post(
+          _sessionUri(session, 'Sessions/Logout'),
+          headers: _sessionHeaders(session),
+        )
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw JellyfinApiException(
+        'Could not sign out of Jellyfin. It returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   static JellyfinQuickConnectRequest _quickConnectRequest(
     generated.QuickConnectResult? result,
   ) {
@@ -780,6 +797,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not load artwork. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
     final mimeType = (response.headers['content-type'] ?? '')
@@ -934,6 +952,28 @@ class JellyfinApi
     required Duration startAt,
     JellyfinDeviceProfile? profile,
   }) async {
+    try {
+      return await _getPlaybackPlan(
+        session,
+        item,
+        startAt: startAt,
+        profile: profile,
+      );
+    } on TypeError {
+      // A field of an unexpected type; the raw cast error means nothing on
+      // screen.
+      throw const JellyfinApiException(
+        'Jellyfin sent playback information Soup could not read.',
+      );
+    }
+  }
+
+  Future<JellyfinPlaybackPlan> _getPlaybackPlan(
+    JellyfinSession session,
+    JellyfinItem item, {
+    required Duration startAt,
+    JellyfinDeviceProfile? profile,
+  }) async {
     final deviceProfile =
         profile ??
         JellyfinDeviceProfile(
@@ -965,6 +1005,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not prepare playback. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
     final Object? decoded;
@@ -989,7 +1030,13 @@ class JellyfinApi
     final source = Map<String, Object?>.from(sources.first as Map);
     final mediaSourceId = source['Id'] as String? ?? item.id;
     final playSessionId = decoded['PlaySessionId'] as String? ?? '';
-    final container = source['Container'] as String? ?? 'mp4';
+    // Jellyfin can list several names for one format ("mov,mp4,m4a,...");
+    // the first one is the file's, and the extension lets the player pick
+    // its demuxer.
+    final containers = (source['Container'] as String? ?? '').split(',');
+    final container = containers.first.trim().isEmpty
+        ? 'mp4'
+        : containers.first.trim();
     final supportsDirectPlay = source['SupportsDirectPlay'] as bool? ?? false;
     final supportsDirectStream =
         source['SupportsDirectStream'] as bool? ?? false;
@@ -1026,7 +1073,7 @@ class JellyfinApi
     final streams = source['MediaStreams'];
     final subtitles = <JellyfinSubtitleTrack>[];
     if (streams is List) {
-      for (final raw in streams.whereType<Map>()) {
+      for (final raw in streams.whereType<Map<Object?, Object?>>()) {
         final stream = Map<String, Object?>.from(raw);
         if (stream['Type'] != 'Subtitle') continue;
         final index = (stream['Index'] as num?)?.toInt();
@@ -1086,9 +1133,13 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not load subtitles. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
-    return response.body;
+    // Jellyfin serves Stream.vtt as `text/vtt` with no charset, and
+    // `response.body` falls back to Latin-1 without one, turning every
+    // UTF-8 character into mojibake ("Â " for a non-breaking space).
+    return utf8.decode(response.bodyBytes, allowMalformed: true);
   }
 
   @override
@@ -1170,6 +1221,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not report playback. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
   }
@@ -1260,6 +1312,7 @@ class JellyfinApi
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw JellyfinApiException(
         'Could not load your library. Jellyfin returned HTTP ${response.statusCode}.',
+        statusCode: response.statusCode,
       );
     }
     try {

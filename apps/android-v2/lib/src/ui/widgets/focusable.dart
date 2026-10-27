@@ -19,6 +19,7 @@ class Focusable extends StatefulWidget {
     this.scale = 1.03,
     this.radius = SoupRadii.card,
     this.ring = true,
+    this.semanticsLabel,
     super.key,
   });
 
@@ -33,6 +34,10 @@ class Focusable extends StatefulWidget {
   /// False when [builder] draws its own focus outline (shapes the rounded
   /// ring doesn't fit, e.g. the spotlight's diagonal posters).
   final bool ring;
+
+  /// What a screen reader announces, when the visible content doesn't say
+  /// it (artwork, icons) or says it elsewhere (a caption under the card).
+  final String? semanticsLabel;
 
   @override
   State<Focusable> createState() => _FocusableState();
@@ -101,6 +106,15 @@ class _FocusableState extends State<Focusable> {
   @override
   Widget build(BuildContext context) {
     final showFocus = _focused && !_touchOnly;
+    return Semantics(
+      button: widget.onActivate != null,
+      label: widget.semanticsLabel,
+      onTap: widget.onActivate,
+      child: _focus(showFocus),
+    );
+  }
+
+  Widget _focus(bool showFocus) {
     return Focus(
       focusNode: widget.focusNode,
       autofocus: widget.autofocus,

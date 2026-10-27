@@ -189,6 +189,8 @@ int _imul(int a, int b) => ((a.toSigned(32) * b.toSigned(32))).toSigned(32);
   final collapsed = <CatalogItem>[];
   final slotBySeries = <String, int>{};
   for (final item in resume) {
+    // Already watched, just with a saved position from a partial rewatch.
+    if (item.played) continue;
     final seriesId = item.type == 'Episode' ? item.seriesId : null;
     if (seriesId == null) {
       collapsed.add(item);

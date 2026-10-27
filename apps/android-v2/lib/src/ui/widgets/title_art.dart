@@ -44,39 +44,71 @@ class _TitleArtState extends State<TitleArt> {
     _load();
   }
 
+  static const _logoWidth = 800;
+
   void _load() {
     final logo = widget.logo;
     if (logo == _loaded && (_future != null || logo == null)) return;
     _loaded = logo;
     _future = logo == null
         ? null
-        : SoupScope.of(context).catalog.image(logo, maxWidth: 800);
+        : SoupScope.of(context).catalog.image(logo, maxWidth: _logoWidth);
   }
+
+  /// How long the logo takes to fade in over its placeholder, and the old
+  /// logo to fade into the new one when the item changes.
+  static const _fade = Duration(milliseconds: 300);
 
   @override
   Widget build(BuildContext context) {
-    if (_future == null) return widget.fallback;
     return FutureBuilder<Uint8List?>(
       future: _future,
       builder: (context, snapshot) {
-        // Hold the logo's space while it loads so the copy below doesn't jump.
-        if (snapshot.connectionState != ConnectionState.done) {
-          return SizedBox(height: widget.maxHeight * 0.6);
+        final loading =
+            _future != null && snapshot.connectionState != ConnectionState.done;
+        final bytes = _future == null ? null : snapshot.data;
+        // Every state goes through the one switcher so the logo fades in over
+        // the held space, and a text title fades into a logo (or the reverse)
+        // instead of snapping. Keys tell the switcher which changes are real.
+        final Widget child;
+        if (loading) {
+          // Hold the logo's space while it loads so the copy below doesn't
+          // jump.
+          child = SizedBox(
+            key: ValueKey(('loading', _loaded)),
+            height: widget.maxHeight * 0.6,
+          );
+        } else if (bytes == null) {
+          child = KeyedSubtree(
+            key: const ValueKey('text'),
+            child: widget.fallback,
+          );
+        } else {
+          child = ConstrainedBox(
+            key: ValueKey(('logo', _loaded)),
+            constraints: BoxConstraints(
+              maxWidth: widget.maxWidth,
+              maxHeight: widget.maxHeight,
+            ),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              alignment: widget.alignment,
+              gaplessPlayback: true,
+              cacheWidth: _logoWidth,
+              errorBuilder: (_, _, _) => widget.fallback,
+            ),
+          );
         }
-        final bytes = snapshot.data;
-        if (bytes == null) return widget.fallback;
-        return ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: widget.maxWidth,
-            maxHeight: widget.maxHeight,
-          ),
-          child: Image.memory(
-            bytes,
-            fit: BoxFit.contain,
+        return AnimatedSwitcher(
+          duration: _fade,
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          layoutBuilder: (current, previous) => Stack(
             alignment: widget.alignment,
-            gaplessPlayback: true,
-            errorBuilder: (_, _, _) => widget.fallback,
+            children: [...previous, ?current],
           ),
+          child: child,
         );
       },
     );

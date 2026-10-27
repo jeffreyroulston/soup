@@ -11,6 +11,13 @@ abstract interface class SpeedControllable {
   Future<void> setSpeed(double speed);
 }
 
+/// A [SoupVideoController] that can swap its subtitle track in place, so
+/// turning subtitles on or off needs no new player (and no seek back).
+abstract interface class SubtitleControllable {
+  /// Shows the WebVTT [vtt] from now on; null turns subtitles off.
+  Future<void> setSubtitle(Future<String>? vtt);
+}
+
 class SpeedVideoControllerFactory implements SoupVideoControllerFactory {
   const SpeedVideoControllerFactory();
 
@@ -20,7 +27,7 @@ class SpeedVideoControllerFactory implements SoupVideoControllerFactory {
 }
 
 class SpeedVideoController extends ChangeNotifier
-    implements SoupVideoController, SpeedControllable {
+    implements SoupVideoController, SpeedControllable, SubtitleControllable {
   SpeedVideoController(Uri uri, {Future<String>? subtitleVtt})
     : _controller = VideoPlayerController.networkUrl(
         uri,
@@ -75,6 +82,10 @@ class SpeedVideoController extends ChangeNotifier
   Future<void> setSpeed(double speed) =>
       _guard(() => _controller.setPlaybackSpeed(speed));
 
+  @override
+  Future<void> setSubtitle(Future<String>? vtt) =>
+      _controller.setClosedCaptionFile(vtt?.then(WebVTTCaptionFile.new));
+
   /// webOS destroys its player on a media error, so every later call fails
   /// with "Player not found". Report the media error that caused it instead.
   Future<void> _guard(Future<void> Function() call) async {
@@ -92,8 +103,14 @@ class SpeedVideoController extends ChangeNotifier
       ? ScreenSpace(child: VideoPlayer(_controller))
       : VideoPlayer(_controller);
 
+  bool _closed = false;
+
+  /// Safe to call more than once: a screen leaving mid-load and the load
+  /// itself can both close the same player.
   @override
   Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
     _controller.removeListener(_sync);
     await _controller.dispose();
     dispose();

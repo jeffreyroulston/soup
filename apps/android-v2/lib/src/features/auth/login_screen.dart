@@ -43,7 +43,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
   final _enterFocus = FocusNode(debugLabel: 'enter server address');
   final _tailscaleFocus = FocusNode(debugLabel: 'Tailscale');
   final _tailscaleBackFocus = FocusNode(debugLabel: 'Tailscale back');
@@ -66,7 +66,14 @@ class _LoginScreenState extends State<LoginScreen> {
     _wasConnected = _conn.tailscaleConnected;
     _serverCount = _servers.length;
     _conn.addListener(_connectivityChanged);
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _advance());
+  }
+
+  /// No QR-code polling while the app is in the background.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.viewModel.setForeground(state == AppLifecycleState.resumed);
   }
 
   @override
@@ -80,6 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _conn.removeListener(_connectivityChanged);
     for (final node in [
       _enterFocus,
@@ -306,7 +314,7 @@ class _LoginScreenState extends State<LoginScreen> {
           height: 198,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: link == null ? const Color(0x1AFFFFFF) : Colors.white,
+            color: link == null ? SoupColors.faint : Colors.white,
             borderRadius: BorderRadius.circular(18),
           ),
           alignment: Alignment.center,
@@ -991,7 +999,7 @@ class _LoginScreenState extends State<LoginScreen> {
         height: 33,
         alignment: Alignment.center,
         decoration: const BoxDecoration(
-          color: Color(0x1AFFFFFF),
+          color: SoupColors.faint,
           shape: BoxShape.circle,
         ),
         child: Text('$n', style: SoupType.style(size: 15, weight: 800)),
@@ -1070,7 +1078,7 @@ class _Card extends StatelessWidget {
     decoration: BoxDecoration(
       color: const Color(0xEB1E1E20),
       borderRadius: BorderRadius.circular(30),
-      border: Border.all(color: const Color(0x1AFFFFFF)),
+      border: Border.all(color: SoupColors.faint),
       boxShadow: const [
         BoxShadow(
           color: Color(0x8C000000),

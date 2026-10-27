@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -6,10 +7,18 @@ import 'package:soup_identity/src/soup_identity_client.dart';
 import 'package:soup_identity/src/soup_identity_exception.dart';
 
 class HttpSoupIdentityClient implements SoupIdentityClient {
-  HttpSoupIdentityClient({required Uri baseUrl, http.Client? httpClient})
-    : _base = _normalizeBase(baseUrl),
-      _client = httpClient ?? http.Client(),
-      _ownsClient = httpClient == null;
+  HttpSoupIdentityClient({
+    required Uri baseUrl,
+    http.Client? httpClient,
+    this.timeout = const Duration(seconds: 15),
+  }) : _base = _normalizeBase(baseUrl),
+       _client = httpClient ?? http.Client(),
+       _ownsClient = httpClient == null;
+
+  /// Per request. http.Client has none of its own, and a half-open
+  /// connection (captive portal, a TV's flaky Wi-Fi) would otherwise hang a
+  /// poll or refresh forever.
+  final Duration timeout;
 
   final String _base;
   final http.Client _client;
@@ -41,7 +50,9 @@ class HttpSoupIdentityClient implements SoupIdentityClient {
 
   Future<T> _guard<T>(Future<T> Function() run) async {
     try {
-      return await run();
+      return await run().timeout(timeout);
+    } on TimeoutException {
+      throw const SoupIdentityException('Soup Identity did not respond');
     } on SoupIdentityException {
       rethrow;
     } on Object catch (error) {
@@ -76,15 +87,31 @@ class HttpSoupIdentityClient implements SoupIdentityClient {
   @override
   Future<SoupSessionTokens> refreshSession(String refreshToken) =>
       _guard(() async {
+        final response = await _client.post(
+          _uri('/v1/sessions/refresh'),
+          headers: const {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+          },
+          body: jsonEncode({'refresh_token': refreshToken}),
+        );
+        return SoupSessionTokens.fromJson(_decodeObject(response));
+      });
+
+  @override
+  Future<void> revokeSession(String refreshToken) => _guard(() async {
     final response = await _client.post(
-      _uri('/v1/sessions/refresh'),
-      headers: const {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-      },
+      _uri('/v1/sessions/revoke'),
+      headers: const {'content-type': 'application/json'},
       body: jsonEncode({'refresh_token': refreshToken}),
     );
-    return SoupSessionTokens.fromJson(_decodeObject(response));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw SoupIdentityException(
+        'Soup Identity request failed',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
   });
 
   @override

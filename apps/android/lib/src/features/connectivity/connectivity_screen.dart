@@ -660,11 +660,7 @@ class _ConnectivityScreenState extends State<ConnectivityScreen>
         'MAKE YOURSELF\nAT HOME.',
         'Sign in to ${model.serverInfo?.name ?? 'Jellyfin'}. Your next favourite is waiting.',
       ),
-      SetupPhase.ready => (
-        'READY',
-        'YOU’RE ALL SET',
-        'Your library is ready.',
-      ),
+      SetupPhase.ready => ('READY', 'YOU’RE ALL SET', 'Your library is ready.'),
     };
     return OnboardingIntroPanel(
       eyebrow: eyebrow,

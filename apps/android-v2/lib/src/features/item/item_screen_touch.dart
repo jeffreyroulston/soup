@@ -431,12 +431,14 @@ class _Actions extends StatelessWidget {
           onTap: () => openWatch(context, target, fromStart: true),
         ),
       if (item.type != 'BoxSet')
-        _Tile(
-          icon: Icons.check_rounded,
-          label: watchTarget.played ? 'Watched' : 'Mark as watched',
-          filled: watchTarget.played,
-          onTap: () =>
-              scope.catalog.setPlayed(watchTarget.id, !watchTarget.played),
+        WatchedToggle(
+          target: watchTarget,
+          builder: (context, played, toggle) => _Tile(
+            icon: Icons.check_rounded,
+            label: played ? 'Watched' : 'Mark as watched',
+            filled: played,
+            onTap: toggle,
+          ),
         ),
       _Tile(
         icon: Icons.more_horiz_rounded,
@@ -543,9 +545,9 @@ class _Tile extends StatelessWidget {
         decoration: BoxDecoration(
           color: filled
               ? SoupColors.ink
-              : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+              : (focused ? SoupColors.glassFocused : SoupColors.glass),
           borderRadius: BorderRadius.circular(SoupRadii.button),
-          border: filled ? null : Border.all(color: const Color(0x1AFFFFFF)),
+          border: filled ? null : Border.all(color: SoupColors.faint),
         ),
         child: ExcludeSemantics(
           child: Column(

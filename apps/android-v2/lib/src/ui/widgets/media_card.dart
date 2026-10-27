@@ -53,14 +53,18 @@ class MediaCard extends StatelessWidget {
         ? (item.playedPercentage ?? 0) / 100
         : 0.0;
     final code = episodeCode(item);
+    // A season reads as its show, with the season ("Season 2") underneath.
+    final season = poster && item.type == 'Season' && item.seriesName != null;
     final detailText =
         detail ??
-        (poster
+        (season
+            ? item.name
+            : poster
             ? yearLabel(item)
             : (timeLeftLabel(item) ?? runtimeLabel(item.runTimeTicks)));
     final title =
         titleOverride ??
-        (poster && item.type == 'Episode'
+        (poster && (item.type == 'Episode' || season)
             ? (item.seriesName ?? item.name)
             : item.name);
 
@@ -73,6 +77,13 @@ class MediaCard extends StatelessWidget {
           Focusable(
             autofocus: autofocus,
             focusNode: focusNode,
+            semanticsLabel: [
+              ?kicker,
+              title,
+              ?code,
+              ?detailText,
+              if (item.played) 'watched',
+            ].join(', '),
             onActivate: onTap ?? () => openItem(context, item),
             builder: (context, focused) => AspectRatio(
               aspectRatio: poster ? 2 / 3 : 16 / 9,
@@ -98,7 +109,7 @@ class MediaCard extends StatelessWidget {
                       CatalogImage(
                         image: poster ? item.poster : item.landscape,
                         maxWidth: poster ? 360 : 720,
-                        fallbackTitle: item.name,
+                        fallbackTitle: season ? title : item.name,
                       ),
                       if (item.played)
                         const Positioned(
@@ -133,60 +144,69 @@ class MediaCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          if (kicker != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                kicker!.toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: SoupType.style(
-                  size: 12,
-                  weight: 700,
-                  color: SoupColors.muted,
-                  letterSpacing: 0.5,
+          // Read out as part of the card's label above.
+          ExcludeSemantics(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (kicker != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      kicker!.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SoupType.style(
+                        size: 12,
+                        weight: 700,
+                        color: SoupColors.muted,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                if (!poster && code != null)
+                  Text(
+                    code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: 13,
+                      weight: 600,
+                      color: SoupColors.muted,
+                    ),
+                  ),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: SoupType.style(size: poster ? 15 : 16, weight: 700),
                 ),
-              ),
+                if (poster && code != null)
+                  Text(
+                    code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: 13,
+                      weight: 600,
+                      color: SoupColors.muted,
+                    ),
+                  ),
+                if (detailText != null && !(poster && code != null))
+                  Text(
+                    detailText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: SoupType.style(
+                      size: 13,
+                      weight: 600,
+                      color: SoupColors.muted,
+                    ),
+                  ),
+              ],
             ),
-          if (!poster && code != null)
-            Text(
-              code,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: SoupType.style(
-                size: 13,
-                weight: 600,
-                color: SoupColors.muted,
-              ),
-            ),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: SoupType.style(size: poster ? 15 : 16, weight: 700),
           ),
-          if (poster && code != null)
-            Text(
-              code,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: SoupType.style(
-                size: 13,
-                weight: 600,
-                color: SoupColors.muted,
-              ),
-            ),
-          if (detailText != null && !(poster && code != null))
-            Text(
-              detailText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: SoupType.style(
-                size: 13,
-                weight: 600,
-                color: SoupColors.muted,
-              ),
-            ),
         ],
       ),
     );
@@ -253,7 +273,7 @@ class _PlayBadge extends StatelessWidget {
     width: 56,
     height: 56,
     decoration: BoxDecoration(
-      color: const Color(0x99282828),
+      color: SoupColors.glass,
       shape: BoxShape.circle,
       border: Border.all(color: const Color(0x33FFFFFF)),
     ),

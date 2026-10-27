@@ -213,7 +213,7 @@ class _SoupTextFieldState extends State<SoupTextField> {
     return KeyEventResult.handled;
   }
 
-  static const _fill = Color(0x1AFFFFFF);
+  static const _fill = SoupColors.faint;
 
   @override
   Widget build(BuildContext context) {

@@ -124,4 +124,87 @@ void main() {
       throwsA(isA<JellyfinApiException>()),
     );
   });
+
+  group('local access', () {
+    late HttpServer upstream;
+    late List<String> requested;
+    late PlaybackBridge bridge;
+    late http.Client client;
+
+    setUp(() async {
+      requested = [];
+      upstream = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      upstream.listen((request) async {
+        requested.add(
+          '${request.uri.path} auth=${request.headers.value('authorization')}',
+        );
+        request.response.write('ok');
+        await request.response.close();
+      });
+      final session = JellyfinSession(
+        serverUrl: Uri.parse('http://127.0.0.1:${upstream.port}/jellyfin/'),
+        serverId: 'server',
+        userId: 'user',
+        userName: 'Alex',
+        accessToken: 'token',
+      );
+      final transport = IOClient(HttpClient());
+      bridge = PlaybackBridge(transport, session, const {
+        'X-Emby-Token': 'token',
+      });
+      await bridge.start();
+      client = http.Client();
+      addTearDown(() async {
+        client.close();
+        await bridge.close();
+        transport.close();
+        await upstream.close(force: true);
+      });
+    });
+
+    Uri local(String path) => bridge.localUriFor(
+      Uri.parse('http://127.0.0.1:${upstream.port}/jellyfin/$path'),
+    );
+
+    test('local URLs carry a secret prefix', () {
+      final uri = local('Videos/item/stream.mp4');
+      expect(uri.pathSegments.first, matches(RegExp(r'^[0-9a-f]{32}$')));
+      expect(uri.path, endsWith('/jellyfin/Videos/item/stream.mp4'));
+    });
+
+    test('requests without the prefix never reach Jellyfin', () async {
+      final port = local('Videos/item/stream.mp4').port;
+      final response = await client.get(
+        Uri.parse('http://127.0.0.1:$port/jellyfin/Users'),
+      );
+      expect(response.statusCode, HttpStatus.notFound);
+      expect(requested, isEmpty);
+    });
+
+    test('only media paths are forwarded, even with the prefix', () async {
+      final media = local('Videos/item/stream.mp4');
+      final users = media.replace(
+        path: '/${media.pathSegments.first}/jellyfin/Users',
+      );
+      final escape = media.replace(
+        path: '/${media.pathSegments.first}/jellyfin/Videos/../Users',
+      );
+      expect((await client.get(users)).statusCode, HttpStatus.notFound);
+      expect((await client.get(escape)).statusCode, HttpStatus.notFound);
+      expect(requested, isEmpty);
+      expect(() => local('System/Logs'), throwsA(isA<JellyfinApiException>()));
+    });
+
+    test("Jellyfin's lowercase transcode route is allowed", () async {
+      expect(await client.read(local('videos/item/master.m3u8')), 'ok');
+    });
+
+    test('caller auth headers are not forwarded', () async {
+      await client.get(
+        local('Videos/item/stream.mp4'),
+        headers: {'Authorization': 'MediaBrowser Token="other"'},
+      );
+      expect(requested, ['/jellyfin/Videos/item/stream.mp4 auth=null']);
+    });
+  });
 }

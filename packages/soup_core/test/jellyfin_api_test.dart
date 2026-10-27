@@ -87,12 +87,10 @@ void main() {
     },
   );
 
-  test(
-    'plugin-shaped AuthenticationResult (incl. SessionInfo) maps and '
-    'authenticates with Soup DeviceId',
-    () async {
-      // Mimics ISessionManager.AuthenticateDirect JSON (plugin /SoupAuth/Exchange).
-      const pluginBody = '''
+  test('plugin-shaped AuthenticationResult (incl. SessionInfo) maps and '
+      'authenticates with Soup DeviceId', () async {
+    // Mimics ISessionManager.AuthenticateDirect JSON (plugin /SoupAuth/Exchange).
+    const pluginBody = '''
 {
   "AccessToken": "plugin-minted-token",
   "ServerId": "jf-server",
@@ -107,105 +105,101 @@ void main() {
     "ApplicationVersion": "0.1.0"
   }
 }''';
-      final libraryRequests = <http.Request>[];
-      final client = MockClient((request) async {
-        if (request.url.path.endsWith('/Users/AuthenticateByName')) {
-          return http.Response(pluginBody, 200);
-        }
-        libraryRequests.add(request);
-        if (request.url.path.endsWith('/Views')) {
-          return http.Response('{"Items":[]}', 200);
-        }
-        if (request.url.path.endsWith('/Items/Resume')) {
-          return http.Response('{"Items":[]}', 200);
-        }
-        return http.Response('[]', 200);
-      });
-      addTearDown(client.close);
-      final api = JellyfinApi(
-        client,
-        deviceId: 'soup-device',
-        deviceName: 'Living room TV',
+    final libraryRequests = <http.Request>[];
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/Users/AuthenticateByName')) {
+        return http.Response(pluginBody, 200);
+      }
+      libraryRequests.add(request);
+      if (request.url.path.endsWith('/Views')) {
+        return http.Response('{"Items":[]}', 200);
+      }
+      if (request.url.path.endsWith('/Items/Resume')) {
+        return http.Response('{"Items":[]}', 200);
+      }
+      return http.Response('[]', 200);
+    });
+    addTearDown(client.close);
+    final api = JellyfinApi(
+      client,
+      deviceId: 'soup-device',
+      deviceName: 'Living room TV',
+    );
+
+    final session = await api.authenticate(
+      serverUrl: Uri.parse('http://jellyfin:8096/'),
+      username: 'ignored',
+      password: 'ignored',
+    );
+
+    expect(session.accessToken, 'plugin-minted-token');
+    expect(session.serverId, 'jf-server');
+    expect(session.userId, 'user-1');
+    expect(session.userName, 'Guest');
+
+    final headers = api.authenticatedHeaders(session);
+    expect(headers['X-Emby-Token'], 'plugin-minted-token');
+    expect(
+      headers['Authorization'],
+      'MediaBrowser Client="Soup", Device="Living room TV", '
+      'DeviceId="soup-device", Version="0.1.0", Token="plugin-minted-token"',
+    );
+
+    await api.getHome(session);
+
+    expect(libraryRequests, isNotEmpty);
+    expect(
+      libraryRequests.every(
+        (request) =>
+            request.headers['x-emby-token'] == 'plugin-minted-token' &&
+            (request.headers['authorization'] ?? '').contains(
+              'DeviceId="soup-device"',
+            ) &&
+            (request.headers['authorization'] ?? '').contains(
+              'Token="plugin-minted-token"',
+            ),
+      ),
+      isTrue,
+    );
+  });
+
+  test('exchangeSoupAuth posts assertion with Soup DeviceId metadata', () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        '{"AccessToken":"exchanged","ServerId":"jf","User":{"Id":"u","Name":"Guest"},"SessionInfo":{"Id":"s"}}',
+        200,
       );
+    });
+    addTearDown(client.close);
+    final api = JellyfinApi(
+      client,
+      deviceId: 'soup-device',
+      deviceName: 'LG OLED65C5',
+    );
 
-      final session = await api.authenticate(
-        serverUrl: Uri.parse('http://jellyfin:8096/'),
-        username: 'ignored',
-        password: 'ignored',
-      );
+    final session = await api.exchangeSoupAuth(
+      serverUrl: Uri.parse('http://jellyfin:8096/'),
+      assertion: 'jwt.assertion',
+    );
 
-      expect(session.accessToken, 'plugin-minted-token');
-      expect(session.serverId, 'jf-server');
-      expect(session.userId, 'user-1');
-      expect(session.userName, 'Guest');
-
-      final headers = api.authenticatedHeaders(session);
-      expect(headers['X-Emby-Token'], 'plugin-minted-token');
-      expect(
-        headers['Authorization'],
-        'MediaBrowser Client="Soup", Device="Living room TV", '
-        'DeviceId="soup-device", Version="0.1.0", Token="plugin-minted-token"',
-      );
-
-      await api.getHome(session);
-
-      expect(libraryRequests, isNotEmpty);
-      expect(
-        libraryRequests.every(
-          (request) =>
-              request.headers['x-emby-token'] == 'plugin-minted-token' &&
-              (request.headers['authorization'] ?? '').contains(
-                'DeviceId="soup-device"',
-              ) &&
-              (request.headers['authorization'] ?? '').contains(
-                'Token="plugin-minted-token"',
-              ),
-        ),
-        isTrue,
-      );
-    },
-  );
-
-  test(
-    'exchangeSoupAuth posts assertion with Soup DeviceId metadata',
-    () async {
-      late http.Request captured;
-      final client = MockClient((request) async {
-        captured = request;
-        return http.Response(
-          '{"AccessToken":"exchanged","ServerId":"jf","User":{"Id":"u","Name":"Guest"},"SessionInfo":{"Id":"s"}}',
-          200,
-        );
-      });
-      addTearDown(client.close);
-      final api = JellyfinApi(
-        client,
-        deviceId: 'soup-device',
-        deviceName: 'LG OLED65C5',
-      );
-
-      final session = await api.exchangeSoupAuth(
-        serverUrl: Uri.parse('http://jellyfin:8096/'),
-        assertion: 'jwt.assertion',
-      );
-
-      expect(captured.method, 'POST');
-      expect(captured.url.path, '/SoupAuth/Exchange');
-      expect(jsonDecode(captured.body), {
-        'assertion': 'jwt.assertion',
-        'deviceId': 'soup-device',
-        'deviceName': 'LG OLED65C5',
-        'app': 'Soup',
-        'appVersion': '0.1.0',
-      });
-      expect(
-        captured.headers['authorization'],
-        contains('DeviceId="soup-device"'),
-      );
-      expect(session.accessToken, 'exchanged');
-      expect(session.userId, 'u');
-    },
-  );
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/SoupAuth/Exchange');
+    expect(jsonDecode(captured.body), {
+      'assertion': 'jwt.assertion',
+      'deviceId': 'soup-device',
+      'deviceName': 'LG OLED65C5',
+      'app': 'Soup',
+      'appVersion': '0.1.0',
+    });
+    expect(
+      captured.headers['authorization'],
+      contains('DeviceId="soup-device"'),
+    );
+    expect(session.accessToken, 'exchanged');
+    expect(session.userId, 'u');
+  });
 
   test('rejects a Jellyfin server older than 10.11', () async {
     final client = MockClient(
@@ -359,6 +353,29 @@ void main() {
     expect(captured.headers['x-emby-token'], 'token');
   });
 
+  test('logout ends the session on the server', () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response('', 204);
+    });
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/base/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+
+    await api.logout(session);
+
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/base/Sessions/Logout');
+    expect(captured.headers['x-emby-token'], 'token');
+  });
+
   test('loads details, library contents, seasons, and episodes', () async {
     final paths = <String>[];
     final client = MockClient((request) async {
@@ -458,6 +475,63 @@ void main() {
     );
   });
 
+  test('direct play names the file by its first container', () async {
+    final client = MockClient(
+      (_) async => http.Response(
+        '{"PlaySessionId":"p","MediaSources":[{"Id":"s","Container":"mov,mp4,m4a,3gp,3g2,mj2","SupportsDirectPlay":true}]}',
+        200,
+      ),
+    );
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+    const movie = JellyfinItem(id: 'movie', name: 'Movie', type: 'Movie');
+
+    final plan = await api.getPlaybackPlan(
+      session,
+      movie,
+      startAt: Duration.zero,
+    );
+
+    expect(plan.directUri?.path, '/Videos/movie/stream.mov');
+  });
+
+  test('a playback field of the wrong type is a readable error', () async {
+    final client = MockClient(
+      (_) async => http.Response(
+        '{"PlaySessionId":7,"MediaSources":[{"Id":"s","Container":"mp4","SupportsDirectPlay":true}]}',
+        200,
+      ),
+    );
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+    const movie = JellyfinItem(id: 'movie', name: 'Movie', type: 'Movie');
+
+    await expectLater(
+      api.getPlaybackPlan(session, movie, startAt: Duration.zero),
+      throwsA(
+        isA<JellyfinApiException>().having(
+          (e) => e.message,
+          'message',
+          contains('could not read'),
+        ),
+      ),
+    );
+  });
+
   test('uses a transcode-only source and reports playback progress', () async {
     final requests = <http.Request>[];
     final client = MockClient((request) async {
@@ -518,5 +592,39 @@ void main() {
     expect(progress['PositionTicks'], 420000000);
     expect(progress['IsPaused'], isTrue);
     expect(progress['PlayMethod'], 'Transcode');
+  });
+
+  test('decodes subtitles as UTF-8 when Jellyfin sends no charset', () async {
+    // Jellyfin serves Stream.vtt as bare `text/vtt`; without a charset the
+    // http package would decode `response.body` as Latin-1 and mangle every
+    // non-ASCII character into mojibake.
+    final client = MockClient((request) async {
+      return http.Response.bytes(
+        utf8.encode('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n Élan…\n'),
+        200,
+        headers: {'content-type': 'text/vtt'},
+      );
+    });
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/'),
+      serverId: 'server',
+      userId: 'user',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+    final track = JellyfinSubtitleTrack(
+      index: 2,
+      label: 'English',
+      codec: 'srt',
+      isDefault: false,
+      uri: Uri.parse('http://jellyfin/Videos/i/s/Subtitles/2/Stream.vtt'),
+    );
+
+    final vtt = await api.getSubtitle(session, track);
+
+    expect(vtt, contains(' Élan…'));
+    expect(vtt, isNot(contains('Â')));
   });
 }

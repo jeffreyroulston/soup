@@ -155,7 +155,7 @@ class ConnectionBanner extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: const Color(0xF2202022),
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: const Color(0x1AFFFFFF)),
+                        border: Border.all(color: SoupColors.faint),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,

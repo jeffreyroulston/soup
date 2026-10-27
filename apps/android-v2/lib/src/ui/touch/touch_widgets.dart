@@ -190,9 +190,9 @@ class TouchButton extends StatelessWidget {
       decoration: BoxDecoration(
         color: primary
             ? SoupColors.ink
-            : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+            : (focused ? SoupColors.glassFocused : SoupColors.glass),
         borderRadius: BorderRadius.circular(SoupRadii.button),
-        border: primary ? null : Border.all(color: const Color(0x1AFFFFFF)),
+        border: primary ? null : Border.all(color: SoupColors.faint),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -256,9 +256,9 @@ class TouchIconButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: filled
               ? SoupColors.ink
-              : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+              : (focused ? SoupColors.glassFocused : SoupColors.glass),
           shape: BoxShape.circle,
-          border: Border.all(color: const Color(0x1AFFFFFF)),
+          border: Border.all(color: SoupColors.faint),
         ),
         child: Icon(
           icon,
@@ -308,6 +308,10 @@ class _TouchHeroState extends State<TouchHero> {
     _timer = Timer.periodic(const Duration(seconds: 8), (_) {
       final n = widget.slides.length;
       if (_dragging || n < 2 || !_pages.hasClients) return;
+      // Hold while another page covers this one.
+      // valuesOf replaces this, but flutter-webOS (3.38) doesn't have it yet.
+      // ignore: deprecated_member_use
+      if (!TickerMode.of(context)) return;
       unawaited(
         _pages.animateToPage(
           (_index + 1) % n,

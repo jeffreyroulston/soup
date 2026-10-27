@@ -98,6 +98,8 @@ let fallingBack = false
 let ignoreMediaErrors = false
 /** Set on unmount; nothing may attach or play after this. */
 let disposed = false
+/** The player has been closed or navigated away from; it stays mounted until the next page loads. */
+let leaving = false
 /** Bumped by each attachSource so a slower, older attach can't take over the element. */
 let attachRun = 0
 
@@ -736,7 +738,7 @@ async function onPlaying() {
 async function onPause() {
   paused.value = true
   const video = videoRef.value
-  if (!video || !startedReported) return
+  if (!video || !startedReported || leaving) return
   clearProgressTimer()
   await safeReport('progress', video.currentTime, true)
   chromeVisible.value = true
@@ -985,9 +987,30 @@ function onFullscreenChange() {
   isFullscreen.value = Boolean(document.fullscreenElement)
 }
 
+/**
+ * Silence the video the moment the player is left. The page stays mounted until the next
+ * route has loaded, which on a TV can take a couple of seconds of audio otherwise.
+ */
+function silence() {
+  const video = videoRef.value
+  if (!video || leaving) return
+  leaving = true
+  clearProgressTimer()
+  // Report the stop now: the pause below would otherwise send a progress report instead.
+  if (startedReported) void safeReport('stopped', video.currentTime)
+  video.muted = true
+  video.pause()
+}
+
 function onClose() {
+  silence()
   emit('close')
 }
+
+// Covers the remote's back button too; another episode's /watch page brings its own player.
+onBeforeRouteLeave((to) => {
+  if (!to.path.startsWith('/watch/')) silence()
+})
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
@@ -1052,7 +1075,7 @@ onBeforeUnmount(() => {
   clearUpNextTimer()
   if (skipNoticeTimer) clearTimeout(skipNoticeTimer)
   const video = videoRef.value
-  if (video && startedReported && Math.abs(video.currentTime - lastReportedSec) > 1) {
+  if (video && startedReported && !leaving && Math.abs(video.currentTime - lastReportedSec) > 1) {
     void safeReport('stopped', video.currentTime)
   }
   barObserver?.disconnect()

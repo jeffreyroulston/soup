@@ -187,7 +187,7 @@ LG webOS builds run in Docker; see the [TV app README](apps/android-v2/README.md
 | --- | --- |
 | `apps/web` | Web app (Nuxt) |
 | `apps/android-v2` | TV app (Flutter, Android TV and webOS) |
-| `apps/android` | Original Android phone/TV app ([README](apps/android/README.md)) |
+| `apps/android` | Legacy Android app, to be retired; new work goes in `apps/android-v2` ([README](apps/android/README.md)) |
 | `services/soup-identity` | Soup Identity service |
 | `plugins/jellyfin-soup` | Jellyfin plugin |
 | `packages/` | Shared Dart code: `soup_core`, `soup_identity`, `soup_tailscale` (Tailscale FFI), `jellyfin_api` (generated) |

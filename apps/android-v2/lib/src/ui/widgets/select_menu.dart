@@ -48,9 +48,9 @@ class SelectMenu<T> extends StatelessWidget {
         decoration: BoxDecoration(
           color: surface
               ? (focused ? SoupColors.elevated : SoupColors.surface)
-              : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+              : (focused ? SoupColors.glassFocused : SoupColors.glass),
           borderRadius: BorderRadius.circular(23),
-          border: Border.all(color: const Color(0x1AFFFFFF)),
+          border: Border.all(color: SoupColors.faint),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

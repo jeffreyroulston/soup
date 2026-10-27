@@ -197,7 +197,9 @@ export function isInProgress(item: JellyfinItem): boolean {
  */
 /**
  * One Keep Watching card per show: its earliest part-watched episode, else its next
- * unwatched one. Shows keep the slot of their most recently played episode.
+ * unwatched one. Shows keep the slot of their most recently played episode. Jellyfin's
+ * Resume list includes anything with a saved position, so an already-watched episode that
+ * was partly rewatched would otherwise sit here even though its show reads as watched.
  */
 export function collapseKeepWatching(
   resume: readonly JellyfinItem[],
@@ -213,6 +215,7 @@ export function collapseKeepWatching(
   const collapsed: JellyfinItem[] = []
   const slotBySeries = new Map<string, number>()
   for (const item of resume) {
+    if (item.played) continue
     const seriesId = item.type === 'Episode' ? item.seriesId : null
     if (!seriesId) {
       collapsed.push(item)

@@ -6,6 +6,8 @@ import type { Db } from "../db/client.js";
 
 export type AppVariables = {
   email: string;
+  /** The session behind the access token; null for tokens minted before sid. */
+  sessionId: string | null;
   pluginId: string;
 };
 
@@ -30,6 +32,7 @@ export function createSoupAuth(deps: {
         header.slice("Bearer ".length),
       );
       c.set("email", claims.email);
+      c.set("sessionId", claims.sessionId);
       await next();
     } catch {
       return c.json({ error: "unauthorized", message: "Invalid access token" }, 401);

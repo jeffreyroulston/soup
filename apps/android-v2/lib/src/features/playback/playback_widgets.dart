@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -54,8 +55,8 @@ class ChromeButton extends StatelessWidget {
             shape: BoxShape.circle,
             color: filled
                 ? SoupColors.ink
-                : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
-            border: filled ? null : Border.all(color: const Color(0x1AFFFFFF)),
+                : (focused ? SoupColors.glassFocused : SoupColors.glass),
+            border: filled ? null : Border.all(color: SoupColors.faint),
           ),
           alignment: Alignment.center,
           child: busy
@@ -261,14 +262,28 @@ class TrickplayPreview extends StatefulWidget {
 }
 
 class _TrickplayPreviewState extends State<TrickplayPreview> {
-  Uint8List? _sheet;
+  // Only the current sheet stays decoded (several MB each; Image.memory
+  // would keep every sheet seen in the image cache), and only one is fetched
+  // and decoded at a time, however fast the position moves.
+  ui.Image? _sheet;
   int? _sheetIndex;
   TrickplayFrame? _frame;
-  int? _wanted;
+  int? _loading;
+  int? _failed; // not retried until the position moves to another sheet
+  int _decodeWidth = 1;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final info = widget.info;
+    // Decode near display size: a full sheet is ~3200×1800.
+    _decodeWidth =
+        (info.sheetWidth *
+                widget.width /
+                info.width *
+                MediaQuery.devicePixelRatioOf(context))
+            .round()
+            .clamp(1, info.sheetWidth);
     _sync();
   }
 
@@ -278,43 +293,73 @@ class _TrickplayPreviewState extends State<TrickplayPreview> {
     _sync();
   }
 
+  @override
+  void dispose() {
+    _sheet?.dispose();
+    super.dispose();
+  }
+
   void _sync() {
     final frame = widget.info.frameAt(widget.position);
     if (frame.sheet == _sheetIndex) {
       _frame = frame;
       return;
     }
-    if (_wanted == frame.sheet) return;
-    _wanted = frame.sheet;
-    unawaited(
-      widget.loadSheet(frame.sheet).then((bytes) {
-        if (!mounted || bytes == null || _wanted != frame.sheet) return;
-        setState(() {
-          _sheet = bytes;
-          _sheetIndex = frame.sheet;
-          _wanted = null;
-          _frame = widget.info.frameAt(widget.position);
-        });
-      }),
-    );
+    if (_loading != null || frame.sheet == _failed) return;
+    _failed = null;
+    _loading = frame.sheet;
+    unawaited(_load(frame.sheet));
+  }
+
+  Future<void> _load(int index) async {
+    ui.Image? image;
+    try {
+      final bytes = await widget.loadSheet(index);
+      if (bytes != null && mounted) {
+        final codec = await ui.instantiateImageCodec(
+          bytes,
+          targetWidth: _decodeWidth,
+        );
+        try {
+          image = (await codec.getNextFrame()).image;
+        } finally {
+          codec.dispose();
+        }
+      }
+    } on Object {
+      image = null;
+    }
+    _loading = null;
+    if (!mounted) {
+      image?.dispose();
+      return;
+    }
+    final frame = widget.info.frameAt(widget.position);
+    if (image == null) {
+      _failed = index;
+    } else if (frame.sheet != index) {
+      image.dispose(); // the position moved on meanwhile
+    } else {
+      final old = _sheet;
+      setState(() {
+        _sheet = image;
+        _sheetIndex = index;
+        _frame = frame;
+      });
+      old?.dispose();
+    }
+    _sync();
   }
 
   @override
   Widget build(BuildContext context) {
     final info = widget.info;
-    final scale = widget.width / info.width;
     final sheet = _sheet;
     final frame = _frame;
-    final sheetWidth = info.sheetWidth * scale;
-    final sheetHeight = info.sheetHeight * scale;
-    // Decode near display size: a full sheet is ~3200×1800.
-    final decodeWidth = (sheetWidth * MediaQuery.devicePixelRatioOf(context))
-        .round()
-        .clamp(1, info.sheetWidth);
     return Container(
       key: const ValueKey('trickplay-preview'),
       width: widget.width,
-      height: info.height * scale,
+      height: info.height * widget.width / info.width,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
@@ -324,39 +369,55 @@ class _TrickplayPreviewState extends State<TrickplayPreview> {
       ),
       child: sheet == null || frame == null
           ? null
-          : OverflowBox(
-              alignment: Alignment.topLeft,
-              minWidth: 0,
-              minHeight: 0,
-              maxWidth: sheetWidth,
-              maxHeight: sheetHeight,
-              child: Transform.translate(
-                offset: Offset(-frame.x * scale, -frame.y * scale),
-                child: Image.memory(
-                  sheet,
-                  width: sheetWidth,
-                  height: sheetHeight,
-                  cacheWidth: decodeWidth,
-                  fit: BoxFit.fill,
-                  gaplessPlayback: true,
-                  filterQuality: FilterQuality.medium,
-                ),
-              ),
+          : CustomPaint(
+              size: Size.infinite,
+              painter: _TrickplayCellPainter(sheet, info, frame),
             ),
     );
   }
 }
 
+/// Draws one thumbnail cell of a decoded sprite sheet over the whole canvas.
+class _TrickplayCellPainter extends CustomPainter {
+  _TrickplayCellPainter(this.sheet, this.info, this.frame);
+
+  final ui.Image sheet;
+  final Trickplay info;
+  final TrickplayFrame frame;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = sheet.width / info.sheetWidth;
+    canvas.drawImageRect(
+      sheet,
+      Rect.fromLTWH(frame.x * r, frame.y * r, info.width * r, info.height * r),
+      Offset.zero & size,
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TrickplayCellPainter old) =>
+      !identical(old.sheet, sheet) || old.frame != frame;
+}
+
 /// "Skip intro / recap / credits" pill.
 class SkipButton extends StatelessWidget {
-  const SkipButton({required this.label, required this.onPressed, super.key});
+  const SkipButton({
+    required this.label,
+    required this.onPressed,
+    this.focusNode,
+    super.key,
+  });
   final String label;
   final VoidCallback onPressed;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) => SoupButton(
     label: label,
     onPressed: onPressed,
+    focusNode: focusNode,
     height: 44,
     icon: const Icon(
       Icons.skip_next_rounded,
@@ -367,12 +428,13 @@ class SkipButton extends StatelessWidget {
 }
 
 /// Countdown card for the next episode.
-class NextEpisodeCard extends StatelessWidget {
+class NextEpisodeCard extends StatefulWidget {
   const NextEpisodeCard({
     required this.title,
     required this.seconds,
     required this.onPlayNow,
     required this.onCancel,
+    this.takeFocus = true,
     super.key,
   });
 
@@ -380,6 +442,42 @@ class NextEpisodeCard extends StatelessWidget {
   final int seconds;
   final VoidCallback onPlayNow;
   final VoidCallback onCancel;
+
+  /// False while something else (an open panel) owns the D-pad.
+  final bool takeFocus;
+
+  @override
+  State<NextEpisodeCard> createState() => _NextEpisodeCardState();
+}
+
+class _NextEpisodeCardState extends State<NextEpisodeCard> {
+  final _playFocus = FocusNode(debugLabel: 'Play now');
+
+  @override
+  void initState() {
+    super.initState();
+    // The player's root node (or a chrome button) already holds focus, so
+    // autofocus wouldn't move it; take it explicitly so OK plays next.
+    if (widget.takeFocus) _focusPlay();
+  }
+
+  @override
+  void didUpdateWidget(NextEpisodeCard old) {
+    super.didUpdateWidget(old);
+    if (widget.takeFocus && !old.takeFocus) _focusPlay();
+  }
+
+  void _focusPlay() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _playFocus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _playFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -392,7 +490,7 @@ class NextEpisodeCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Next episode in $seconds',
+            'Next episode in ${widget.seconds}',
             key: const ValueKey('next-episode-countdown'),
             style: SoupType.style(
               size: 12,
@@ -403,7 +501,7 @@ class NextEpisodeCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            title,
+            widget.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: SoupType.style(size: 17, weight: 800),
@@ -416,14 +514,14 @@ class NextEpisodeCard extends StatelessWidget {
                 child: _CardButton(
                   label: 'Play now',
                   primary: true,
-                  autofocus: true,
-                  onPressed: onPlayNow,
+                  focusNode: _playFocus,
+                  onPressed: widget.onPlayNow,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 flex: 2,
-                child: _CardButton(label: 'Cancel', onPressed: onCancel),
+                child: _CardButton(label: 'Cancel', onPressed: widget.onCancel),
               ),
             ],
           ),
@@ -438,17 +536,17 @@ class _CardButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.primary = false,
-    this.autofocus = false,
+    this.focusNode,
   });
 
   final String label;
   final VoidCallback onPressed;
   final bool primary;
-  final bool autofocus;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) => Focusable(
-    autofocus: autofocus,
+    focusNode: focusNode,
     onActivate: onPressed,
     radius: SoupRadii.button,
     builder: (context, focused) => Container(
@@ -458,7 +556,7 @@ class _CardButton extends StatelessWidget {
       decoration: BoxDecoration(
         color: primary
             ? SoupColors.ink
-            : (focused ? const Color(0xBF48484E) : const Color(0x99282828)),
+            : (focused ? SoupColors.glassFocused : SoupColors.glass),
         borderRadius: BorderRadius.circular(SoupRadii.button),
       ),
       child: FittedBox(

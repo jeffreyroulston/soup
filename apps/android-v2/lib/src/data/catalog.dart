@@ -91,8 +91,18 @@ abstract class Catalog extends ChangeNotifier {
   /// Drops cached data and has every screen reload (Retry, reconnect).
   void refresh() => notifyListeners();
 
+  bool _disposed = false;
+
+  /// A no-op once disposed: late work, like a player reporting its stop
+  /// position after sign-out, may still ask screens to refresh.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    _disposed = true;
     favoriteOverrides.dispose();
     super.dispose();
   }

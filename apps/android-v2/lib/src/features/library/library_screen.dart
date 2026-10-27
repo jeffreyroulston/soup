@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -61,6 +59,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _letterTarget = FocusNode(debugLabel: 'letter target');
   int? _letterTargetIndex;
 
+  /// The card that handed Right to the strip; Left goes back to it.
+  FocusNode? _stripReturn;
+
+  /// Left from the strip: back to the card it was entered from, else the
+  /// nearest card to the left, else the letter's first title.
+  void _leaveStrip(
+    String letter,
+    List<CatalogItem> items,
+    ({int columns, double cardWidth}) grid,
+  ) {
+    final back = _stripReturn;
+    if (back != null && back.context != null && back.canRequestFocus) {
+      back.requestFocus();
+      return;
+    }
+    final current = FocusManager.instance.primaryFocus;
+    if (current != null && current.focusInDirection(TraversalDirection.left)) {
+      return;
+    }
+    _enterLetter(letter, items, grid);
+  }
+
   FocusNode _letterNode(String letter) => _letterNodes.putIfAbsent(
     letter,
     () => FocusNode(debugLabel: 'letter $letter'),
@@ -96,34 +116,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
   static double _rowHeight(double cardWidth) =>
       cardWidth * 1.5 + _captionHeight;
 
-  Future<void> _jump(
-    String letter,
-    List<CatalogItem> items,
-    ({int columns, double cardWidth}) grid,
-  ) async {
-    final index = items.indexWhere((i) => sortLetter(i) == letter);
-    if (index < 0 || !_scroll.hasClients) return;
+  /// Room left above the jumped-to row, matching the margin [Focusable]
+  /// keeps clear of the nav, so focusing the card doesn't scroll again.
+  static const _jumpMargin = 150.0;
+
+  /// Puts the row holding [index] at the top, instantly: a jump, not a glide.
+  void _jump(int index, ({int columns, double cardWidth}) grid) {
+    if (!_scroll.hasClients) return;
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     final header = box?.size.height ?? 300;
     final rowExtent = _rowHeight(grid.cardWidth) + _rowGap;
-    final target = header + (index ~/ grid.columns) * rowExtent;
-    await _scroll.animateTo(
-      target.clamp(0, _scroll.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-    );
+    final target = header + (index ~/ grid.columns) * rowExtent - _jumpMargin;
+    _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
   }
 
-  /// Left/OK on a letter: into the grid at its first title.
-  Future<void> _enterLetter(
+  /// OK on a letter: straight to its first title, focused.
+  void _enterLetter(
     String letter,
     List<CatalogItem> items,
     ({int columns, double cardWidth}) grid,
-  ) async {
+  ) {
     final index = items.indexWhere((i) => sortLetter(i) == letter);
     if (index < 0) return;
     setState(() => _letterTargetIndex = index);
-    await _jump(letter, items, grid);
+    _jump(index, grid);
+    // The row is built on the next frame, at the new offset.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _letterTarget.context != null) {
         _letterTarget.requestFocus();
@@ -149,7 +166,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
           section: NavSection.library,
           libraryId: lib.id,
           controller: _scroll,
-          overlay: all == null || items.isEmpty
+          // Letters only mean something when the grid is in title order.
+          overlay: all == null || items.isEmpty || _sort != LibrarySort.title
               ? null
               : Positioned(
                   right: 16,
@@ -159,8 +177,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     child: _AzStrip(
                       letters: letters,
                       focusNodeFor: _letterNode,
-                      onFocus: (l) => unawaited(_jump(l, items, grid)),
-                      onEnter: (l) => unawaited(_enterLetter(l, items, grid)),
+                      onEnter: (l) => _enterLetter(l, items, grid),
+                      onLeave: (l) => _leaveStrip(l, items, grid),
                     ),
                   ),
                 ),
@@ -208,8 +226,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 // The row's last card hands Right to the
                                 // strip, at its own letter.
                                 rowEnd:
-                                    c == columns - 1 ||
-                                    row * columns + c == items.length - 1,
+                                    _sort == LibrarySort.title &&
+                                    (c == columns - 1 ||
+                                        row * columns + c == items.length - 1),
                               )
                             else
                               SizedBox(width: cardWidth),
@@ -261,6 +280,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             event.logicalKey != LogicalKeyboardKey.arrowRight) {
           return KeyEventResult.ignored;
         }
+        _stripReturn = FocusManager.instance.primaryFocus;
         _letterNode(sortLetter(item)).requestFocus();
         return KeyEventResult.handled;
       },
@@ -426,19 +446,19 @@ class _Header extends StatelessWidget {
 }
 
 /// A–Z jump strip. Up/Down step through the letters that have titles and
-/// stop at the ends; landing on a letter scrolls the grid to it, and Left/OK
-/// moves into the grid at its first title.
+/// stop at the ends without moving the grid; OK jumps straight to the
+/// letter's first title. Left goes back into the grid where it was.
 class _AzStrip extends StatelessWidget {
   const _AzStrip({
     required this.letters,
     required this.focusNodeFor,
-    required this.onFocus,
     required this.onEnter,
+    required this.onLeave,
   });
   final Set<String> letters;
   final FocusNode Function(String letter) focusNodeFor;
-  final ValueChanged<String> onFocus;
   final ValueChanged<String> onEnter;
+  final ValueChanged<String> onLeave;
 
   static const _all = [
     '#',
@@ -490,8 +510,10 @@ class _AzStrip extends StatelessWidget {
       // Stop at the ends rather than falling out into the grid or nav.
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.arrowLeft && event is KeyDownEvent) {
-      onEnter(available[current]);
+    // Handled here: the default directional search misses the grid once
+    // it has scrolled.
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      onLeave(available[current]);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowRight) return KeyEventResult.handled;
@@ -503,9 +525,9 @@ class _AzStrip extends StatelessWidget {
     width: 40,
     padding: const EdgeInsets.symmetric(vertical: 8),
     decoration: BoxDecoration(
-      color: const Color(0x99282828),
+      color: SoupColors.glass,
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: const Color(0x1AFFFFFF)),
+      border: Border.all(color: SoupColors.faint),
     ),
     child: Focus(
       canRequestFocus: false,
@@ -520,9 +542,6 @@ class _AzStrip extends StatelessWidget {
                 focusNode: focusNodeFor(l),
                 scale: 1.0,
                 radius: 10,
-                onFocusChange: (focused) {
-                  if (focused) onFocus(l);
-                },
                 onActivate: () => onEnter(l),
                 builder: (context, focused) => Container(
                   width: 32,

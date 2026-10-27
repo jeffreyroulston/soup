@@ -59,11 +59,14 @@ class DeviceCapabilities {
     this.passthroughKnown = false,
     this.maxAudioChannels = 2,
     this.hevcMain10 = false,
+    this.vp9Profile2 = false,
+    this.av1Main10 = false,
     this.hdr10 = false,
     this.hlg = false,
     this.hdr10Plus = false,
     this.dolbyVision = false,
     this.maxVideoHeight = const {},
+    this.hlsSegmentContainer = 'mp4',
   });
 
   /// Shown in Settings, e.g. `Android` or `webOS 10`.
@@ -87,6 +90,13 @@ class DeviceCapabilities {
   final int maxAudioChannels;
 
   final bool hevcMain10;
+
+  /// 10-bit VP9 (Profile 2, how YouTube-style HDR VP9 is encoded). Many
+  /// VP9 decoders only do Profile 0.
+  final bool vp9Profile2;
+
+  /// 10-bit AV1 (Main 10), how most AV1 releases are encoded.
+  final bool av1Main10;
   final bool hdr10;
   final bool hlg;
   final bool hdr10Plus;
@@ -95,6 +105,10 @@ class DeviceCapabilities {
   /// Largest frame height per video codec the device decodes smoothly;
   /// missing means no limit.
   final Map<String, int> maxVideoHeight;
+
+  /// Segment format for converted (HLS) streams. fMP4 by default; LG's player
+  /// fails on fMP4 carrying copied 4K HEVC/Dolby Vision but plays MPEG-TS.
+  final String hlsSegmentContainer;
 
   /// What any Android device can play: the codecs Android requires plus 8-bit
   /// HEVC, stereo out. Used until detection finishes and in tests.
@@ -156,11 +170,14 @@ class DeviceCapabilities {
     'passthroughKnown': passthroughKnown,
     'maxAudioChannels': maxAudioChannels,
     'hevcMain10': hevcMain10,
+    'vp9Profile2': vp9Profile2,
+    'av1Main10': av1Main10,
     'hdr10': hdr10,
     'hlg': hlg,
     'hdr10Plus': hdr10Plus,
     'dolbyVision': dolbyVision,
     'maxVideoHeight': maxVideoHeight,
+    'hlsSegmentContainer': hlsSegmentContainer,
   };
 
   static const _passthroughOrder = ['ac3', 'eac3', 'truehd', 'dts'];
@@ -283,9 +300,9 @@ class JellyfinDeviceProfile {
       ],
       'TranscodingProfiles': [
         {
-          // fMP4 HLS carries HEVC, HDR10 and Dolby Vision when the video is
-          // copied rather than re-encoded.
-          'Container': 'mp4',
+          // HEVC and HDR10 are copied rather than re-encoded, in fMP4 or TS
+          // segments depending on what the player handles.
+          'Container': capabilities.hlsSegmentContainer,
           'Type': 'Video',
           'VideoCodec': _transcodeVideoCodecs.join(','),
           'AudioCodec': transcodeAudioCodecs.join(','),
@@ -336,6 +353,11 @@ class JellyfinDeviceProfile {
                 _condition('LessThanEqual', 'VideoBitDepth', '8'),
                 _condition('EqualsAny', 'VideoProfile', 'main'),
               ],
+              // A decoder without 10-bit support shows a black screen or
+              // fails on 10-bit files, so those are converted instead.
+              if ((codec == 'vp9' && !caps.vp9Profile2) ||
+                  (codec == 'av1' && !caps.av1Main10))
+                _condition('LessThanEqual', 'VideoBitDepth', '8'),
               _condition('EqualsAny', 'VideoRangeType', ranges),
               ..._heightCondition(codec),
             ],
@@ -382,7 +404,7 @@ class JellyfinDeviceProfile {
       'VideoCodec': _transcodeVideoCodecs.join(','),
       'AudioCodec': transcodeAudioCodecs.join(','),
       'TranscodingMaxAudioChannels': '$_transcodeChannels',
-      'SegmentContainer': 'mp4',
+      'SegmentContainer': caps.hlsSegmentContainer,
       'MinSegments': '1',
       'BreakOnNonKeyFrames': 'true',
       'AllowVideoStreamCopy': 'true',

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,6 +58,7 @@ Future<void> _pumpPlayer(
   int? audioIndex,
   List<http.Request>? log,
   bool touch = false,
+  bool reveal = true,
 }) async {
   // Touch: a landscape phone (844×390 logical).
   tester.view.physicalSize = touch
@@ -105,6 +109,15 @@ Future<void> _pumpPlayer(
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 400));
+  // The controls start hidden; bring them up as a viewer would.
+  if (reveal) {
+    if (touch) {
+      await tester.tapAt(tester.getCenter(find.byType(PlaybackScreen)));
+    } else {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    }
+    await tester.pump(const Duration(milliseconds: 400));
+  }
 }
 
 Future<void> _back(WidgetTester tester) async {
@@ -160,11 +173,100 @@ void main() {
     final factory = FakeFactory();
     await _pumpPlayer(tester, factory: factory, item: _movie);
     expect(factory.controllers, hasLength(1));
-    expect(factory.controllers.single.uri.path, '/Videos/m1/stream.mp4');
+    expect(
+      factory.controllers.single.uri.path,
+      endsWith('/Videos/m1/stream.mp4'),
+    );
     await _openSettings(tester);
     expect(find.text('Direct'), findsOneWidget);
     expect(find.byKey(const ValueKey('playback-title')), findsOneWidget);
     expect(factory.controllers.single.value.playing, isTrue);
+  });
+
+  testWidgets('leaving while the player loads never starts playback', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final factory = FakeFactory(initializeGate: gate);
+    await _pumpPlayer(tester, factory: factory, item: _movie, reveal: false);
+    expect(factory.controllers, hasLength(1));
+    await _back(tester);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PlaybackScreen), findsNothing);
+    gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final controller = factory.controllers.single;
+    expect(controller.value.playing, isFalse);
+    expect(controller.closes, greaterThan(0));
+    expect(factory.controllers, hasLength(1));
+  });
+
+  Map<String, Object?> lastReport(List<http.Request> log, String kind) =>
+      jsonDecode(
+            log.lastWhere((r) => r.url.path == '/Sessions/Playing/$kind').body,
+          )
+          as Map<String, Object?>;
+
+  testWidgets('Try again resumes where playback failed, as a new session', (
+    tester,
+  ) async {
+    final log = <http.Request>[];
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, log: log);
+    await factory.controllers.last.seekTo(const Duration(minutes: 40));
+    // Direct play fails, then its transcode fallback fails too.
+    factory.controllers.last.failNow();
+    await tester.pump(const Duration(milliseconds: 100));
+    factory.controllers.last.failNow();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('playback-error')), findsOneWidget);
+
+    await tester.tap(find.text('Try again'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const ValueKey('playback-error')), findsNothing);
+    expect(
+      factory.controllers.last.value.position,
+      const Duration(minutes: 40),
+    );
+    expect(factory.controllers.last.value.playing, isTrue);
+    expect(lastReport(log, 'Stopped')['PositionTicks'], 40 * 60 * 10000000);
+  });
+
+  testWidgets('a pause from outside the controls is reported', (tester) async {
+    final log = <http.Request>[];
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, log: log);
+    expect(lastReport(log, 'Progress')['IsPaused'], isFalse);
+
+    // e.g. the OS pausing the player when the app goes to the background.
+    await factory.controllers.single.pause();
+    await tester.pump();
+
+    expect(lastReport(log, 'Progress')['IsPaused'], isTrue);
+    // Paused sessions keep pinging so Jellyfin doesn't drop them.
+    final before = log.length;
+    await tester.pump(const Duration(seconds: 31));
+    expect(log.length, greaterThan(before));
+    expect(lastReport(log, 'Progress')['IsPaused'], isTrue);
+  });
+
+  testWidgets('leaving straight after a seek saves the seek target', (
+    tester,
+  ) async {
+    final log = <http.Request>[];
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, log: log);
+    await tester.pump(const Duration(seconds: 5)); // chrome hides
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    Navigator.of(tester.element(find.byType(PlaybackScreen))).pop();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(lastReport(log, 'Stopped')['PositionTicks'], 10 * 10000000);
   });
 
   testWidgets('falls back from failed direct play to transcode', (
@@ -178,7 +280,10 @@ void main() {
       startTicks: 150000000,
     );
     expect(factory.controllers, hasLength(2));
-    expect(factory.controllers.last.uri.path, '/Videos/x/master.m3u8');
+    expect(
+      factory.controllers.last.uri.path,
+      endsWith('/Videos/x/master.m3u8'),
+    );
     await _openSettings(tester);
     expect(find.text('Transcode'), findsOneWidget);
     expect(
@@ -218,6 +323,25 @@ void main() {
     expect(find.text('Transcode'), findsOneWidget);
   });
 
+  testWidgets('chrome starts hidden on TV and touch', (tester) async {
+    for (final touch in [false, true]) {
+      await _pumpPlayer(
+        tester,
+        factory: FakeFactory(),
+        item: _movie,
+        touch: touch,
+        reveal: false,
+      );
+      expect(_chromeOpacity(tester), 0);
+      expect(
+        find.byKey(const ValueKey('settings-button')).hitTestable(),
+        findsNothing,
+      );
+      await _back(tester);
+      await _back(tester);
+    }
+  });
+
   testWidgets('chrome auto-hides, any D-pad key reveals it, Left/Right seek', (
     tester,
   ) async {
@@ -231,13 +355,14 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(const Duration(milliseconds: 300));
     expect(_chromeOpacity(tester), 1);
+    await tester.pump(const Duration(milliseconds: 200)); // seek debounce
     expect(
       factory.controllers.single.value.position,
       const Duration(seconds: 10),
     );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     expect(factory.controllers.single.value.position, Duration.zero);
   });
 
@@ -277,6 +402,63 @@ void main() {
     expect(find.text('Skip intro'), findsNothing);
   });
 
+  testWidgets('skip pill tucks into the controls after 5 seconds', (
+    tester,
+  ) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie, reveal: false);
+    await factory.controllers.single.seekTo(const Duration(seconds: 40));
+    await tester.pump();
+    expect(find.text('Skip intro'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.text('Skip intro'), findsNothing);
+    // Still there with the controls.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Skip intro'), findsOneWidget);
+  });
+
+  testWidgets('D-pad Down from play lands on the skip pill', (tester) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie);
+    await factory.controllers.single.seekTo(const Duration(seconds: 40));
+    await tester.pump();
+    String? where() => FocusManager.instance.primaryFocus?.debugLabel;
+    expect(where(), 'playback play');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(where(), 'playback skip');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    expect(where(), 'playback play');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pump();
+    expect(
+      factory.controllers.single.value.position,
+      const Duration(seconds: 75),
+    );
+  });
+
+  testWidgets('D-pad Down from play reaches the seek bar once the skip pill '
+      'has gone', (tester) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie);
+    String? where() => FocusManager.instance.primaryFocus?.debugLabel;
+    // Show the pill once, then leave the segment so it disappears.
+    await factory.controllers.single.seekTo(const Duration(seconds: 40));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('skip-button')), findsOneWidget);
+    await factory.controllers.single.seekTo(const Duration(seconds: 120));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('skip-button')), findsNothing);
+    expect(where(), 'playback play');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(where(), 'playback seek');
+  });
+
   testWidgets('autoSkipIntros jumps past the intro without a click', (
     tester,
   ) async {
@@ -292,8 +474,28 @@ void main() {
     );
   });
 
+  testWidgets('TV Back with hidden controls shows them before leaving', (
+    tester,
+  ) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie);
+    await tester.pump(const Duration(seconds: 5)); // chrome auto-hides
+    expect(_chromeOpacity(tester), 0);
+
+    await _back(tester);
+    expect(find.byType(PlaybackScreen), findsOneWidget);
+    expect(_chromeOpacity(tester), 1);
+    expect(factory.controllers.single.value.playing, isTrue);
+
+    await _back(tester);
+    // Sound stops as Back is pressed, not when the route finishes closing.
+    expect(factory.controllers.single.value.playing, isFalse);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PlaybackScreen), findsNothing);
+  });
+
   testWidgets(
-    'settings panel: speed, subtitle switch reloads with VTT; Back closes then exits',
+    'settings panel: speed, subtitle switch swaps VTT in place; Back closes then exits',
     (tester) async {
       final factory = FakeFactory();
       final log = <http.Request>[];
@@ -316,9 +518,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byKey(const ValueKey('panel-Settings')), findsNothing);
-      expect(factory.controllers, hasLength(2));
-      expect(factory.controllers.last.hadSubtitles, isTrue);
-      expect(factory.controllers.last.speed, 1.5);
+      // The same player carries on; only its caption track changes.
+      expect(factory.controllers, hasLength(1));
+      expect(factory.controllers.single.subtitles.single, contains('WEBVTT'));
+      expect(factory.controllers.single.seeks, isEmpty);
       expect(log.any((r) => r.url.path.contains('/Subtitles/3/')), isTrue);
 
       // Back closes an open panel first, then leaves the player.
@@ -336,7 +539,7 @@ void main() {
     },
   );
 
-  testWidgets('D-pad reaches the settings panel and Left closes it', (
+  testWidgets('D-pad reaches the settings panel and Left leaves it', (
     tester,
   ) async {
     final factory = FakeFactory();
@@ -360,6 +563,10 @@ void main() {
     expect(find.byKey(const ValueKey('panel-Settings')), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
+    // Left crosses into the subtitles column first, then closes.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('panel-Settings')), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const ValueKey('panel-Settings')), findsNothing);
@@ -420,6 +627,9 @@ void main() {
     await c.seekTo(c.value.duration - const Duration(seconds: 20));
     await tester.pump();
     expect(find.text('Next episode in 10'), findsOneWidget);
+    // Play now takes focus so OK on the remote plays the next episode.
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Play now');
     await tester.pump(const Duration(seconds: 3));
     expect(find.text('Next episode in 7'), findsOneWidget);
 
@@ -450,6 +660,35 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     expect(factory.controllers, hasLength(2));
     expect(find.byType(PlaybackScreen), findsOneWidget);
+  });
+
+  testWidgets('a quality change keeps the old position on the bar while the '
+      'new player loads', (tester) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _movie);
+    final first = factory.controllers.single;
+    await first.seekTo(const Duration(minutes: 10));
+    await tester.pump();
+    expect(find.text('10:00'), findsOneWidget);
+
+    // Stall the replacement player so the swap is caught mid-load.
+    factory.initializeGate = Completer<void>();
+    await _openSettings(tester);
+    await tester.ensureVisible(find.textContaining('Mbps').first);
+    await tester.pump();
+    await tester.tap(find.textContaining('Mbps').first);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(factory.controllers, hasLength(2));
+    expect(factory.controllers.last.value.initialized, isFalse);
+    expect(find.text('10:00'), findsOneWidget);
+    expect(find.text('00:00'), findsNothing);
+
+    factory.initializeGate!.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(factory.controllers.last.seeks, [const Duration(minutes: 10)]);
+    expect(find.text('10:00'), findsOneWidget);
   });
 
   testWidgets('mock mode plays the public sample directly', (tester) async {
@@ -573,6 +812,29 @@ void _trickplayTests() {
     await tester.pump(const Duration(seconds: 5));
   });
 
+  testWidgets('TV: holding Right seeks the player once, at the end', (
+    tester,
+  ) async {
+    final factory = FakeFactory();
+    await _pumpPlayer(tester, factory: factory, item: _withTrickplay);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 300));
+    final c = factory.controllers.single;
+    final from = c.value.position;
+    c.seeks.clear();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+    }
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(c.seeks, isEmpty);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(c.seeks, [from + const Duration(seconds: 210)]);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   testWidgets('TV: no thumbnail when the server made none', (tester) async {
     final factory = FakeFactory();
     await _pumpPlayer(tester, factory: factory, item: _movie);
@@ -608,8 +870,12 @@ void _trickplayTests() {
 }
 
 class FakeFactory implements SoupVideoControllerFactory {
-  FakeFactory({this.failures = 0});
+  FakeFactory({this.failures = 0, this.initializeGate});
   int failures;
+
+  /// When set, every controller created from then on waits on it to
+  /// initialize.
+  Completer<void>? initializeGate;
   final controllers = <FakeController>[];
 
   @override
@@ -618,6 +884,7 @@ class FakeFactory implements SoupVideoControllerFactory {
       uri,
       hadSubtitles: subtitleVtt != null,
       fail: failures-- > 0,
+      gate: initializeGate,
     );
     controllers.add(c);
     return c;
@@ -625,11 +892,18 @@ class FakeFactory implements SoupVideoControllerFactory {
 }
 
 class FakeController extends ChangeNotifier
-    implements SoupVideoController, SpeedControllable {
-  FakeController(this.uri, {required this.hadSubtitles, required this.fail});
+    implements SoupVideoController, SpeedControllable, SubtitleControllable {
+  FakeController(
+    this.uri, {
+    required this.hadSubtitles,
+    required this.fail,
+    this.gate,
+  });
   final Uri uri;
   final bool hadSubtitles;
   final bool fail;
+  final Completer<void>? gate;
+  int closes = 0;
   double speed = 1;
   SoupVideoValue _value = const SoupVideoValue();
 
@@ -648,6 +922,7 @@ class FakeController extends ChangeNotifier
 
   @override
   Future<void> initialize() async {
+    await gate?.future;
     if (fail) throw StateError('direct playback failed');
     _value = const SoupVideoValue(
       initialized: true,
@@ -662,15 +937,38 @@ class FakeController extends ChangeNotifier
   @override
   Future<void> pause() async => _set(playing: false);
 
+  final seeks = <Duration>[];
+
   @override
-  Future<void> seekTo(Duration position) async => _set(position: position);
+  Future<void> seekTo(Duration position) async {
+    seeks.add(position);
+    _set(position: position);
+  }
 
   @override
   Future<void> setSpeed(double value) async => speed = value;
+
+  /// Every subtitle swap, resolved: null for off.
+  final subtitles = <String?>[];
+
+  @override
+  Future<void> setSubtitle(Future<String>? vtt) async =>
+      subtitles.add(await vtt);
 
   @override
   Widget buildView() => const SizedBox.expand();
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async => closes++;
+
+  /// A media error mid-stream, as the platform player reports one.
+  void failNow() {
+    _value = SoupVideoValue(
+      initialized: _value.initialized,
+      position: _value.position,
+      duration: _value.duration,
+      error: 'decoder failed',
+    );
+    notifyListeners();
+  }
 }

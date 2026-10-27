@@ -39,7 +39,9 @@ class Person {
     final id = '${raw['Id'] ?? ''}';
     final name = '${raw['Name'] ?? ''}';
     if (id.isEmpty || name.isEmpty) return null;
-    final tags = raw['ImageTags'] is Map ? raw['ImageTags'] as Map : const {};
+    final tags = raw['ImageTags'] is Map
+        ? raw['ImageTags'] as Map
+        : const <Object?, Object?>{};
     final role = raw['Role'] as String?;
     return Person(
       id: id,
@@ -403,9 +405,10 @@ class CatalogItem {
     lastPlayedDate: lastPlayedDate ?? this.lastPlayedDate,
   );
 
-  /// 2:3 key art; episodes use their series poster instead of the still.
+  /// 2:3 key art; episodes use their series poster instead of the still,
+  /// as do seasons that have no poster of their own.
   ImageRef get poster {
-    if (type == 'Episode' &&
+    if ((type == 'Episode' || (type == 'Season' && primaryImageTag == null)) &&
         seriesId != null &&
         seriesPrimaryImageTag != null) {
       return ImageRef(seriesId!, 'Primary', seriesPrimaryImageTag);
@@ -422,8 +425,9 @@ class CatalogItem {
   }
 
   ImageRef get backdrop {
-    if (backdropImageTag != null)
+    if (backdropImageTag != null) {
       return ImageRef(id, 'Backdrop', backdropImageTag);
+    }
     if (parentBackdropItemId != null) {
       return ImageRef(
         parentBackdropItemId!,
@@ -481,13 +485,17 @@ class CatalogItem {
     final id = '${raw['Id'] ?? ''}';
     final name = '${raw['Name'] ?? ''}';
     if (id.isEmpty || name.isEmpty) return null;
-    final tags = raw['ImageTags'] is Map ? raw['ImageTags'] as Map : const {};
+    final tags = raw['ImageTags'] is Map
+        ? raw['ImageTags'] as Map
+        : const <Object?, Object?>{};
     final backdropTags = raw['BackdropImageTags'];
     final parentBackdropTags = raw['ParentBackdropImageTags'];
-    final userData = raw['UserData'] is Map ? raw['UserData'] as Map : const {};
+    final userData = raw['UserData'] is Map
+        ? raw['UserData'] as Map
+        : const <Object?, Object?>{};
     final sources = raw['MediaSources'] is List
         ? raw['MediaSources'] as List
-        : const [];
+        : const <Object?>[];
     final firstSource = sources.isNotEmpty && sources.first is Map
         ? sources.first as Map
         : null;

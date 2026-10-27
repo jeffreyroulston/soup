@@ -29,9 +29,18 @@ class SocketLanDiscoverySession implements LanDiscoverySession {
 
   Future<void> _open(AndroidNetworkInterfaces interfaces) async {
     final addresses = await interfaces.broadcasts();
+    SocketException? lastError;
     for (final entry in addresses) {
       if (_closed) return;
-      final socket = await RawDatagramSocket.bind(entry.address, 0);
+      final RawDatagramSocket socket;
+      try {
+        socket = await RawDatagramSocket.bind(entry.address, 0);
+      } on SocketException catch (error) {
+        // One interface that won't bind (a VPN, one going down) shouldn't
+        // stop discovery on the others.
+        lastError = error;
+        continue;
+      }
       if (_closed) {
         socket.close();
         return;
@@ -51,6 +60,7 @@ class SocketLanDiscoverySession implements LanDiscoverySession {
         },
       );
     }
+    if (_sockets.isEmpty && lastError != null) throw lastError;
   }
 
   @override

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart';
@@ -66,6 +67,57 @@ void main() {
       expect(poll.status, DeviceLinkStatus.approved);
       expect(poll.tokens?.accessToken, 'access');
       expect(poll.tokens?.email, 'a@example.com');
+    });
+
+    test(
+      'a request that never answers times out as SoupIdentityException',
+      () async {
+        final client = HttpSoupIdentityClient(
+          baseUrl: Uri.parse('http://identity.test'),
+          timeout: const Duration(milliseconds: 50),
+          httpClient: MockClient((_) => Completer<Response>().future),
+        );
+        addTearDown(client.close);
+
+        await expectLater(
+          client.pollDeviceLink('dc-1'),
+          throwsA(isA<SoupIdentityException>()),
+        );
+      },
+    );
+
+    test('revokeSession posts refresh_token and accepts 204', () async {
+      final client = HttpSoupIdentityClient(
+        baseUrl: Uri.parse('http://identity.test'),
+        httpClient: MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/v1/sessions/revoke');
+          expect(jsonDecode(request.body), {'refresh_token': 'old'});
+          return Response('', 204);
+        }),
+      );
+      addTearDown(client.close);
+
+      await client.revokeSession('old');
+    });
+
+    test('revokeSession reports a failed status', () async {
+      final client = HttpSoupIdentityClient(
+        baseUrl: Uri.parse('http://identity.test'),
+        httpClient: MockClient((_) async => Response('', 500)),
+      );
+      addTearDown(client.close);
+
+      expect(
+        client.revokeSession('old'),
+        throwsA(
+          isA<SoupIdentityException>().having(
+            (e) => e.statusCode,
+            'status',
+            500,
+          ),
+        ),
+      );
     });
 
     test('refreshSession posts refresh_token', () async {

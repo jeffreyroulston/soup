@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soup_v2/src/data/curated_matcher.dart';
-import 'package:soup_v2/src/data/curated_pack.dart';
 import 'package:soup_v2/src/data/curated_packs.g.dart';
 import 'package:soup_v2/src/data/mock_catalog.dart';
 import 'package:soup_v2/src/data/models.dart';
@@ -12,7 +11,7 @@ CatalogItem _movie(String id, String name, int year, {String? imdb}) =>
       name: name,
       type: 'Movie',
       productionYear: year,
-      providerIds: {if (imdb != null) 'Imdb': imdb},
+      providerIds: {'Imdb': ?imdb},
     );
 
 void main() {
@@ -80,6 +79,23 @@ void main() {
       expect(item.streamsOf(StreamKind.subtitle).single.isTextSubtitle, isTrue);
       expect(episodeCode(item), 'Season 1, Episode 2');
       expect(canResume(item), isTrue);
+    });
+
+    test('seasons without a poster fall back to the series poster', () {
+      CatalogItem season(Map<String, Object?> tags) => CatalogItem.fromJson({
+        'Id': 'se1',
+        'Name': 'Season 2',
+        'Type': 'Season',
+        'SeriesId': 's1',
+        'SeriesName': 'Show',
+        'SeriesPrimaryImageTag': 'st',
+        'ImageTags': tags,
+      })!;
+      expect(season({}).poster, const ImageRef('s1', 'Primary', 'st'));
+      expect(
+        season({'Primary': 'own'}).poster,
+        const ImageRef('se1', 'Primary', 'own'),
+      );
     });
 
     test('rejects entries with no id or name', () {
@@ -181,6 +197,24 @@ void main() {
         );
         expect([for (final i in out.resume) i.id], ['a1', 'm']);
         expect([for (final i in out.nextUp) i.id], ['b1']); // A already shown
+      },
+    );
+
+    test(
+      'collapseKeepWatching drops watched episodes with a saved position',
+      () {
+        final rewatched = CatalogItem(
+          id: 'd1',
+          name: 'd1',
+          type: 'Episode',
+          seriesId: 'D',
+          parentIndexNumber: 1,
+          indexNumber: 1,
+          played: true,
+          playedPercentage: 40,
+        );
+        final out = collapseKeepWatching([rewatched], const []);
+        expect(out.resume, isEmpty);
       },
     );
 

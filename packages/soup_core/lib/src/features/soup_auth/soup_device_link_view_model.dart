@@ -123,6 +123,18 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
 
   Timer? _pollTimer;
   int _generation = 0;
+
+  /// When the current device code stops working, from its expires_in.
+  DateTime? _linkExpiresAt;
+
+  /// Polls that failed in a row for a reason worth waiting out.
+  int _pollFailures = 0;
+
+  /// The refresh in flight, shared by everyone who needs fresh tokens.
+  Future<SoupSession>? _refreshing;
+
+  /// Bumped on sign-out, so a refresh that lands afterwards isn't saved.
+  int _signOuts = 0;
   bool _disposed = false;
   bool _foreground = true;
 
@@ -131,10 +143,13 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     _busy = true;
     _notify();
     try {
-      final stored = await _sessionStore.read();
+      final stored = await _readOrDrop(_sessionStore.read, _sessionStore.clear);
       if (_disposed) return;
       _session = stored;
-      _jellyfinSession = await _jellyfinSessionStore.read();
+      _jellyfinSession = await _readOrDrop(
+        _jellyfinSessionStore.read,
+        _jellyfinSessionStore.clear,
+      );
       _initialized = true;
       if (stored != null) {
         _phase = SoupDeviceLinkPhase.loadingRoster;
@@ -151,6 +166,21 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
         _busy = false;
         _notify();
       }
+    }
+  }
+
+  /// A stored session that can't be decoded (an older format, a damaged
+  /// write) won't fix itself on retry, so it's dropped and sign-in starts
+  /// over. Storage errors, which can be transient, still surface.
+  static Future<T?> _readOrDrop<T>(
+    Future<T?> Function() read,
+    Future<void> Function() clear,
+  ) async {
+    try {
+      return await read();
+    } on FormatException {
+      await clear();
+      return null;
     }
   }
 
@@ -186,6 +216,8 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
         final start = await _client.startDeviceLink();
         if (_disposed || generation != _generation) return;
         _link = start;
+        _linkExpiresAt = DateTime.now().add(Duration(seconds: start.expiresIn));
+        _pollFailures = 0;
         _phase = SoupDeviceLinkPhase.waiting;
         _busy = false;
         _notify();
@@ -204,10 +236,39 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     _pollTimer?.cancel();
     final link = _link;
     if (link == null || !_foreground) return;
+    if (_linkExpired) {
+      _expireLink();
+      return;
+    }
+    // Back off while polls fail (offline, server busy, rate limited).
+    final interval = link.interval.clamp(1, 60);
+    final backoff = interval * (1 << _pollFailures.clamp(0, 4));
     final delay = immediate
         ? Duration.zero
-        : Duration(seconds: link.interval.clamp(1, 60));
+        : Duration(seconds: backoff.clamp(interval, 60));
     _pollTimer = Timer(delay, () => unawaited(_poll(link.deviceCode)));
+  }
+
+  bool get _linkExpired {
+    final expiresAt = _linkExpiresAt;
+    return expiresAt != null && DateTime.now().isAfter(expiresAt);
+  }
+
+  /// Ends the wait once the code's lifetime is up, without needing the
+  /// server to say so: polls that keep failing never would.
+  void _expireLink() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _phase = SoupDeviceLinkPhase.expired;
+    _error = 'This code has expired. Get a new code to continue.';
+    _notify();
+  }
+
+  /// Network trouble, timeouts, server errors and rate limiting pass; the
+  /// approval may still come through, so polling carries on.
+  static bool _isTransient(SoupIdentityException error) {
+    final status = error.statusCode;
+    return status == null || status == 429 || status >= 500;
   }
 
   Future<void> _poll(String deviceCode) async {
@@ -218,6 +279,7 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     try {
       final poll = await _client.pollDeviceLink(deviceCode);
       if (_disposed || generation != _generation) return;
+      _pollFailures = 0;
       switch (poll.status) {
         case DeviceLinkStatus.pending:
           _schedulePoll();
@@ -240,6 +302,10 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
       if (error.statusCode == 404) {
         _phase = SoupDeviceLinkPhase.expired;
         _error = 'This code is no longer valid. Get a new code to continue.';
+      } else if (_isTransient(error)) {
+        _pollFailures++;
+        _schedulePoll(); // or expires the code, once its time is up
+        return;
       } else {
         _phase = SoupDeviceLinkPhase.error;
         _error = _friendlyError(error);
@@ -308,20 +374,16 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     _error = null;
     _notify();
     try {
-      final tokens = await _client.refreshSession(session.refreshToken);
+      var next = await _refreshTokens(session);
       if (_disposed || generation != _generation) return;
-      var next = SoupSession.fromTokens(
-        tokens,
-        lastServerId: session.lastServerId,
-      );
-      final roster = await _client.listServers(tokens.accessToken);
+      final roster = await _client.listServers(next.accessToken);
       if (_disposed || generation != _generation) return;
       final selected = roster.autoSelected;
       if (selected != null && next.lastServerId == null) {
         next = next.copyWith(lastServerId: selected.id);
+        await _sessionStore.write(next);
+        if (_disposed || generation != _generation) return;
       }
-      await _sessionStore.write(next);
-      if (_disposed || generation != _generation) return;
       _session = next;
       _roster = roster;
       _selectedServer = _resolveSelected(roster, next.lastServerId);
@@ -371,19 +433,16 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     _error = null;
     _notify();
     try {
+      if (_expiresSoon(session)) {
+        session = await _refreshTokens(session);
+        if (_disposed || generation != _generation) return false;
+      }
       try {
         await _ensureRoster(session, generation);
       } on SoupIdentityException catch (error) {
         if (error.statusCode == 401) {
-          final tokens = await _client.refreshSession(session.refreshToken);
+          session = await _refreshTokens(session);
           if (_disposed || generation != _generation) return false;
-          session = SoupSession.fromTokens(
-            tokens,
-            lastServerId: session.lastServerId,
-          );
-          await _sessionStore.write(session);
-          if (_disposed || generation != _generation) return false;
-          _session = session;
           await _ensureRoster(session, generation);
         } else {
           rethrow;
@@ -462,15 +521,8 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
         exchanged = await _exchangeNow(session, generation);
       } on SoupIdentityException catch (error) {
         if (error.statusCode != 401) rethrow;
-        final tokens = await _client.refreshSession(session.refreshToken);
+        session = await _refreshTokens(session);
         if (_disposed || generation != _generation) return null;
-        session = SoupSession.fromTokens(
-          tokens,
-          lastServerId: session.lastServerId,
-        );
-        await _sessionStore.write(session);
-        if (_disposed || generation != _generation) return null;
-        _session = session;
         exchanged = await _exchangeNow(session, generation);
       }
       if (_disposed || generation != _generation) return null;
@@ -481,7 +533,8 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
         _phase = SoupDeviceLinkPhase.ready;
         return message;
       }
-      final next = session.copyWith(lastServerId: target.id);
+      // _session may hold tokens refreshed since this switch began.
+      final next = (_session ?? session).copyWith(lastServerId: target.id);
       await _sessionStore.write(next);
       if (_disposed || generation != _generation) return null;
       _session = next;
@@ -529,6 +582,11 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
 
   Future<void> clearSession() async {
     _generation++;
+    _signOuts++;
+    if (_session?.refreshToken case final refreshToken?) {
+      // Best effort and not awaited, like the Jellyfin logout.
+      unawaited(_client.revokeSession(refreshToken).catchError((Object _) {}));
+    }
     _pollTimer?.cancel();
     _pollTimer = null;
     await _sessionStore.clear();
@@ -549,6 +607,11 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
   }
 
   Future<void> _hydrateFromStoredSession(SoupSession session) async {
+    if (_expiresSoon(session)) {
+      // Skip the roster call that would only come back 401.
+      await refreshAndReloadRoster(fromStartup: true);
+      return;
+    }
     final generation = _generation;
     try {
       await _ensureRoster(session, generation);
@@ -606,11 +669,69 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
     _selectedServer = _resolveSelected(roster, session.lastServerId);
     if (_selectedServer != null &&
         session.lastServerId != _selectedServer!.id) {
-      final next = session.copyWith(lastServerId: _selectedServer!.id);
+      final next = (_session ?? session).copyWith(
+        lastServerId: _selectedServer!.id,
+      );
       await _sessionStore.write(next);
       if (_disposed || generation != _generation) return;
       _session = next;
     }
+  }
+
+  /// New tokens for [stale], from one refresh shared by every caller.
+  ///
+  /// Soup Identity rotates refresh tokens: a second refresh with the same
+  /// token gets a 401 and signs the device out. So concurrent callers share
+  /// the request, a caller holding tokens someone else already refreshed gets
+  /// those, and the result is saved before anything else can fail or be
+  /// cancelled, since the old refresh token is dead either way.
+  Future<SoupSession> _refreshTokens(SoupSession stale) {
+    final current = _session;
+    if (current != null && current.accessToken != stale.accessToken) {
+      return Future.value(current);
+    }
+    return _refreshing ??= () async {
+      try {
+        final base = current ?? stale;
+        final signOuts = _signOuts;
+        final tokens = await _client.refreshSession(base.refreshToken);
+        final latest = _session ?? base;
+        final next =
+            SoupSession.fromTokens(
+              tokens,
+              lastServerId: latest.lastServerId,
+            ).copyWith(
+              pendingTransportKey: latest.pendingTransportKey,
+              pendingTransportServerId: latest.pendingTransportServerId,
+            );
+        if (signOuts == _signOuts) {
+          await _sessionStore.write(next);
+          if (!_disposed && signOuts == _signOuts) _session = next;
+        }
+        return next;
+      } finally {
+        _refreshing = null;
+      }
+    }();
+  }
+
+  /// Saves [change] applied to the current session, if there is one.
+  Future<void> _updateSession(SoupSession Function(SoupSession) change) async {
+    final current = _session;
+    if (current == null) return;
+    final next = change(current);
+    await _sessionStore.write(next);
+    if (!_disposed) _session = next;
+  }
+
+  /// Whether [session]'s access token is expired or about to be, so it's
+  /// worth refreshing before use rather than waiting for a 401.
+  static bool _expiresSoon(SoupSession session) {
+    final expiresAt = session.accessExpiresAt;
+    if (expiresAt == null) return false;
+    return DateTime.now().toUtc().isAfter(
+      expiresAt.subtract(const Duration(minutes: 1)),
+    );
   }
 
   RosterServer? _resolveSelected(ServerRoster? roster, String? lastServerId) {
@@ -624,6 +745,10 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
   }
 
   /// Claimable grant → [connectWithAuthKey] → wait connected.
+  ///
+  /// The roster includes a grant's key only once, so it's saved before the
+  /// join and cleared only after it works; a failed join retries with the
+  /// saved key next time.
   Future<void> _maybeConnectTransport(
     ServerRoster? roster,
     int generation,
@@ -637,19 +762,37 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
       return;
     }
     final claimable = RosterServer.firstClaimableAuthKey(roster.servers);
-    if (claimable == null) return;
+    final String material;
+    final String? serverId;
+    if (claimable != null) {
+      material = claimable.grant.material!.trim();
+      serverId = claimable.server.id;
+      await _updateSession(
+        (s) => s.copyWith(
+          pendingTransportKey: material,
+          pendingTransportServerId: serverId,
+        ),
+      );
+      if (_disposed || generation != _generation) return;
+    } else if (_session?.pendingTransportKey case final saved?) {
+      material = saved;
+      serverId = _session?.pendingTransportServerId;
+    } else {
+      return;
+    }
 
     _phase = SoupDeviceLinkPhase.connectingTransport;
     _transportError = null;
     _notify();
     try {
-      final material = claimable.grant.material!.trim();
       await client.connectWithAuthKey(authKey: material);
       if (_disposed || generation != _generation) return;
       await client.waitUntilConnected(timeout: const Duration(seconds: 30));
       if (_disposed || generation != _generation) return;
+      await _updateSession((s) => s.copyWith(clearPendingTransport: true));
+      if (_disposed || generation != _generation) return;
       _transportConnected = true;
-      _transportServerId = claimable.server.id;
+      _transportServerId = serverId;
       _transportError = null;
     } on Object catch (error) {
       if (_disposed || generation != _generation) return;
@@ -718,6 +861,7 @@ class SoupDeviceLinkViewModel extends ChangeNotifier {
   }
 
   Future<void> _forceGoogleSignIn() async {
+    _signOuts++;
     await _sessionStore.clear();
     await _jellyfinSessionStore.clear();
     if (_disposed) return;

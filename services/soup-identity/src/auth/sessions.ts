@@ -9,6 +9,37 @@ import {
 } from "../lib/crypto.js";
 
 const DEVICE_LINK_TTL_SECONDS = 600;
+const DEVICE_FIELD_MAX = 64;
+const PLATFORMS = new Set(["webos", "android", "android_tv", "web", "ios"]);
+
+/** What a client says about itself when it starts a device link. */
+export type DeviceInfo = {
+  deviceName: string | null;
+  platform: string | null;
+  clientVersion: string | null;
+};
+
+function cleanField(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  // Control characters never belong in a label shown back to the user.
+  const trimmed = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  return trimmed ? trimmed.slice(0, DEVICE_FIELD_MAX) : null;
+}
+
+/** Normalize client-supplied device fields; anything unexpected becomes null. */
+export function parseDeviceInfo(raw: unknown): DeviceInfo {
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const platform = cleanField(body.platform)?.toLowerCase() ?? null;
+  return {
+    deviceName: cleanField(body.device_name),
+    platform: platform && PLATFORMS.has(platform) ? platform : null,
+    clientVersion: cleanField(body.client_version),
+  };
+}
+
+export function normalizeDeviceName(raw: unknown): string | null {
+  return cleanField(raw);
+}
 
 /** Normalize Google email for join keys (lowercase trimmed). */
 export function normalizeEmail(email: string): string {
@@ -67,19 +98,31 @@ export async function createSession(
   db: Db,
   keys: SigningKeys,
   env: Env,
-  input: { email: string; deviceName?: string },
+  input: { email: string; device?: DeviceInfo },
 ) {
   const email = normalizeEmail(input.email);
   const refreshToken = randomToken(48);
   const expiresAt = new Date(
     Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
   );
-  await db.query(
-    `INSERT INTO sessions (email, refresh_token_hash, device_name, expires_at)
-     VALUES ($1, $2, $3, $4)`,
-    [email, sha256(refreshToken), input.deviceName ?? null, expiresAt],
+  const { rows } = await db.query<{ id: string }>(
+    `INSERT INTO sessions
+      (email, refresh_token_hash, device_name, platform, client_version, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [
+      email,
+      sha256(refreshToken),
+      input.device?.deviceName ?? null,
+      input.device?.platform ?? null,
+      input.device?.clientVersion ?? null,
+      expiresAt,
+    ],
   );
-  const access = await signAccessToken(keys, env, { email });
+  const access = await signAccessToken(keys, env, {
+    email,
+    sessionId: rows[0]!.id,
+  });
   return {
     access_token: access.token,
     refresh_token: refreshToken,
@@ -123,7 +166,10 @@ export async function refreshSession(
     [sha256(newRefresh), expiresAt, row.id],
   );
 
-  const access = await signAccessToken(keys, env, { email: row.email });
+  const access = await signAccessToken(keys, env, {
+    email: row.email,
+    sessionId: row.id,
+  });
   return {
     access_token: access.token,
     refresh_token: newRefresh,
@@ -141,16 +187,25 @@ export async function revokeSession(db: Db, refreshToken: string) {
   );
 }
 
-export async function startDeviceLink(db: Db, env: Env) {
+export async function startDeviceLink(db: Db, env: Env, device?: DeviceInfo) {
   const deviceCode = randomToken(32);
   const userCode = randomUserCode();
   const expiresAt = new Date(Date.now() + DEVICE_LINK_TTL_SECONDS * 1000);
   const verificationUri = `${env.PUBLIC_BASE_URL}/link`;
   await db.query(
     `INSERT INTO device_links
-      (device_code, user_code, verification_uri, interval_seconds, expires_at, status)
-     VALUES ($1, $2, $3, 5, $4, 'pending')`,
-    [deviceCode, userCode, verificationUri, expiresAt],
+      (device_code, user_code, verification_uri, interval_seconds, expires_at, status,
+       device_name, platform, client_version)
+     VALUES ($1, $2, $3, 5, $4, 'pending', $5, $6, $7)`,
+    [
+      deviceCode,
+      userCode,
+      verificationUri,
+      expiresAt,
+      device?.deviceName ?? null,
+      device?.platform ?? null,
+      device?.clientVersion ?? null,
+    ],
   );
   return {
     device_code: deviceCode,
@@ -195,19 +250,28 @@ export async function pollDeviceLink(
 
   if (row.status === "approved" && row.email) {
     // Claim first so concurrent polls cannot mint two sessions.
-    const claimed = await db.query<{ email: string }>(
+    const claimed = await db.query<{
+      email: string;
+      device_name: string | null;
+      platform: string | null;
+      client_version: string | null;
+    }>(
       `UPDATE device_links
        SET status = 'consumed'
        WHERE device_code = $1 AND status = 'approved' AND email IS NOT NULL
-       RETURNING email`,
+       RETURNING email, device_name, platform, client_version`,
       [deviceCode],
     );
-    const email = claimed.rows[0]?.email;
-    if (!email) return { kind: "missing" as const };
+    const link = claimed.rows[0];
+    if (!link) return { kind: "missing" as const };
 
     const tokens = await createSession(db, keys, env, {
-      email,
-      deviceName: "device-link",
+      email: link.email,
+      device: {
+        deviceName: link.device_name,
+        platform: link.platform,
+        clientVersion: link.client_version,
+      },
     });
     return { kind: "approved" as const, tokens };
   }
@@ -217,8 +281,14 @@ export async function pollDeviceLink(
 
 /** Check a TV code before sending the browser off to a sign-in provider. */
 export async function checkDeviceLinkCode(db: Db, userCode: string) {
-  const { rows } = await db.query<{ status: string; expires_at: Date }>(
-    `SELECT status, expires_at FROM device_links WHERE user_code = $1`,
+  const { rows } = await db.query<{
+    status: string;
+    expires_at: Date;
+    device_name: string | null;
+    platform: string | null;
+  }>(
+    `SELECT status, expires_at, device_name, platform
+     FROM device_links WHERE user_code = $1`,
     [normalizeUserCode(userCode)],
   );
   const row = rows[0];
@@ -226,7 +296,11 @@ export async function checkDeviceLinkCode(db: Db, userCode: string) {
   if (row.expires_at.getTime() < Date.now() || row.status !== "pending") {
     return { ok: false as const, reason: "invalid" as const };
   }
-  return { ok: true as const };
+  return {
+    ok: true as const,
+    deviceName: row.device_name,
+    platform: row.platform,
+  };
 }
 
 export async function approveDeviceLink(
@@ -264,6 +338,82 @@ export async function approveDeviceLink(
     [email, row.device_code],
   );
   return { ok: true as const, email };
+}
+
+/** A signed-in device as the user sees it in their device list. */
+export type SessionSummary = {
+  id: string;
+  device_name: string | null;
+  platform: string | null;
+  client_version: string | null;
+  created_at: Date;
+  last_used_at: Date;
+  current: boolean;
+};
+
+const ACTIVE_SESSION = `revoked_at IS NULL AND expires_at > now()`;
+
+/** Is this session still live? Revoked devices keep a valid access token briefly. */
+export async function isSessionActive(db: Db, email: string, sessionId: string) {
+  const { rows } = await db.query(
+    `SELECT 1 FROM sessions WHERE id = $1 AND email = $2 AND ${ACTIVE_SESSION}`,
+    [sessionId, email],
+  );
+  return rows.length > 0;
+}
+
+export async function listSessions(
+  db: Db,
+  email: string,
+  currentSessionId: string | null,
+): Promise<SessionSummary[]> {
+  const { rows } = await db.query<Omit<SessionSummary, "current">>(
+    `SELECT id, device_name, platform, client_version, created_at, last_used_at
+     FROM sessions
+     WHERE email = $1 AND ${ACTIVE_SESSION}
+     ORDER BY last_used_at DESC`,
+    [email],
+  );
+  return rows.map((r) => ({ ...r, current: r.id === currentSessionId }));
+}
+
+/** Rename one of the user's devices; false when it isn't theirs or is gone. */
+export async function renameSession(
+  db: Db,
+  email: string,
+  sessionId: string,
+  deviceName: string | null,
+) {
+  const { rowCount } = await db.query(
+    `UPDATE sessions SET device_name = $3
+     WHERE id = $1 AND email = $2 AND ${ACTIVE_SESSION}`,
+    [sessionId, email, deviceName],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Sign one of the user's devices out; false when it isn't theirs or is gone. */
+export async function revokeSessionById(db: Db, email: string, sessionId: string) {
+  const { rowCount } = await db.query(
+    `UPDATE sessions SET revoked_at = now()
+     WHERE id = $1 AND email = $2 AND ${ACTIVE_SESSION}`,
+    [sessionId, email],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Sign out every device except the one making the request. */
+export async function revokeOtherSessions(
+  db: Db,
+  email: string,
+  keepSessionId: string,
+) {
+  const { rowCount } = await db.query(
+    `UPDATE sessions SET revoked_at = now()
+     WHERE email = $1 AND id <> $2 AND ${ACTIVE_SESSION}`,
+    [email, keepSessionId],
+  );
+  return rowCount ?? 0;
 }
 
 export function googleAuthUrl(env: Env, state: string): string {

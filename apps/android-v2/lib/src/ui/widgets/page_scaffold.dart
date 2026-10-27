@@ -8,7 +8,22 @@ import 'glass_nav.dart';
 
 /// Page shell: scrolling content under the fixed [GlassNav]. The nav turns
 /// solid after a short scroll, like the web header.
+///
+/// Every page draws its own bar, but in the same place with the same
+/// (cached) tabs, and page transitions fade only the content beneath it, so
+/// the bar reads as one header that stays put across pages.
 class PageScaffold extends StatefulWidget {
+  /// Set while a nav-bar item opens a page; that page then focuses its own
+  /// nav item, so focus stays in the bar instead of jumping to the content.
+  static bool _holdNav = false;
+
+  /// Called by the nav bar before it opens a top-level page.
+  static void holdNavFocus() {
+    _holdNav = true;
+    // Spent by the page built on the next frame, or dropped if none is.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _holdNav = false);
+  }
+
   /// D-pad focus recovery (see DesignScale): focuses the current page's nav
   /// item, or the nav's first item on pages without a section. False when no
   /// page is showing (e.g. the player).
@@ -30,7 +45,9 @@ class PageScaffold extends StatefulWidget {
   }
 
   /// Nothing usable has focus: none at all, a scope with no item, an item
-  /// whose widget is gone, or one left wholly off-screen.
+  /// whose widget is gone, or one left wholly off-screen. An item is not lost
+  /// while a list it sits in is still scrolling: holding an arrow moves focus
+  /// faster than the reveal scroll, so it briefly runs past the screen edge.
   static bool focusLost(FocusNode? node) {
     if (node == null || node is FocusScopeNode) return true;
     final context = node.context;
@@ -40,7 +57,19 @@ class PageScaffold extends StatefulWidget {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.attached || !box.hasSize) return true;
     final screen = node.nearestScope?.rect;
-    return screen != null && !node.rect.overlaps(screen);
+    if (screen == null || node.rect.overlaps(screen)) return false;
+    return !_scrolling(context);
+  }
+
+  static bool _scrolling(BuildContext context) {
+    for (
+      var s = Scrollable.maybeOf(context);
+      s != null;
+      s = Scrollable.maybeOf(s.context)
+    ) {
+      if (s.position.isScrollingNotifier.value) return true;
+    }
+    return false;
   }
 
   const PageScaffold({
@@ -87,6 +116,12 @@ class _PageScaffoldState extends State<PageScaffold> {
   void initState() {
     super.initState();
     _pages.add(this);
+    if (PageScaffold._holdNav && widget.section != NavSection.none) {
+      PageScaffold._holdNav = false;
+      // Not attached yet: the request applies as the nav item mounts, ahead
+      // of the content's autofocus (which only fills an empty scope).
+      _navTarget.requestFocus();
+    }
     _controller.addListener(() {
       final solid = _controller.hasClients && _controller.offset > 24;
       if (solid != _solid) setState(() => _solid = solid);
@@ -119,6 +154,9 @@ class _PageScaffoldState extends State<PageScaffold> {
         widget.section == NavSection.myStuff ||
         widget.section == NavSection.search ||
         widget.section == NavSection.settings;
+    final route = ModalRoute.of(context);
+    final animation = route?.animation ?? kAlwaysCompleteAnimation;
+    final covering = route?.secondaryAnimation ?? kAlwaysDismissedAnimation;
     return PopScope(
       // tvOS-style Back on top-level pages: first press returns to the top
       // and focuses this page's nav item; from the nav, a tab goes Home and
@@ -131,27 +169,42 @@ class _PageScaffoldState extends State<PageScaffold> {
           _scrollToTop();
         } else if (tab) {
           openHome(context);
+          PageScaffold.focusNav();
         }
       },
       child: Scaffold(
-        backgroundColor: SoupColors.canvas,
+        backgroundColor: Colors.transparent,
         body: Stack(
           children: [
             Positioned.fill(
-              child: CustomScrollView(
-                controller: _controller,
-                slivers: [
-                  ...widget.slivers,
-                  const SliverToBoxAdapter(child: SizedBox(height: 72)),
-                ],
+              child: FadeTransition(
+                opacity: animation,
+                child: ColoredBox(
+                  color: SoupColors.canvas,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CustomScrollView(
+                          controller: _controller,
+                          slivers: [
+                            ...widget.slivers,
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 72),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ?widget.overlay,
+                      const Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 28,
+                        child: Center(child: ConnectionBanner()),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            ?widget.overlay,
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 28,
-              child: Center(child: ConnectionBanner()),
             ),
             Positioned(
               top: 0,
@@ -165,11 +218,15 @@ class _PageScaffoldState extends State<PageScaffold> {
                   setState(() => _navFocused = focused);
                   if (focused) _scrollToTop();
                 },
-                child: GlassNav(
-                  section: widget.section,
-                  libraryId: widget.libraryId,
-                  solid: _solid,
-                  activeFocusNode: _navTarget,
+                child: _NavFade(
+                  animation: animation,
+                  covering: covering,
+                  child: GlassNav(
+                    section: widget.section,
+                    libraryId: widget.libraryId,
+                    solid: _solid,
+                    activeFocusNode: _navTarget,
+                  ),
                 ),
               ),
             ),
@@ -178,4 +235,35 @@ class _PageScaffoldState extends State<PageScaffold> {
       ),
     );
   }
+}
+
+/// One bar on screen at a time: a page's bar shows at once when it opens and
+/// hides while another page covers it; when a page closes, its bar fades out
+/// over the one returning beneath it.
+class _NavFade extends StatelessWidget {
+  const _NavFade({
+    required this.animation,
+    required this.covering,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final Animation<double> covering;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: Listenable.merge([animation, covering]),
+    child: child,
+    builder: (context, child) {
+      final covered =
+          covering.status == AnimationStatus.forward ||
+          covering.status == AnimationStatus.completed;
+      final closing = animation.status == AnimationStatus.reverse;
+      return Opacity(
+        opacity: covered ? 0 : (closing ? animation.value : 1),
+        child: child,
+      );
+    },
+  );
 }

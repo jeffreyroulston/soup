@@ -25,6 +25,27 @@ export type RosterServer = {
   audience: string
 }
 
+export type DevicePlatform = 'webos' | 'android' | 'android_tv' | 'web' | 'ios'
+
+/** What this client tells Identity about itself; shown on the approval page and in the device list. */
+export type DeviceInfo = {
+  device_name?: string
+  platform?: DevicePlatform
+  client_version?: string
+}
+
+/** A device signed in to the Soup account. */
+export type SoupDevice = {
+  id: string
+  device_name: string | null
+  platform: DevicePlatform | null
+  client_version: string | null
+  created_at: string
+  last_used_at: string
+  /** The session making the request, i.e. this browser. */
+  current: boolean
+}
+
 export type DeviceLinkPoll =
   | { status: 'pending' }
   | { status: 'expired' }
@@ -64,8 +85,11 @@ async function identityFetch<T>(baseUrl: string, path: string, init: RequestInit
   return (await response.json()) as T
 }
 
-export function startDeviceLink(baseUrl: string): Promise<DeviceLinkStart> {
-  return identityFetch<DeviceLinkStart>(baseUrl, '/auth/device/link', { method: 'POST' })
+export function startDeviceLink(baseUrl: string, device?: DeviceInfo): Promise<DeviceLinkStart> {
+  return identityFetch<DeviceLinkStart>(baseUrl, '/auth/device/link', {
+    method: 'POST',
+    ...(device ? { body: JSON.stringify(device) } : {}),
+  })
 }
 
 /** Google sign-in for a device code, skipping the /link page the QR code opens. */
@@ -137,4 +161,35 @@ export function mintAssertion(
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ server_id: serverId }),
   })
+}
+
+export async function listDevices(baseUrl: string, accessToken: string): Promise<SoupDevice[]> {
+  const body = await identityFetch<{ sessions: SoupDevice[] }>(baseUrl, '/v1/me/sessions', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return body.sessions ?? []
+}
+
+/** An empty name clears it, so the device falls back to its platform. */
+export function renameDevice(baseUrl: string, accessToken: string, id: string, name: string): Promise<void> {
+  return identityFetch(baseUrl, `/v1/me/sessions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ device_name: name.trim() || null }),
+  })
+}
+
+export function revokeDevice(baseUrl: string, accessToken: string, id: string): Promise<void> {
+  return identityFetch(baseUrl, `/v1/me/sessions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export async function revokeOtherDevices(baseUrl: string, accessToken: string): Promise<number> {
+  const body = await identityFetch<{ revoked: number }>(baseUrl, '/v1/me/sessions/revoke-others', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return body.revoked
 }

@@ -1,10 +1,21 @@
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
 import { signAssertion, type SigningKeys } from "../lib/crypto.js";
 import { createSoupAuth, type AppEnv } from "../middleware/auth.js";
 import { claimTransportGrant } from "../lib/transport_grants.js";
 import { parseEncryptionKey } from "../lib/secret_box.js";
+import {
+  isSessionActive,
+  listSessions,
+  normalizeDeviceName,
+  renameSession,
+  revokeOtherSessions,
+  revokeSessionById,
+} from "../auth/sessions.js";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function buildMeRoutes(deps: {
   db: Db;
@@ -117,6 +128,75 @@ export function buildMeRoutes(deps: {
         );
       }
       return c.json({ transport_grant: grant });
+    },
+  );
+
+  // Device management needs to know which session is asking, and a device that
+  // was just signed out mustn't keep managing the others until its token expires.
+  const requireLiveSession = async (
+    c: Context<AppEnv>,
+    next: Next,
+  ) => {
+    const sessionId = c.get("sessionId");
+    if (!sessionId || !(await isSessionActive(deps.db, c.get("email"), sessionId))) {
+      return c.json(
+        { error: "unauthorized", message: "Session is no longer active" },
+        401,
+      );
+    }
+    await next();
+  };
+
+  app.get("/v1/me/sessions", requireSoup, requireLiveSession, async (c) => {
+    const sessions = await listSessions(
+      deps.db,
+      c.get("email"),
+      c.get("sessionId"),
+    );
+    return c.json({ sessions });
+  });
+
+  app.patch("/v1/me/sessions/:id", requireSoup, requireLiveSession, async (c) => {
+    const id = c.req.param("id")!;
+    const body = await c.req.json<{ device_name?: unknown }>().catch(() => null);
+    if (!body || !("device_name" in body)) {
+      return c.json({ error: "bad_request", message: "device_name required" }, 400);
+    }
+    const renamed =
+      UUID_RE.test(id) &&
+      (await renameSession(
+        deps.db,
+        c.get("email"),
+        id,
+        normalizeDeviceName(body.device_name),
+      ));
+    if (!renamed) {
+      return c.json({ error: "not_found", message: "Unknown session" }, 404);
+    }
+    return c.body(null, 204);
+  });
+
+  app.delete("/v1/me/sessions/:id", requireSoup, requireLiveSession, async (c) => {
+    const id = c.req.param("id")!;
+    const revoked =
+      UUID_RE.test(id) && (await revokeSessionById(deps.db, c.get("email"), id));
+    if (!revoked) {
+      return c.json({ error: "not_found", message: "Unknown session" }, 404);
+    }
+    return c.body(null, 204);
+  });
+
+  app.post(
+    "/v1/me/sessions/revoke-others",
+    requireSoup,
+    requireLiveSession,
+    async (c) => {
+      const revoked = await revokeOtherSessions(
+        deps.db,
+        c.get("email"),
+        c.get("sessionId")!,
+      );
+      return c.json({ revoked });
     },
   );
 

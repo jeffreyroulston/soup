@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -126,6 +128,51 @@ void main() {
       expect(model.jellyfinSession?.accessToken, 'soup-token');
     },
   );
+
+  test('a failed grant join retries later with the saved key', () async {
+    final server = RosterServer(
+      id: 'home-jf',
+      name: 'Home',
+      audience: 'jellyfin:home-jf',
+      magicDns: 'jellyfin.tailnet.ts.net',
+      transportGrant: TransportGrant(
+        id: '11111111-1111-1111-1111-111111111111',
+        grantType: 'tailscale_auth_key',
+        expiresAt: DateTime.utc(2026, 9, 10, 12),
+        material: 'tskey-auth-once',
+      ),
+    );
+    final client = OneShotGrantClient(
+      MockSoupIdentityClient(pollsUntilApproved: 1, servers: [server]),
+    );
+    final tailscale = FakeTailscaleClient()
+      ..connectError = const TailscaleException('tailscale_start', 'offline');
+    addTearDown(tailscale.dispose);
+    final store = MemorySoupSessionStore();
+    final model = buildModel(
+      client: client,
+      soupStore: store,
+      tailscale: tailscale,
+    );
+    addTearDown(model.dispose);
+
+    await model.initialize();
+    await model.startDeviceLink();
+    await pumpUntil(() => !model.isBusy && model.session != null);
+
+    expect(model.transportConnected, isFalse);
+    expect(store.session?.pendingTransportKey, 'tskey-auth-once');
+
+    tailscale.connectError = null;
+    await model.refreshAndReloadRoster();
+
+    expect(client.rosterCalls, greaterThan(1));
+    expect(tailscale.authKeyConnects, 2);
+    expect(tailscale.lastAuthKey, 'tskey-auth-once');
+    expect(model.transportConnected, isTrue);
+    expect(model.transportServerId, 'home-jf');
+    expect(store.session?.pendingTransportKey, isNull);
+  });
 
   test('transport grant connect is skipped when feature flag is off', () async {
     final client = MockSoupIdentityClient(
@@ -279,6 +326,201 @@ void main() {
     },
   );
 
+  group('token refresh', () {
+    SoupSession stored({DateTime? issuedAt}) => SoupSession.fromTokens(
+      const SoupSessionTokens(
+        accessToken: 'stale-access',
+        refreshToken: 'refresh-0',
+        expiresIn: 900,
+        tokenType: 'Bearer',
+        email: 'dev@example.com',
+      ),
+      lastServerId: 'home-jf',
+      issuedAt: issuedAt,
+    );
+
+    test(
+      'concurrent refreshes share one request and keep the session',
+      () async {
+        final client = RotatingClient(MockSoupIdentityClient());
+        final store = MemorySoupSessionStore(stored());
+        final model = buildModel(
+          client: client,
+          soupStore: store,
+          jellyfinStore: MemorySessionStore(),
+        );
+        addTearDown(model.dispose);
+        await model.initialize();
+        client.refreshes = 0;
+        client.rejectAccess.add(model.session!.accessToken);
+
+        final gate = client.holdRefresh();
+        final a = model.refreshAndReloadRoster(fromStartup: true);
+        final b = model.silentReExchange();
+        await pumpUntil(() => client.refreshes == 1);
+        gate.complete();
+        await Future.wait([a, b]);
+
+        expect(client.refreshes, 1);
+        expect(model.phase, isNot(SoupDeviceLinkPhase.needsGoogleSignIn));
+        expect(store.session?.refreshToken, client.validRefresh);
+      },
+    );
+
+    test('a roster failure after refresh still saves the new tokens', () async {
+      final client = RotatingClient(MockSoupIdentityClient());
+      final store = MemorySoupSessionStore(stored());
+      final model = buildModel(client: client, soupStore: store);
+      addTearDown(model.dispose);
+      await model.initialize();
+
+      client.failRoster = true;
+      await model.refreshAndReloadRoster();
+
+      expect(model.phase, SoupDeviceLinkPhase.error);
+      expect(store.session?.refreshToken, client.validRefresh);
+      expect(store.session?.refreshToken, isNot('refresh-0'));
+      expect(store.session?.lastServerId, 'home-jf');
+    });
+
+    test(
+      'an expired access token is refreshed before startup uses it',
+      () async {
+        final client = RotatingClient(MockSoupIdentityClient());
+        final store = MemorySoupSessionStore(
+          stored(
+            issuedAt: DateTime.now().toUtc().subtract(const Duration(hours: 1)),
+          ),
+        );
+        client.rejectAccess.add('stale-access');
+        final model = buildModel(
+          client: client,
+          soupStore: store,
+          performJellyfinExchange: false,
+        );
+        addTearDown(model.dispose);
+
+        await model.initialize();
+
+        expect(client.refreshes, 1);
+        expect(client.rosterTokens, isNot(contains('stale-access')));
+        expect(model.phase, SoupDeviceLinkPhase.ready);
+      },
+    );
+
+    test('a refresh that lands after sign-out is not saved', () async {
+      final client = RotatingClient(MockSoupIdentityClient());
+      final store = MemorySoupSessionStore(stored());
+      final model = buildModel(client: client, soupStore: store);
+      addTearDown(model.dispose);
+      await model.initialize();
+
+      final gate = client.holdRefresh();
+      final refresh = model.refreshAndReloadRoster();
+      await pumpUntil(() => client.refreshes == 1);
+      await model.clearSession();
+      gate.complete();
+      await refresh;
+
+      expect(store.session, isNull);
+      expect(model.session, isNull);
+    });
+  });
+
+  test('sign-out revokes the Soup refresh token', () async {
+    final inner = MockSoupIdentityClient();
+    final store = MemorySoupSessionStore(
+      SoupSession.fromTokens(
+        const SoupSessionTokens(
+          accessToken: 'mock-access',
+          refreshToken: 'mock-refresh',
+          expiresIn: 900,
+          tokenType: 'Bearer',
+          email: 'dev@example.com',
+        ),
+      ),
+    );
+    final model = buildModel(
+      client: inner,
+      soupStore: store,
+      performJellyfinExchange: false,
+    );
+    addTearDown(model.dispose);
+    await model.initialize();
+
+    await model.clearSession();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(inner.revoked, ['mock-refresh']);
+    expect(store.session, isNull);
+  });
+
+  group('device-code polling', () {
+    test('a failed poll is retried, and the approval still lands', () async {
+      final client = FlakyPollClient(
+        MockSoupIdentityClient(pollsUntilApproved: 1),
+        failures: 1,
+      );
+      final model = buildModel(client: client);
+      addTearDown(model.dispose);
+      await model.initialize();
+      await model.startDeviceLink();
+      await pumpUntil(() => client.polls >= 1);
+      expect(model.phase, SoupDeviceLinkPhase.waiting);
+
+      await pumpUntil(() => model.phase == SoupDeviceLinkPhase.ready);
+      expect(client.polls, greaterThan(1));
+      expect(model.session, isNotNull);
+    });
+
+    test('the code expires locally when polls keep failing', () async {
+      final client = FlakyPollClient(
+        MockSoupIdentityClient(),
+        failures: 1000,
+        expiresIn: 1,
+      );
+      final model = buildModel(client: client);
+      addTearDown(model.dispose);
+      await model.initialize();
+      await model.startDeviceLink();
+
+      await pumpUntil(() => model.phase == SoupDeviceLinkPhase.expired);
+      expect(model.error, contains('expired'));
+    });
+
+    test('a client error still stops polling', () async {
+      final client = FlakyPollClient(
+        MockSoupIdentityClient(),
+        failures: 1000,
+        status: 400,
+      );
+      final model = buildModel(client: client);
+      addTearDown(model.dispose);
+      await model.initialize();
+      await model.startDeviceLink();
+
+      await pumpUntil(() => model.phase == SoupDeviceLinkPhase.error);
+      final polls = client.polls;
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      expect(client.polls, polls);
+    });
+  });
+
+  test('an unreadable Soup session is dropped, not retried forever', () async {
+    final store = CorruptSoupSessionStore();
+    final model = buildModel(
+      client: MockSoupIdentityClient(),
+      soupStore: store,
+    );
+    addTearDown(model.dispose);
+
+    await model.initialize();
+
+    expect(model.error, isNull);
+    expect(model.session, isNull);
+    expect(store.cleared, isTrue);
+  });
+
   group('selectServer', () {
     const servers = [
       RosterServer(
@@ -425,6 +667,10 @@ class ExpiredFirstClient implements SoupIdentityClient {
       inner.refreshSession(refreshToken);
 
   @override
+  Future<void> revokeSession(String refreshToken) =>
+      inner.revokeSession(refreshToken);
+
+  @override
   Future<AssertionResponse> mintAssertion({
     required String accessToken,
     required String serverId,
@@ -460,4 +706,124 @@ Future<void> pumpUntil(
     }
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
+}
+
+/// Rotates refresh tokens strictly, like Soup Identity: each one works once.
+class RotatingClient extends ExpiredFirstClient {
+  RotatingClient(super.inner);
+
+  String validRefresh = 'refresh-0';
+  int refreshes = 0;
+  bool failRoster = false;
+  final rejectAccess = <String>{};
+  final rosterTokens = <String>[];
+  Completer<void>? _gate;
+
+  Completer<void> holdRefresh() => _gate = Completer<void>();
+
+  @override
+  Future<SoupSessionTokens> refreshSession(String refreshToken) async {
+    refreshes++;
+    if (refreshToken != validRefresh) {
+      throw const SoupIdentityException('Invalid refresh', statusCode: 401);
+    }
+    await _gate?.future;
+    validRefresh = 'refresh-$refreshes';
+    return SoupSessionTokens(
+      accessToken: 'access-$refreshes',
+      refreshToken: validRefresh,
+      expiresIn: 900,
+      tokenType: 'Bearer',
+      email: 'dev@example.com',
+    );
+  }
+
+  @override
+  Future<ServerRoster> listServers(String accessToken) async {
+    rosterTokens.add(accessToken);
+    if (rejectAccess.contains(accessToken)) {
+      throw const SoupIdentityException('Expired', statusCode: 401);
+    }
+    if (failRoster) {
+      throw const SoupIdentityException('Unavailable', statusCode: 503);
+    }
+    return inner.listServers(accessToken);
+  }
+}
+
+/// Hands out a grant's key on the first roster call only, like the server.
+class OneShotGrantClient extends ExpiredFirstClient {
+  OneShotGrantClient(super.inner);
+
+  int rosterCalls = 0;
+
+  @override
+  Future<ServerRoster> listServers(String accessToken) async {
+    final roster = await inner.listServers(accessToken);
+    if (rosterCalls++ == 0) return roster;
+    return ServerRoster(
+      servers: [
+        for (final s in roster.servers)
+          RosterServer(
+            id: s.id,
+            name: s.name,
+            audience: s.audience,
+            magicDns: s.magicDns,
+          ),
+      ],
+    );
+  }
+}
+
+/// Polls fail with [status] the first [failures] times.
+class FlakyPollClient extends ExpiredFirstClient {
+  FlakyPollClient(
+    super.inner, {
+    required this.failures,
+    this.status = 503,
+    this.expiresIn,
+  });
+
+  int failures;
+  final int status;
+  final int? expiresIn;
+  int polls = 0;
+
+  @override
+  Future<DeviceLinkStart> startDeviceLink() async {
+    final start = await inner.startDeviceLink();
+    final expires = expiresIn;
+    if (expires == null) return start;
+    return DeviceLinkStart(
+      deviceCode: start.deviceCode,
+      userCode: start.userCode,
+      verificationUri: start.verificationUri,
+      verificationUriComplete: start.verificationUriComplete,
+      expiresIn: expires,
+      interval: start.interval,
+    );
+  }
+
+  @override
+  Future<DeviceLinkPoll> pollDeviceLink(String deviceCode) async {
+    polls++;
+    if (failures-- > 0) {
+      throw SoupIdentityException('Unavailable', statusCode: status);
+    }
+    return inner.pollDeviceLink(deviceCode);
+  }
+}
+
+class CorruptSoupSessionStore implements SoupSessionStore {
+  bool cleared = false;
+
+  @override
+  Future<void> clear() async => cleared = true;
+
+  @override
+  Future<SoupSession?> read() async =>
+      cleared ? null : throw const FormatException('damaged');
+
+  @override
+  Future<void> write(SoupSession value) async {}
 }

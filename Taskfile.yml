@@ -50,13 +50,27 @@ tasks:
     desc: Install dependencies for the app and Dart packages
     cmds:
       - task: deps:app
+      - task: deps:v2
+      - task: deps:core
       - task: deps:tailscale
       - task: deps:jellyfin
       - task: deps:soup-identity
 
   deps:app:
-    desc: Install Flutter dependencies for the Android app
+    desc: (legacy app) Install Flutter dependencies for the Android app
     dir: apps/android
+    cmds:
+      - flutter pub get
+
+  deps:v2:
+    desc: Install Flutter dependencies for the Android v2 app
+    dir: apps/android-v2
+    cmds:
+      - flutter pub get
+
+  deps:core:
+    desc: Install Flutter dependencies for the shared soup_core package
+    dir: packages/soup_core
     cmds:
       - flutter pub get
 
@@ -84,6 +98,8 @@ tasks:
       - >-
         dart format
         apps/android/lib apps/android/test
+        apps/android-v2/lib apps/android-v2/test
+        packages/soup_core/lib packages/soup_core/test
         packages/soup_tailscale/lib packages/soup_tailscale/test
         packages/soup_identity/lib packages/soup_identity/test
         packages/jellyfin_api/lib packages/jellyfin_api/test
@@ -94,6 +110,8 @@ tasks:
       - >-
         dart format --output=none --set-exit-if-changed
         apps/android/lib apps/android/test
+        apps/android-v2/lib apps/android-v2/test
+        packages/soup_core/lib packages/soup_core/test
         packages/soup_tailscale/lib packages/soup_tailscale/test
         packages/soup_identity/lib packages/soup_identity/test
         packages/jellyfin_api/lib packages/jellyfin_api/test
@@ -109,7 +127,7 @@ tasks:
       - task: analyze:soup-identity
 
   analyze:app:
-    desc: Analyze the Flutter Android app
+    desc: (legacy app) Analyze the Flutter Android app
     dir: apps/android
     cmds:
       - flutter analyze
@@ -148,14 +166,15 @@ tasks:
     aliases: [test:all]
     desc: Run tests for the app and packages
     cmds:
-      - task: test:app
+      # The legacy app's own widget tests are stale; run them with test:app.
       - task: test:v2
+      - task: test:core
       - task: test:tailscale
       - task: test:jellyfin
       - task: test:soup-identity
 
   test:app:
-    desc: Run Android app tests; pass extra flags after --
+    desc: (legacy app) Run Android app tests; pass extra flags after --
     dir: apps/android
     cmds:
       - flutter test {{.CLI_ARGS}}
@@ -163,6 +182,12 @@ tasks:
   test:v2:
     desc: Run Android v2 app tests; pass extra flags after --
     dir: apps/android-v2
+    cmds:
+      - flutter test {{.CLI_ARGS}}
+
+  test:core:
+    desc: Run shared soup_core package tests; pass extra flags after --
+    dir: packages/soup_core
     cmds:
       - flutter test {{.CLI_ARGS}}
 
@@ -185,7 +210,7 @@ tasks:
       - dart test {{.CLI_ARGS}}
 
   test:coverage:
-    desc: Run Android app tests and write an LCOV coverage report
+    desc: (legacy app) Run Android app tests and write an LCOV coverage report
     dir: apps/android
     cmds:
       - flutter test --coverage {{.CLI_ARGS}}
@@ -217,7 +242,7 @@ tasks:
       - git diff --exit-code -- packages/jellyfin_api
 
   db:generate:
-    desc: Regenerate the Drift database bindings
+    desc: Regenerate the legacy app's Drift database bindings
     dir: packages/soup_core
     cmds:
       - dart run build_runner build
@@ -226,11 +251,11 @@ tasks:
     desc: Regenerate Drift bindings and fail if committed output is stale
     cmds:
       - task: db:generate
-      - git diff --exit-code -- packages/soup_core/lib/src/data/cache
+      - git diff --exit-code -- packages/soup_core/lib/src/legacy
 
   build:apk:debug:
     aliases: [build]
-    desc: Build a debug APK, including libtailscale for Flutter-selected ABIs
+    desc: (legacy app) Build a debug APK, including libtailscale for Flutter-selected ABIs
     dir: apps/android
     cmds:
       - flutter build apk --debug {{.CLI_ARGS}}
@@ -329,26 +354,26 @@ tasks:
         soup-flutter-webos bash
 
   build:apk:release:
-    desc: Build a release APK using the prototype signing configuration
+    desc: (legacy app) Build a release APK using the prototype signing configuration
     dir: apps/android
     cmds:
       - flutter build apk --release {{.CLI_ARGS}}
 
   build:appbundle:
-    desc: Build a release Android App Bundle using the prototype signing configuration
+    desc: (legacy app) Build a release Android App Bundle using the prototype signing configuration
     dir: apps/android
     cmds:
       - flutter build appbundle --release {{.CLI_ARGS}}
 
   app:run:
     aliases: [run]
-    desc: Run Soup on a selected device; optionally pass DEVICE=<id>
+    desc: (legacy app) Run Soup on a selected device; optionally pass DEVICE=<id>
     dir: apps/android
     cmds:
       - 'flutter run {{if .DEVICE}}--device-id "{{.DEVICE}}"{{end}} {{.CLI_ARGS}}'
 
   app:run:release:
-    desc: Run a release build on a selected device; optionally pass DEVICE=<id>
+    desc: (legacy app) Run a release build on a selected device; optionally pass DEVICE=<id>
     dir: apps/android
     cmds:
       - 'flutter run --release {{if .DEVICE}}--device-id "{{.DEVICE}}"{{end}} {{.CLI_ARGS}}'
@@ -476,7 +501,7 @@ tasks:
       - task: clean:tailscale
 
   clean:app:
-    desc: Remove Android app Flutter build outputs
+    desc: (legacy app) Remove Android app Flutter build outputs
     dir: apps/android
     cmds:
       - flutter clean

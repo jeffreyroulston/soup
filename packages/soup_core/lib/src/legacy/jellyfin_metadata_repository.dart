@@ -1,7 +1,10 @@
+// Legacy: only apps/android uses this; it goes when that app does. See
+// package:soup_core/legacy.dart.
+
 import 'dart:async';
 
 import 'package:drift/drift.dart';
-import 'package:soup_core/src/data/cache/soup_database.dart';
+import 'package:soup_core/src/legacy/soup_database.dart';
 import 'package:soup_core/src/data/jellyfin/jellyfin_api.dart';
 
 class MetadataSnapshot<T> {
@@ -256,7 +259,9 @@ class DriftJellyfinMetadataRepository implements JellyfinMetadataRepository {
   }
 
   Stream<MetadataSnapshot<List<JellyfinItem>>> _watchScope(ScopeKey key) {
+    // Never closed: onCancel cancels the sources, so nothing feeds it after.
     late final StreamController<MetadataSnapshot<List<JellyfinItem>>>
+    // ignore: close_sinks
     controller;
     StreamSubscription<List<CachedScopedItem>>? itemsSubscription;
     StreamSubscription<ScopeSync?>? syncSubscription;
@@ -302,6 +307,8 @@ class DriftJellyfinMetadataRepository implements JellyfinMetadataRepository {
     List<Stream<MetadataSnapshot<List<JellyfinItem>>>> streams,
     T Function(List<MetadataSnapshot<List<JellyfinItem>>>) build,
   ) {
+    // Never closed: onCancel cancels the sources, so nothing feeds it after.
+    // ignore: close_sinks
     late final StreamController<MetadataSnapshot<T>> controller;
     final values = List<MetadataSnapshot<List<JellyfinItem>>?>.filled(
       streams.length,

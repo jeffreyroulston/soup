@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:soup_core/src/data/artwork/artwork_cache.dart';
+import 'package:soup_core/src/legacy/artwork_cache.dart';
 
 const _minimumTextContrast = 4.5;
 const _sampleWidth = 96;

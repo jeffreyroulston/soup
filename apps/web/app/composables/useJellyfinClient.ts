@@ -68,8 +68,9 @@ export function createJellyfinClient(source: SessionSource) {
     return response.json() as Promise<T>
   }
 
+  /** Any request as a raw Response, for callers that read error bodies (Seerr) or send writes. */
   function send(
-    method: 'POST' | 'DELETE',
+    method: 'GET' | 'POST' | 'DELETE',
     path: string,
     options: { query?: Record<string, string>, body?: unknown } = {},
   ): Promise<Response> {

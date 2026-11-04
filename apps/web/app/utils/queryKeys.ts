@@ -27,4 +27,12 @@ export const queryKeys = {
   history: () => [...root, 'history'] as const,
   search: (term: string) => [...root, 'search', term] as const,
   personItems: (personId: string) => [...root, 'person', personId] as const,
+  // Seerr, via the Soup plugin on the same server: cleared with the rest on a server switch.
+  seerr: () => [...root, 'seerr'] as const,
+  seerrStatus: () => [...root, 'seerr', 'status'] as const,
+  seerrSearch: (term: string, page: number) => [...root, 'seerr', 'search', term, page] as const,
+  seerrDiscover: (path: string, page: number) => [...root, 'seerr', 'discover', path, page] as const,
+  seerrTitle: (mediaType: string, tmdbId: number) => [...root, 'seerr', 'title', mediaType, tmdbId] as const,
+  seerrRequests: (filter: string, skip: number) => [...root, 'seerr', 'requests', filter, skip] as const,
+  seerrLibraryMatch: (mediaType: string, tmdbId: number) => [...root, 'seerr', 'library', mediaType, tmdbId] as const,
 }

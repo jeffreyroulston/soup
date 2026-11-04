@@ -5,6 +5,38 @@ import '../data/playback_prefs.dart';
 const _ticksPerMinute = 10000000 * 60;
 const resumeThresholdTicks = 100000000;
 
+/// How many items the Recently Added "All" tab holds: the same as one
+/// library's tab.
+const _recentlyAddedAllLimit = 25;
+
+/// Recently Added's tabs: "All" (every library, newest first) ahead of each
+/// library. With one library there's nothing to switch between, so it stays on
+/// its own.
+List<Shelf> recentlyAddedTabs(List<Shelf> shelves) {
+  if (shelves.length < 2) return shelves;
+  final indexed = [for (final shelf in shelves) ...shelf.items].indexed.toList()
+    ..sort((a, b) {
+      final x = a.$2.dateAdded;
+      final y = b.$2.dateAdded;
+      final byDate = x == null || y == null
+          ? (y == null ? 0 : 1) - (x == null ? 0 : 1)
+          : y.compareTo(x);
+      // List.sort isn't stable; undated items keep their library order.
+      return byDate != 0 ? byDate : a.$1.compareTo(b.$1);
+    });
+  final seen = <String>{};
+  return [
+    Shelf(
+      title: 'All',
+      items: [
+        for (final (_, item) in indexed)
+          if (seen.add(item.seriesId ?? item.id)) item,
+      ].take(_recentlyAddedAllLimit).toList(),
+    ),
+    ...shelves,
+  ];
+}
+
 String? runtimeLabel(int? ticks) {
   if (ticks == null || ticks == 0) return null;
   final total = (ticks / _ticksPerMinute).round().clamp(1, 1 << 30);

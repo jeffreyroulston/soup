@@ -4,6 +4,7 @@ import type {
   JellyfinItem,
   JellyfinMediaSegment,
   JellyfinMediaStream,
+  JellyfinShelf,
 } from '~/types/jellyfin'
 import { ticksToSeconds } from './jellyfinHttp'
 
@@ -467,6 +468,30 @@ export function skipRanges(
     }
   }
   return ranges.sort((a, b) => a.start - b.start)
+}
+
+/** How many items the Recently Added "All" tab holds: the same as one library's tab. */
+const RECENTLY_ADDED_ALL_LIMIT = 25
+
+/**
+ * Recently Added's tabs: "All" (every library, newest first) ahead of each library.
+ * With one library there's nothing to switch between, so it stays on its own.
+ */
+export function recentlyAddedTabs(shelves: JellyfinShelf[]): JellyfinShelf[] {
+  if (shelves.length < 2) return shelves
+  const addedAt = (item: JellyfinItem) => (item.dateAdded ? Date.parse(item.dateAdded) : 0) || 0
+  const seen = new Set<string>()
+  const items = shelves
+    .flatMap(shelf => shelf.items)
+    .sort((a, b) => addedAt(b) - addedAt(a))
+    .filter((item) => {
+      const key = item.seriesId || item.id
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, RECENTLY_ADDED_ALL_LIMIT)
+  return [{ title: 'All', items, seeAllTo: null }, ...shelves]
 }
 
 /** Only things that reached the server this recently count as "new" in the hero. */

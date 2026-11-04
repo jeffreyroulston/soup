@@ -27,7 +27,7 @@ cp "$PUBLISH"/Microsoft.IdentityModel.*.dll "$OUT/"
 cat >"$OUT/meta.json" <<'EOF'
 {
   "category": "Authentication",
-  "changelog": "Dashboard main-menu Soup Invites; Plugins → Soup Auth for connection/Tailscale settings.",
+  "changelog": "Seerr bridge (/SoupSeerr) for the Explore tab. Dashboard main-menu Soup Invites; Plugins → Soup Auth for connection, Tailscale and Seerr settings.",
   "description": "Outbound-only Jellyfin plugin for Soup identity. Admins invite/revoke from Dashboard → Soup Invites; connection settings under Plugins → Soup Auth. Clients exchange Soup JWTs at POST /SoupAuth/Exchange.",
   "guid": "c8a7e6d5-4b3a-2918-07f6-e5d4c3b2a190",
   "name": "Soup Auth",

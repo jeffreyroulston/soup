@@ -160,4 +160,16 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets Tailscale auth-key expiry in seconds (recommend 1800).
     /// </summary>
     public int TailscaleAuthKeyExpirySeconds { get; set; } = 1800;
+
+    /// <summary>
+    /// Gets or sets the Seerr (Jellyseerr/Overseerr) base URL, e.g. <c>http://jellyseerr:5055</c>.
+    /// Empty disables the Explore tab in Soup clients.
+    /// </summary>
+    public string SeerrBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the Seerr API key (Settings → General in Seerr). Stays on this host; clients
+    /// go through <c>/SoupSeerr</c> with their Jellyfin session.
+    /// </summary>
+    public string SeerrApiKey { get; set; } = string.Empty;
 }

@@ -9,6 +9,7 @@ Tailscale mint spike: [`docs/development/tailscale-auth-key-mint-spike-2026-09-1
 ## Scope
 
 - Plugin config: Soup base URL, plugin Basic credential, server id/audience/issuer
+- Seerr bridge (`/SoupSeerr`): Explore tab in Soup clients — browse TMDB through Jellyseerr/Overseerr and request titles as the user's own Seerr account
 - Tailscale config: OAuth client (preferred) or API token, tailnet, guest tags, key expiry
 - Admin UI: **Dashboard drawer → Soup Invites** (invite/revoke); **Settings** link top-right → connection/Tailscale page
   (Plugins → Settings also opens Invites because jellyfin-web prefers `EnableInMainMenu`; use the in-page Settings link for credentials)
@@ -105,6 +106,36 @@ If deposit to Soup fails after mint, the plugin DELETE-revokes the freshly minte
 Wave 4 acceptance (TTL + DELETE + secret-safe logs + TV ~60s):
 [`docs/development/android-soup-hardening-wave4-2026-09-10.md`](../../docs/development/android-soup-hardening-wave4-2026-09-10.md).
 v1 does not call Tailscale `devices:core` for node purge.
+
+
+## Seerr (Explore tab)
+
+Point the plugin at a Jellyseerr/Overseerr server and Soup clients grow an **Explore** tab: search TMDB,
+browse trending/popular/upcoming, see what's already in the library, and request what isn't.
+
+Setup (Plugins → Soup Auth → Settings → *Seerr*):
+
+1. **Seerr URL** as reachable from the Jellyfin host, e.g. `http://jellyseerr:5055`
+2. **Seerr API key** from Seerr → Settings → General
+3. **Test Seerr connection**, then Save
+
+How users are matched: every call carries the caller's Jellyfin session. The plugin looks the user up in
+Seerr by Jellyfin user id (`GET /api/v1/user/jellyfin/{id}`, falling back to a scan of `/api/v1/user` on
+older servers) and sends requests with `userId` set to that account, so Seerr's own permissions, quotas
+and auto-approval apply. A user with no Seerr account can browse but not request; they need to sign in
+to Seerr with Jellyfin once. The API key never leaves the Jellyfin host and only allow-listed catalogue
+paths are proxied.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/SoupSeerr/Status` | `{configured, reachable, version, user}` — clients show the tab when `configured` |
+| GET | `/SoupSeerr/Browse/{path}` | Proxy for `search`, `discover/…`, `movie/…`, `tv/…`, `person/…`, `collection/…`, `genres/…` (query string forwarded) |
+| GET | `/SoupSeerr/Requests?filter=&take=&skip=` | The caller's own requests |
+| POST | `/SoupSeerr/Request` | `{mediaType, mediaId, tvdbId?, seasons?, is4k?}` as the caller's Seerr user |
+| DELETE | `/SoupSeerr/Request/{id}` | Withdraw the caller's own pending request (request managers: any) |
+| POST | `/SoupSeerr/Test` | Admin: try a URL/key before saving |
+
+Matched user lookups are cached for 10 minutes (1 minute for misses); Save + Test clears the cache.
 
 ## Exchange
 

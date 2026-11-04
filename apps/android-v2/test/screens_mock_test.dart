@@ -77,6 +77,7 @@ void main() {
     expect(find.text('Home'), findsWidgets);
     expect(find.text('Keep Watching'), findsOneWidget);
     expect(find.text('Recently Added'), findsOneWidget);
+    expect(find.text('All'), findsOneWidget);
     // The hero's Resume button carries the time left beside its label.
     expect(find.text('Resume'), findsWidgets);
     expect(find.text('1 hr left'), findsWidgets);

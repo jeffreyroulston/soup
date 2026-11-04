@@ -78,6 +78,7 @@ class PageScaffold extends StatefulWidget {
     this.libraryId,
     this.controller,
     this.overlay,
+    this.entryFocus,
     super.key,
   });
 
@@ -85,6 +86,11 @@ class PageScaffold extends StatefulWidget {
   final String? libraryId;
   final List<Widget> slivers;
   final ScrollController? controller;
+
+  /// Header control that Down from the nav bar should land on, when the
+  /// nearest control in the bar item's column isn't the first thing on the
+  /// page (Explore's section tabs beside a wide search field).
+  final FocusNode? entryFocus;
 
   /// Pinned above the content, under the nav (e.g. the library A–Z strip).
   final Widget? overlay;
@@ -152,6 +158,7 @@ class _PageScaffoldState extends State<PageScaffold> {
     final tab =
         widget.section == NavSection.library ||
         widget.section == NavSection.myStuff ||
+        widget.section == NavSection.explore ||
         widget.section == NavSection.search ||
         widget.section == NavSection.settings;
     final route = ModalRoute.of(context);
@@ -226,6 +233,7 @@ class _PageScaffoldState extends State<PageScaffold> {
                     libraryId: widget.libraryId,
                     solid: _solid,
                     activeFocusNode: _navTarget,
+                    entryFocus: widget.entryFocus,
                   ),
                 ),
               ),

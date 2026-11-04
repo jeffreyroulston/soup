@@ -15,6 +15,56 @@ CatalogItem _movie(String id, String name, int year, {String? imdb}) =>
     );
 
 void main() {
+  group('recentlyAddedTabs', () {
+    CatalogItem added(String id, int? day, {String? series}) => CatalogItem(
+      id: id,
+      name: id,
+      type: series == null ? 'Movie' : 'Episode',
+      seriesId: series,
+      dateAdded: day == null ? null : DateTime(2026, 10, day),
+    );
+
+    test('one library has no All tab', () {
+      final shelves = [
+        Shelf(title: 'Movies', items: [added('a', 1)]),
+      ];
+      expect(recentlyAddedTabs(shelves), same(shelves));
+    });
+
+    test('All leads, merged newest first with undated items last', () {
+      final tabs = recentlyAddedTabs([
+        Shelf(
+          title: 'Movies',
+          items: [added('old', 1), added('undated', null)],
+          libraryId: 'm',
+        ),
+        Shelf(title: 'TV', items: [added('new', 9)], libraryId: 't'),
+      ]);
+      expect(tabs.map((t) => t.title), ['All', 'Movies', 'TV']);
+      expect(tabs.first.libraryId, isNull);
+      expect(tabs.first.items.map((i) => i.id), ['new', 'old', 'undated']);
+    });
+
+    test('All shows a show once and stops at one tab\'s worth', () {
+      final all = recentlyAddedTabs([
+        Shelf(
+          title: 'Movies',
+          items: [for (var d = 1; d <= 26; d++) added('m$d', d)],
+        ),
+        Shelf(
+          title: 'TV',
+          items: [
+            added('e1', 28, series: 's'),
+            added('e2', 27, series: 's'),
+          ],
+        ),
+      ]).first.items;
+      expect(all, hasLength(25));
+      expect(all.first.id, 'e1');
+      expect(all.where((i) => i.seriesId == 's'), hasLength(1));
+    });
+  });
+
   group('CatalogItem.fromJson', () {
     test('title art: own logo, else the series\' through parent fields', () {
       final movie = CatalogItem.fromJson({

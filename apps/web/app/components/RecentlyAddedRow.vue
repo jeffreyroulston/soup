@@ -10,9 +10,10 @@ const props = withDefaults(defineProps<{
   loading: false,
 })
 
+const tabs = computed(() => recentlyAddedTabs(props.shelves))
 const selected = ref(0)
-/** Falls back to the first library if the list shrinks under the selection. */
-const active = computed(() => props.shelves[selected.value] ?? props.shelves[0] ?? null)
+/** Falls back to the first tab if the list shrinks under the selection. */
+const active = computed(() => tabs.value[selected.value] ?? tabs.value[0] ?? null)
 </script>
 
 <template>
@@ -27,10 +28,10 @@ const active = computed(() => props.shelves[selected.value] ?? props.shelves[0] 
     <template v-if="loading" #header>
       <span aria-hidden="true" class="h-10 w-44 animate-pulse rounded-full bg-surface" />
     </template>
-    <template v-else-if="shelves.length > 1" #header>
+    <template v-else-if="tabs.length > 1" #header>
       <div role="group" aria-label="Library" class="rail flex max-w-full gap-0.5 overflow-x-auto rounded-full bg-surface p-1">
         <button
-          v-for="(shelf, i) in shelves"
+          v-for="(shelf, i) in tabs"
           :key="shelf.title"
           type="button"
           class="h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-sm font-bold transition"

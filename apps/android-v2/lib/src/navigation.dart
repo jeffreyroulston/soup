@@ -85,7 +85,10 @@ void openExploreRequests(BuildContext context) =>
 /// A Seerr title's page stacks like a Jellyfin item's.
 void openExploreTitle(BuildContext context, SeerrMediaType type, int tmdbId) =>
     Navigator.of(context).push(
-      _route<void>(context, ExploreTitleScreen(mediaType: type, tmdbId: tmdbId)),
+      _route<void>(
+        context,
+        ExploreTitleScreen(mediaType: type, tmdbId: tmdbId),
+      ),
     );
 
 /// Detail pages stack so Back returns to where you were.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
 import '../../navigation.dart';
+import '../../utils/media.dart';
 import 'media_card.dart';
 import 'media_row.dart';
 import 'pill_tabs.dart';
@@ -26,7 +27,7 @@ class ShelfRow extends StatelessWidget {
   );
 }
 
-/// One "Recently Added" row with a pill switcher between libraries.
+/// One "Recently Added" row with a pill switcher: All, then each library.
 class RecentlyAddedRow extends StatefulWidget {
   const RecentlyAddedRow({required this.shelves, super.key});
   final List<Shelf> shelves;
@@ -41,17 +42,18 @@ class _RecentlyAddedRowState extends State<RecentlyAddedRow> {
   @override
   Widget build(BuildContext context) {
     if (widget.shelves.isEmpty) return const SizedBox.shrink();
-    final i = _index.clamp(0, widget.shelves.length - 1);
-    final shelf = widget.shelves[i];
+    final tabs = recentlyAddedTabs(widget.shelves);
+    final i = _index.clamp(0, tabs.length - 1);
+    final shelf = tabs[i];
     return MediaRow(
       railKey: ValueKey(shelf.libraryId),
       title: 'Recently Added',
       items: shelf.items,
-      header: widget.shelves.length > 1
+      header: tabs.length > 1
           ? PillTabs<int>(
-              options: [for (var k = 0; k < widget.shelves.length; k++) k],
+              options: [for (var k = 0; k < tabs.length; k++) k],
               value: i,
-              labelOf: (k) => widget.shelves[k].title,
+              labelOf: (k) => tabs[k].title,
               onChanged: (k) => setState(() => _index = k),
               height: 38,
             )

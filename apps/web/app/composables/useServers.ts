@@ -71,12 +71,16 @@ export function useServers() {
         username: server.username,
       })),
     ].map(entry => ({ ...entry, name: nicknames[entry.key] || entry.originalName }))
+    // Other people's sign-ins are on the user switcher, not this person's server list. Roster
+    // servers go with the Soup account that holds them, so they're hidden when that's someone else.
+    const others = auth.otherUserKeys.value
+    const visible = all.filter(entry => !others.has(entry.kind === 'soup' ? `soup:${auth.soupEmail.value}` : entry.key))
     const rank = (key: string) => {
       const index = order.indexOf(key)
       return index === -1 ? order.length : index
     }
     // Array sort is stable, so unranked servers keep their natural order.
-    return all.sort((a, b) => rank(a.key) - rank(b.key))
+    return visible.sort((a, b) => rank(a.key) - rank(b.key))
   })
 
   /** Sets or, when blank, clears a server's nickname. */

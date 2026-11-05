@@ -8,7 +8,11 @@ definePageMeta({ layout: false })
 const config = useRuntimeConfig()
 const auth = useAuthSession()
 const router = useRouter()
+const route = useRoute()
 const mock = isMockMode()
+const { signOutCurrent, switchError } = useDeviceUsers()
+/** Opened from Settings → Multi-user to sign in someone else, with a user already active. */
+const addingUser = ref(false)
 
 const phase = ref<'idle' | 'waiting' | 'direct' | 'quickConnect' | 'server' | 'error'>('idle')
 const userCode = ref('')
@@ -59,7 +63,15 @@ onMounted(async () => {
   }
   serverUrl.value = lastServer || config.public.jellyfinUrl || ''
   if (!auth.ready.value) await auth.hydrate()
-  if (auth.jellyfin.value) {
+  addingUser.value = route.query.add === 'user' && auth.deviceUsers.value !== null && Boolean(auth.jellyfin.value)
+  if (addingUser.value) {
+    // Most likely they're joining the server this device is already on.
+    serverUrl.value = auth.jellyfin.value!.baseUrl
+    lastServer = serverUrl.value
+    void ensureLink()
+    void scanNetwork()
+  }
+  else if (auth.jellyfin.value) {
     await router.replace('/')
   }
   else if (auth.choosingServer.value) {
@@ -243,9 +255,31 @@ async function chooseServer(serverId: string) {
   }
 }
 
+/** On a shared device this only signs out whoever is choosing, not everyone else. */
 async function useAnotherAccount() {
-  await auth.logout()
-  phase.value = 'idle'
+  const result = await signOutCurrent()
+  if (result === 'switched') await router.replace('/')
+  else if (result === 'signedOut') phase.value = 'idle'
+  else auth.serverError.value = switchError.value
+}
+
+/** Moves to the Soup user just added, like any other sign-in; a failed one isn't kept on the device. */
+async function finishAddingSoupUser(email: string) {
+  try {
+    await auth.switchToSoupUser(email)
+  }
+  catch (error) {
+    if (auth.activeUserKey.value !== `soup:${email}`) await auth.removeDeviceUser(`soup:${email}`)
+    throw error
+  }
+  addingUser.value = false
+  if (auth.jellyfin.value) {
+    await router.replace('/')
+    return
+  }
+  verificationUrl.value = ''
+  googleUrl.value = ''
+  phase.value = 'server'
 }
 
 async function beginMock() {
@@ -288,8 +322,12 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
   if (linkTimer) clearTimeout(linkTimer)
   linkTimer = setTimeout(async () => {
     try {
-      const result = await auth.pollLogin()
+      const result = await auth.pollLogin({ addUser: addingUser.value })
       if (run !== linkRun) return
+      if (result.status === 'added') {
+        await finishAddingSoupUser(result.email)
+        return
+      }
       if (result.status === 'approved') {
         await router.replace('/')
         return
@@ -338,6 +376,9 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
           class="pb-2 text-center text-[64px] leading-none"
         >
           <SoupWordmark />
+          <span v-if="addingUser" class="mt-4 block text-[17px] font-bold leading-snug text-ink-2">
+            Add a user to this device
+          </span>
         </h1>
         <h1 v-else id="login-title" class="text-[38px] font-extrabold leading-[1.05] tracking-[-0.04em]">
           {{ mock ? 'Browse the mock library' : phase === 'waiting' || phase === 'quickConnect' ? 'Approve this sign-in' : phase === 'server' ? 'Choose a server' : 'Sign in with Jellyfin' }}
@@ -491,6 +532,15 @@ function scheduleLinkPoll(intervalSec: number, run: number) {
               </svg>
             </button>
           </form>
+
+          <NuxtLink
+            v-if="addingUser"
+            :to="route.query.from === 'users' ? '/users' : '/settings/general'"
+            replace
+            class="flex h-11 items-center justify-center rounded-btn text-[15px] font-bold text-muted transition hover:text-ink max-sm:order-last"
+          >
+            Cancel
+          </NuxtLink>
         </template>
 
         <form v-else-if="phase === 'direct'" class="flex flex-col gap-4" @submit.prevent="submitDirect">

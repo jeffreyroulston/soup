@@ -1,5 +1,12 @@
 <script setup lang="ts">
 const auth = useAuthSession()
+const { signOutCurrent, switchError } = useDeviceUsers()
+const signingOut = ref(false)
+
+/** While a direct server is active, the Soup account can be someone else's on a shared device. */
+const accountName = computed(() => (auth.jellyfin.value?.direct ? auth.email.value : auth.soupEmail.value || auth.email.value))
+/** Devices belong to the Soup account, which a direct user on a shared device mustn't manage. */
+const soupUserActive = computed(() => Boolean(auth.soupEmail.value && auth.jellyfin.value && !auth.jellyfin.value.direct))
 
 const identity = useIdentityConfig()
 const identityInput = ref(identity.url.value)
@@ -25,9 +32,17 @@ async function applyIdentity(input: string | null) {
   }
 }
 
+/** Signs out just the current user; anyone else on this device stays signed in. */
 async function onLogout() {
-  await auth.logout()
-  await navigateTo('/login')
+  signingOut.value = true
+  try {
+    const result = await signOutCurrent()
+    if (result === 'signedOut') await navigateTo('/login')
+    else if (result === 'switched') await navigateTo(auth.signedInUsers.value.length > 1 ? '/users' : '/')
+  }
+  finally {
+    signingOut.value = false
+  }
 }
 </script>
 
@@ -39,27 +54,30 @@ async function onLogout() {
       </h2>
       <div class="flex flex-col gap-0.5">
         <p class="text-lg font-bold">
-          {{ auth.soupEmail.value || auth.email.value || 'Signed in' }}
+          {{ accountName || 'Signed in' }}
         </p>
         <p class="text-sm text-muted">
-          {{ auth.soupEmail.value ? 'Soup account' : 'Signed in directly to Jellyfin' }}
+          {{ auth.jellyfin.value?.direct || !auth.soupEmail.value ? 'Signed in directly to Jellyfin' : 'Soup account' }}
         </p>
       </div>
-      <div class="flex flex-col gap-2 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-sm text-muted">
-          Signs this browser out of Soup and every server you've added.
-        </p>
+      <div class="flex flex-col gap-2 border-t border-white/10 pt-4">
         <button
           type="button"
-          class="h-11 shrink-0 self-start rounded-btn bg-ink px-5 text-[15px] font-extrabold text-canvas transition hover:bg-ink/80"
+          :disabled="signingOut"
+          class="h-11 shrink-0 self-start rounded-btn bg-ink px-5 text-[15px] font-extrabold text-canvas transition enabled:hover:bg-ink/80 disabled:opacity-60"
           @click="onLogout"
         >
           Sign out
         </button>
+        <p v-if="switchError" role="alert" class="text-sm font-semibold text-accent">
+          {{ switchError }}
+        </p>
       </div>
     </section>
 
-    <SoupDevices v-if="auth.soupEmail.value && !isMockMode()" />
+    <MultiUserSettings v-if="!isMockMode()" />
+
+    <SoupDevices v-if="soupUserActive && !isMockMode()" :key="auth.soupEmail.value!" />
 
     <section v-if="!isMockMode()" aria-labelledby="settings-identity" class="flex flex-col gap-3 rounded-panel bg-surface p-6">
       <h2 id="settings-identity" class="text-[13px] font-extrabold uppercase tracking-[0.6px] text-muted">

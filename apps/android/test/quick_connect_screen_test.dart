@@ -12,7 +12,7 @@ import 'support/onboarding_fonts.dart';
 void main() {
   setUpAll(loadOnboardingFonts);
   TestWidgetsFlutterBinding.ensureInitialized();
-  const channel = MethodChannel('dev.michaelishri.soup/tv_text_input');
+  const channel = MethodChannel('com.bestiestudios.soup/tv_text_input');
   setUp(
     () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (_) async => false),

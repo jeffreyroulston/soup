@@ -27,7 +27,7 @@ class SoupDevice {
   );
 
   static const _channel = MethodChannel(
-    'dev.michaelishri.soup/media_capabilities',
+    'com.bestiestudios.soup/media_capabilities',
   );
 
   /// A webOS TV whose model info couldn't be read: assume a recent UHD panel

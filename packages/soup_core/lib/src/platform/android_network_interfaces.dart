@@ -6,7 +6,7 @@ class AndroidNetworkInterfaces {
   const AndroidNetworkInterfaces();
 
   static const _channel = MethodChannel(
-    'dev.michaelishri.soup/network_interfaces',
+    'com.bestiestudios.soup/network_interfaces',
   );
 
   Future<String> getJson() async {

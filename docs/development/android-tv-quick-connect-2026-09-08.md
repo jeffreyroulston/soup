@@ -1,6 +1,6 @@
 # Guest Room TV: Quick Connect acceptance, 2026-09-08
 
-Ticket: SOUP-91, supporting SOUP-18. Device: Guest Room TV (Chromecast/sabrina, Android 14/API 34, armeabi-v7a), 1920×1080 physical / 960×540 logical, default font scale. Package: `dev.michaelishri.soup`.
+Ticket: SOUP-91, supporting SOUP-18. Device: Guest Room TV (Chromecast/sabrina, Android 14/API 34, armeabi-v7a), 1920×1080 physical / 960×540 logical, default font scale. Package: `com.bestiestudios.soup`.
 
 The test server was an actual disposable `jellyfin/jellyfin:10.11.1` instance, reached from Soup through embedded Tailscale. A separate authenticated client on the development host approved the displayed codes. This exercises the real Jellyfin request and authentication exchange, not the unit-test protocol fixture. No existing library or user credentials were used.
 

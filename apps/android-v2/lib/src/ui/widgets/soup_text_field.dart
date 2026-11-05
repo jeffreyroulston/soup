@@ -17,7 +17,7 @@ class TvTextEdit {
 /// TV [SoupTextField] hands editing to a native dialog over this channel.
 class TvTextInput {
   const TvTextInput();
-  static const _channel = MethodChannel('dev.michaelishri.soup/tv_text_input');
+  static const _channel = MethodChannel('com.bestiestudios.soup/tv_text_input');
 
   static Future<bool>? _television;
 

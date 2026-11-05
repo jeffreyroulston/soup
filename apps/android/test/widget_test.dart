@@ -25,7 +25,7 @@ void main() {
   setUpAll(loadOnboardingFonts);
 
   TestWidgetsFlutterBinding.ensureInitialized();
-  const inputChannel = MethodChannel('dev.michaelishri.soup/tv_text_input');
+  const inputChannel = MethodChannel('com.bestiestudios.soup/tv_text_input');
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(inputChannel, (call) async => false);

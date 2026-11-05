@@ -59,14 +59,14 @@ production widgets with fictional server data.
 
 Chromecast/sabrina, Android 14, 1920×1080, density 320 (960×540 logical pixels).
 Fresh onboarding uses the isolated package
-`dev.michaelishri.soup.discoveryreview`, built from the normal entrypoint using:
+`com.bestiestudios.soup.discoveryreview`, built from the normal entrypoint using:
 
 ```sh
-ORG_GRADLE_PROJECT_soupApplicationId=dev.michaelishri.soup.discoveryreview \
+ORG_GRADLE_PROJECT_soupApplicationId=com.bestiestudios.soup.discoveryreview \
   flutter build apk --release --no-pub
 ```
 
-The Gradle override defaults to `dev.michaelishri.soup` when omitted. Separate
+The Gradle override defaults to `com.bestiestudios.soup` when omitted. Separate
 application storage preserves the user's production account and embedded node.
 
 Verified against a controlled LAN fixture:

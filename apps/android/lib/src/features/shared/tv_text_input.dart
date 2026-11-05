@@ -11,7 +11,7 @@ class TvTextEdit {
 /// Phones continue to use the normal Flutter text fields.
 class TvTextInput {
   const TvTextInput();
-  static const _channel = MethodChannel('dev.michaelishri.soup/tv_text_input');
+  static const _channel = MethodChannel('com.bestiestudios.soup/tv_text_input');
 
   Future<bool> isTelevision() async {
     try {

@@ -2,7 +2,7 @@
 
 SOUP-92, supporting SOUP-18. Device: Guest Room TV, Chromecast/sabrina,
 Android 14/API 34, armeabi-v7a; 1920×1080 physical / 960×540 logical.
-Package: `dev.michaelishri.soup`.
+Package: `com.bestiestudios.soup`.
 
 ## Change
 

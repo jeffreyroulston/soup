@@ -29,6 +29,16 @@ dotnet build -c Release
 
 Copy `Jellyfin.Plugin.Soup/bin/Release/net9.0/Jellyfin.Plugin.Soup.dll` (and IdentityModel deps if not provided by the server) into the Jellyfin plugins folder, or package via `build.yaml`.
 
+## Install from the plugin repository
+
+For Jellyfin 10.11 or 12.2+, published by `task release:publish`:
+
+1. Dashboard → Plugins → Repositories → add
+   `https://github.com/jeffreyroulston/soup/releases/latest/download/manifest.json`
+2. Dashboard → Plugins → Catalog → **Soup Auth** → Install.
+3. Stop and start the Jellyfin process or container. On Jellyfin 12 the Dashboard's
+   Restart runs in-process and keeps the old DLL loaded.
+
 ## Local Jellyfin Docker (plugin baked in)
 
 ```bash

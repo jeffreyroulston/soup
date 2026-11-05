@@ -353,6 +353,16 @@ tasks:
         -v soup-webos-ares:/home/soup/.webos
         soup-flutter-webos bash
 
+  release:build:
+    desc: Build the IPK, plugin zips, plugin manifest and TV installer into dist/release
+    cmds:
+      - tool/release/release.sh build
+
+  release:publish:
+    desc: Upload dist/release as a public GitHub release
+    cmds:
+      - tool/release/release.sh publish
+
   build:apk:release:
     desc: (legacy app) Build a release APK using the prototype signing configuration
     dir: apps/android

@@ -1,7 +1,8 @@
-# Soup for Android (legacy)
+# Soup for Android (deprecated)
 
-> **Legacy.** This app is being retired in favour of
-> [`apps/android-v2`](../android-v2/README.md); don't add features here.
+> **Deprecated.** Use [`apps/android-v2`](../android-v2/README.md) instead. This
+> app gets no new features or fixes and isn't part of `task setup`, `task qa`,
+> `task ci` or CI. Its `(deprecated)` tasks still work after `task deps:app`.
 > The shared code only it uses lives in `package:soup_core/legacy.dart`.
 
 Flutter client for Android 12+ mobile and Android TV, with direct Jellyfin

@@ -1,7 +1,7 @@
 # Soup v2 (Android TV)
 
-Flutter TV client whose UI mirrors the web app (`apps/web`), on top of the same
-embedded-Tailscale transport and Soup Identity sign-in as `apps/android`.
+Flutter TV client whose UI mirrors the web app (`apps/web`), on top of embedded
+Tailscale transport and Soup Identity sign-in.
 
 ## Layout
 

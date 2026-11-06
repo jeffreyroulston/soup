@@ -1,4 +1,4 @@
-package dev.michaelishri.soup
+package com.bestiestudios.soup
 
 import android.content.Context
 import android.util.Log
@@ -16,7 +16,6 @@ class MainActivity : FlutterActivity() {
     private val tvTextInput = TvTextInput(this)
     private var textInputChannel: MethodChannel? = null
     private var networkChannel: MethodChannel? = null
-    private var mediaChannel: MethodChannel? = null
 
     override fun provideFlutterEngine(context: Context): FlutterEngine {
         // libtailscale lives for the Android process. Reuse its owning Dart
@@ -39,12 +38,12 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         textInputChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "dev.michaelishri.soup/tv_text_input",
+            "com.bestiestudios.soup/tv_text_input",
         )
         textInputChannel?.setMethodCallHandler(tvTextInput)
         networkChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "dev.michaelishri.soup/network_interfaces",
+            "com.bestiestudios.soup/network_interfaces",
         )
         networkChannel?.setMethodCallHandler { call, result ->
             if (call.method != "getNetworkInterfaces") {
@@ -57,21 +56,6 @@ class MainActivity : FlutterActivity() {
                 result.error("network_interfaces", error.message, null)
             }
         }
-        mediaChannel = MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "dev.michaelishri.soup/media_capabilities",
-        )
-        mediaChannel?.setMethodCallHandler { call, result ->
-            if (call.method != "getCapabilities") {
-                result.notImplemented()
-                return@setMethodCallHandler
-            }
-            try {
-                result.success(MediaCapabilities.detect(this))
-            } catch (error: Exception) {
-                result.error("media_capabilities", error.message, null)
-            }
-        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -79,10 +63,8 @@ class MainActivity : FlutterActivity() {
         tvTextInput.dismiss()
         textInputChannel?.setMethodCallHandler(null)
         networkChannel?.setMethodCallHandler(null)
-        mediaChannel?.setMethodCallHandler(null)
         textInputChannel = null
         networkChannel = null
-        mediaChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
@@ -120,6 +102,6 @@ class MainActivity : FlutterActivity() {
     }
 
     companion object {
-        private const val ENGINE_ID = "soup-v2-process-engine"
+        private const val ENGINE_ID = "soup-process-engine"
     }
 }

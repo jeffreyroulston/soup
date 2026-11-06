@@ -13,3 +13,7 @@
 **/build/
 **/.flutter-plugins
 **/.flutter-plugins-dependencies
+
+# Release artifacts (tool/release/release.sh)
+/dist/
+/tool/soup-install/node_modules/

@@ -13,7 +13,7 @@ remain open.
 - Default font scale 1.0; device-wide animation settings were not changed.
 - No Soup package was installed before this test. The prepared debug APK
   installed successfully without replacing or clearing an existing Soup session.
-- Application `dev.michaelishri.soup`, version 1.0.0 (1); application source
+- Application `com.bestiestudios.soup`, version 1.0.0 (1); application source
   baseline `6a472e7432c4fbaeaecf526bc76f09a175ebfc6c`.
 - APK SHA-256:
   `6e37150e82aab55acb908e523967ff4a44e72324518ea43f54029f7fa6ba91ea`.

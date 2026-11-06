@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soup_v2/src/ui/theme/soup_theme.dart';
 import 'package:soup_v2/src/ui/widgets/soup_text_field.dart';
 
-const _channel = MethodChannel('dev.michaelishri.soup/tv_text_input');
+const _channel = MethodChannel('com.bestiestudios.soup/tv_text_input');
 
 Widget _host(Widget child) => MaterialApp(
   theme: SoupTheme.dark,

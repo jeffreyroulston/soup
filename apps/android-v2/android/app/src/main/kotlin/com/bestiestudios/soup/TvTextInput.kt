@@ -1,4 +1,4 @@
-package dev.michaelishri.soup
+package com.bestiestudios.soup
 
 import android.app.Activity
 import android.app.Dialog

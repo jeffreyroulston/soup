@@ -44,7 +44,7 @@ with SHA-256:
 
 This identifies the existing artifact; it is not evidence of a fresh build or
 a device run. If rebuilding, record the new source commit and APK checksum.
-The source currently uses application ID `dev.michaelishri.soup` and minimum
+The source currently uses application ID `com.bestiestudios.soup` and minimum
 Android API 31. SOUP-75 separately owns the proposed `cc.mishri.soup` package,
 release signing, Google Play publication and Play-installed acceptance.
 
@@ -65,7 +65,7 @@ access is available, replace `DEVICE_SERIAL` with the selected device:
 ```sh
 adb devices -l
 adb -s DEVICE_SERIAL install -r apps/android/build/app/outputs/flutter-apk/app-debug.apk
-adb -s DEVICE_SERIAL shell am start -n dev.michaelishri.soup/.MainActivity
+adb -s DEVICE_SERIAL shell am start -n com.bestiestudios.soup/.MainActivity
 ```
 
 If a new build is needed, use the documented Linux build command above. Do not

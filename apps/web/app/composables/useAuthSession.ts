@@ -31,6 +31,8 @@ const SAVED_KEY = 'soup.servers.direct'
  * called without switching. Per tab for the same reason as `STORAGE_KEY`.
  */
 const POOL_KEY = 'soup.jellyfin.pool'
+/** Everyone on this device's user switcher; absent while Multi-user is off. */
+const USERS_KEY = 'soup.users'
 
 /** A server signed in to directly, kept so the user can switch back without signing in again. */
 export type SavedServer = {
@@ -52,6 +54,26 @@ type SoupTokens = {
   email: string
   /** Unix seconds. */
   expiresAt: number
+}
+
+/**
+ * Someone on this device's user switcher. A direct user is a saved server; a Soup user keeps
+ * their tokens here except while they're the ones in `TOKENS_KEY`.
+ */
+export type DeviceUser =
+  | { kind: 'direct', id: string }
+  | {
+    kind: 'soup'
+    email: string
+    tokens?: SoupTokens
+    serverId?: string
+    /** Where they last signed in, so the user picker can show their Jellyfin picture. */
+    baseUrl?: string
+    userId?: string
+  }
+
+export function deviceUserKey(user: DeviceUser): string {
+  return user.kind === 'direct' ? `direct:${user.id}` : `soup:${user.email}`
 }
 
 type DeviceLinkState = {
@@ -114,6 +136,19 @@ function readSaved(): SavedServer[] {
   catch {
     writeLocal(SAVED_KEY, null)
     return []
+  }
+}
+
+function readDeviceUsers(): DeviceUser[] | null {
+  const raw = readLocal(USERS_KEY)
+  if (!raw) return null
+  try {
+    const saved = JSON.parse(raw) as DeviceUser[]
+    return Array.isArray(saved) ? saved : null
+  }
+  catch {
+    writeLocal(USERS_KEY, null)
+    return null
   }
 }
 
@@ -271,6 +306,9 @@ export function useAuthSession() {
   /** Tokens for roster servers other than the active one; see `POOL_KEY`. */
   const pool = useState<Record<string, JellyfinSessionPayload>>('soup-jellyfin-pool', readPool)
 
+  /** Everyone added to this device, or null while Multi-user is off. */
+  const deviceUsers = useState<DeviceUser[] | null>('soup-device-users', readDeviceUsers)
+
   /** Roster id of the active Soup session; sessions from before the picker are matched by address. */
   const activeSoupServerId = computed(() => {
     const session = jellyfin.value
@@ -279,6 +317,54 @@ export function useAuthSession() {
     const host = new URL(session.baseUrl).host
     return servers.value.find(server => serverHost(server) === host)?.id ?? null
   })
+
+  /** `deviceUserKey` of whoever is signed in now, listed on the switcher or not. */
+  const activeUserKey = computed(() => {
+    const session = jellyfin.value
+    // On the server picker, the Soup account choosing is still the one signed in.
+    if (!session) return choosingServer.value && email.value ? `soup:${email.value}` : null
+    return session.direct ? `direct:${activeSavedId()}` : `soup:${email.value}`
+  })
+
+  /** Device users who can still be switched to; a sign-in that has since ended drops out. */
+  const signedInUsers = computed(() => (deviceUsers.value ?? []).filter(user => user.kind === 'direct'
+    ? savedServers.value.some(server => server.id === user.id)
+    : Boolean(user.tokens) || user.email === soupEmail.value))
+
+  const otherUserKeys = computed(() => new Set(
+    signedInUsers.value.map(deviceUserKey).filter(key => key !== activeUserKey.value),
+  ))
+
+  function writeDeviceUsers(next: DeviceUser[] | null) {
+    deviceUsers.value = next
+    writeLocal(USERS_KEY, next && JSON.stringify(next))
+  }
+
+  /** Adds a user or updates their entry, which keeps its place in the list. */
+  function upsertDeviceUser(user: DeviceUser) {
+    const users = deviceUsers.value
+    if (!users) return
+    const key = deviceUserKey(user)
+    writeDeviceUsers(users.some(entry => deviceUserKey(entry) === key)
+      ? users.map(entry => (deviceUserKey(entry) === key ? { ...entry, ...user } : entry))
+      : [...users, user])
+  }
+
+  /** Puts whoever just signed in on the switcher, when Multi-user is on. */
+  function listActiveUser() {
+    const session = jellyfin.value
+    if (!session) return
+    upsertDeviceUser(session.direct
+      ? { kind: 'direct', id: activeSavedId()! }
+      : {
+          kind: 'soup',
+          email: email.value!,
+          tokens: undefined,
+          serverId: activeSoupServerId.value ?? undefined,
+          baseUrl: session.baseUrl,
+          userId: session.userId,
+        })
+  }
 
   function writePool(next: Record<string, JellyfinSessionPayload>) {
     pool.value = next
@@ -425,6 +511,7 @@ export function useAuthSession() {
     choosingServer.value = !payload.jellyfin
     serverError.value = null
     await applySession(payload)
+    listActiveUser()
   }
 
   /**
@@ -511,8 +598,10 @@ export function useAuthSession() {
   /**
    * Polls the device link. With `keepCurrent` and a server already active (Settings connecting
    * a Soup account), approval only stores the Soup tokens and roster and returns `linked`.
+   * With `addUser`, the tokens go on the user switcher instead and the Soup slot is left alone,
+   * for `switchToSoupUser` to pick up.
    */
-  async function pollLogin(options: { keepCurrent?: boolean } = {}) {
+  async function pollLogin(options: { keepCurrent?: boolean, addUser?: boolean } = {}) {
     if (isMockMode()) {
       await applyMockSession()
       return {
@@ -539,6 +628,10 @@ export function useAuthSession() {
       refreshToken: poll.refresh_token,
       email: poll.email,
       expiresAt: Math.floor(Date.now() / 1000) + (poll.expires_in || 3600),
+    }
+    if (options.addUser) {
+      addSoupUser(tokens)
+      return { status: 'added' as const, email: tokens.email }
     }
     writeTokens(tokens)
     soupEmail.value = tokens.email
@@ -593,8 +686,10 @@ export function useAuthSession() {
 
   /** Makes a saved server the active session. */
   function activateSaved(server: SavedServer) {
-    // Cached rows, items and progress all belong to the previous server.
-    if (jellyfin.value && jellyfin.value.serverId !== server.serverId) nuxtApp.$queryClient.clear()
+    // Cached rows, items and progress all belong to the previous server or user.
+    if (jellyfin.value && (jellyfin.value.serverId !== server.serverId || jellyfin.value.userId !== server.userId)) {
+      nuxtApp.$queryClient.clear()
+    }
     writeLocal(LAST_SERVER_KEY, server.baseUrl)
     email.value = server.username
     choosingServer.value = false
@@ -714,7 +809,9 @@ export function useAuthSession() {
       addedAt: savedServers.value.find(entry => entry.id === `${body.ServerId}:${body.User.Id}`)?.addedAt ?? Date.now(),
     }
     upsertSaved(server)
-    if (activate) activateSaved(server)
+    // Signing in again ended the active session's token, so it needs the new one either way.
+    if (activate || activeSavedId() === server.id) activateSaved(server)
+    if (activate) listActiveUser()
     return server
   }
 
@@ -890,7 +987,92 @@ export function useAuthSession() {
     return call(retry.accessToken)
   }
 
-  /** Signs out of Soup and every saved server. */
+  function enableMultiUser() {
+    writeDeviceUsers([])
+    listActiveUser()
+  }
+
+  /** Signs every other user out, leaving this device with just the current one. */
+  async function disableMultiUser() {
+    await Promise.all([...otherUserKeys.value].map(removeDeviceUser))
+    writeDeviceUsers(null)
+  }
+
+  function addSoupUser(tokens: SoupTokens) {
+    const inSlot = readTokens()?.email === tokens.email
+    const existing = deviceUsers.value?.find(user => user.kind === 'soup' && user.email === tokens.email)
+    // Whichever session is left unused would otherwise stay on the account's device list.
+    const unused = inSlot ? tokens : existing?.kind === 'soup' ? existing.tokens : undefined
+    upsertDeviceUser({ kind: 'soup', email: tokens.email, tokens: inSlot ? undefined : tokens })
+    if (unused) void revokeSoupSession(identityBaseUrl, unused.refreshToken)
+  }
+
+  /** Signs a user who isn't the active one out of this device. */
+  async function removeDeviceUser(key: string) {
+    const user = deviceUsers.value?.find(entry => deviceUserKey(entry) === key)
+    if (!user) return
+    writeDeviceUsers(deviceUsers.value!.filter(entry => entry !== user))
+    if (user.kind === 'direct') {
+      await removeSaved(user.id)
+      return
+    }
+    if (user.tokens) {
+      await revokeSoupSession(identityBaseUrl, user.tokens.refreshToken)
+      return
+    }
+    const tokens = readTokens()
+    if (tokens?.email !== user.email) return
+    writeTokens(null)
+    soupEmail.value = null
+    servers.value = []
+    writePool({})
+    await revokeSoupSession(identityBaseUrl, tokens.refreshToken)
+  }
+
+  /**
+   * Makes a Soup user the active one, moving whoever holds the Soup slot back onto the switcher.
+   * A failed exchange puts the slot back, so the current user carries on as if nothing happened.
+   */
+  async function switchToSoupUser(target: string) {
+    const user = deviceUsers.value?.find(entry => entry.kind === 'soup' && entry.email === target)
+    if (user?.kind !== 'soup') throw new Error('That user is no longer on this device')
+    const outgoing = readTokens()
+    const swapping = outgoing?.email !== target
+    if (swapping) {
+      if (!user.tokens) throw new Error(`${target} needs to sign in again.`)
+      writeTokens(user.tokens)
+    }
+    let payload: AuthSessionResponse | null = null
+    let failure: unknown = null
+    try {
+      payload = await exchangeSoup(user.serverId)
+    }
+    catch (error) {
+      failure = error
+    }
+    if (!payload) {
+      // The refresh may have rotated the target's tokens, or found them dead.
+      const rotated = readTokens()
+      if (swapping) {
+        writeTokens(outgoing)
+        soupEmail.value = outgoing?.email ?? null
+        servers.value = []
+        void loadServers(true).catch(() => {})
+        if (rotated) upsertDeviceUser({ ...user, tokens: rotated })
+        else writeDeviceUsers(deviceUsers.value!.filter(entry => deviceUserKey(entry) !== `soup:${target}`))
+      }
+      throw failure ?? new Error(`${target} needs to sign in again.`)
+    }
+    if (swapping && outgoing) upsertDeviceUser({ kind: 'soup', email: outgoing.email, tokens: outgoing })
+    upsertDeviceUser({ kind: 'soup', email: target, tokens: undefined })
+    // Cached rows, items and progress all belong to the previous user.
+    nuxtApp.$queryClient.clear()
+    await applySoup(payload)
+    // Tokens for other roster servers belonged to the previous Soup account.
+    writePool({})
+  }
+
+  /** Signs out of Soup, every saved server and every user on this device. */
   async function logout() {
     const saved = savedServers.value
     try {
@@ -901,7 +1083,10 @@ export function useAuthSession() {
         writeSaved([])
         const tokens = readTokens()
         writeTokens(null)
+        const stashed = (deviceUsers.value ?? []).flatMap(user => (user.kind === 'soup' && user.tokens ? [user.tokens] : []))
+        writeDeviceUsers(null)
         await Promise.all([
+          ...stashed.map(entry => revokeSoupSession(identityBaseUrl, entry.refreshToken)),
           ...saved.map(server => fetch(`${server.baseUrl}/Sessions/Logout`, {
             method: 'POST',
             headers: { Authorization: mediaBrowserAuth(server.deviceId, server.accessToken) },
@@ -949,6 +1134,14 @@ export function useAuthSession() {
     soupSession,
     directSession,
     removeSaved,
+    deviceUsers,
+    signedInUsers,
+    activeUserKey,
+    otherUserKeys,
+    enableMultiUser,
+    disableMultiUser,
+    removeDeviceUser,
+    switchToSoupUser,
     withSoupAccess,
     identityBaseUrl,
     enterMockLibrary: applyMockSession,

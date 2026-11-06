@@ -74,6 +74,8 @@ async function switchServer(entry: ServerEntry) {
   }
 }
 
+const { enabled: multiUser, others: otherUsers } = useDeviceUsers()
+
 async function onLogout() {
   menuOpen.value = false
   await auth.logout()
@@ -215,7 +217,17 @@ async function onLogout() {
           >
             Settings
           </NuxtLink>
+          <NuxtLink
+            v-if="multiUser"
+            to="/users"
+            role="menuitem"
+            class="flex h-11 items-center rounded-[10px] px-3 text-[15px] font-semibold text-ink hover:bg-white/10"
+          >
+            Switch user
+          </NuxtLink>
+          <!-- With others on this device, signing out happens in Settings, where it can't be hit by accident. -->
           <button
+            v-if="!otherUsers.length"
             type="button"
             role="menuitem"
             class="flex h-11 w-full items-center rounded-[10px] px-3 text-left text-[15px] font-semibold text-ink hover:bg-white/10"

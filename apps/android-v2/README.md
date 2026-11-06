@@ -1,7 +1,7 @@
 # Soup v2 (Android TV)
 
-Flutter TV client whose UI mirrors the web app (`apps/web`), on top of the same
-embedded-Tailscale transport and Soup Identity sign-in as `apps/android`.
+Flutter TV client whose UI mirrors the web app (`apps/web`), on top of embedded
+Tailscale transport and Soup Identity sign-in.
 
 ## Layout
 
@@ -91,3 +91,15 @@ task v2:webos:shell                           # flutter-webos devices / run on a
    (`MODE=debug` for hot reload; `q` quits and closes the app on the TV).
 
 Dev Mode expires after a while; extend it in the Developer Mode app.
+
+### Releasing to friends
+
+Bump `version` in `webos/meta/appinfo.json`, commit, then:
+
+```sh
+task release:build     # IPK, plugin zips and manifest, installer → dist/release/
+task release:publish   # GitHub release + npm (needs npm login)
+```
+
+Friends install with `npx soup-install@latest`; see
+[`tool/soup-install/README.md`](../../tool/soup-install/README.md).

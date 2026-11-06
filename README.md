@@ -167,6 +167,62 @@ separate VPN app. Add a Tailscale OAuth client and guest tag in the plugin's
 Settings. See the [plugin README](plugins/jellyfin-soup/README.md) for the
 Tailscale setup and the access rules to add to your tailnet.
 
+## 4. Set up a friend with their own server
+
+Your friend runs their own Jellyfin and plugin, and signs in through your Soup
+Identity. These steps cover an LG TV on the same home network as their server.
+The TV app can't use Tailscale on webOS, so it connects to their server directly.
+
+**You**
+
+1. Deploy Soup Identity if it's behind `main`, so it has the credential command.
+2. On the Soup Identity host, issue a credential from `services/soup-identity`:
+
+   ```sh
+   node dist/db/plugin_credentials.js issue alex "Alex's server"
+   ```
+
+3. Check the printed Soup base URL is your public address, not `localhost`. If it
+   isn't, fix `PUBLIC_BASE_URL` in `.env`, restart the service and run
+   `node dist/db/plugin_credentials.js rotate alex`.
+4. Send the printed settings privately. The secret can't be shown again.
+5. If your Google OAuth consent screen is in Testing mode, add your friend and their
+   guests as test users.
+6. Publish a release if there's none yet, or if the app or plugin has changed. Bump
+   `version` in `apps/android-v2/webos/meta/appinfo.json` when a release already
+   exists, commit so the working tree is clean, then:
+
+   ```sh
+   npm login
+   task release:build
+   task release:publish
+   ```
+
+**Your friend**
+
+1. In Jellyfin (10.11 or 12.2+), go to **Dashboard → Plugins → Repositories** and add
+   `https://github.com/jeffreyroulston/soup/releases/latest/download/manifest.json`.
+2. Install **Soup Auth** from the plugin **Catalog**, then stop and start Jellyfin. On
+   Jellyfin 12 the Dashboard's Restart keeps the old plugin loaded.
+3. Go to **Dashboard → Soup Invites → Settings** and enter the settings you sent.
+4. Set **Jellyfin base URL** to an address the TV can reach, such as
+   `http://192.168.1.50:8096`, and leave the Tailscale fields blank.
+5. Save, then go to **Invites**, click **Register server**, and invite each person by
+   Google email, including themselves.
+6. Install Soup on the TV by following the [TV install guide](tool/soup-install/README.md).
+   Once the TV is in Developer Mode, it comes down to one command, run on a computer
+   on the same network:
+
+   ```sh
+   npx soup-install@latest
+   ```
+
+7. On the TV, scan the QR code and continue with Google.
+
+To cut off a server later, run `node dist/db/plugin_credentials.js revoke alex`. That
+stops its plugin calling Soup Identity, but people already invited can still sign in
+to it. See [plugin credentials](services/soup-identity/README.md#plugin-credentials-other-peoples-servers).
+
 ## Build the TV app
 
 You need Flutter, the Android SDK and NDK, Go (for the embedded Tailscale library)

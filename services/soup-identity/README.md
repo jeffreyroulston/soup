@@ -216,6 +216,27 @@ curl -sS -X POST http://localhost:8787/v1/assertions \
 
 Assertion JWT claims: `sub` = Google email, `aud` = server audience, `jti` (one-time on Jellyfin exchange), `exp` ≈ 2–5 minutes (`ASSERTION_TTL_SECONDS`, default 180).
 
+## Plugin credentials (other people's servers)
+
+Each Jellyfin server that uses this service needs its own credential. Run this
+from `services/soup-identity` on the server that hosts it, after a deploy that
+includes it:
+
+```bash
+node dist/db/plugin_credentials.js issue alex "Alex's server"   # prints the plugin settings
+node dist/db/plugin_credentials.js list
+node dist/db/plugin_credentials.js rotate alex                  # new secret; the old one stops working
+node dist/db/plugin_credentials.js revoke alex                  # blocks the plugin from Soup
+```
+
+Locally, use `npm run plugin-credentials -- <command>`. The secret is only printed
+once. Revoking stops the plugin calling Soup, but its server and invites stay
+listed. `BOOTSTRAP_PLUGIN_*` credentials are reset on every restart, so change
+those in `.env`.
+
+Give credentials only to people you trust: a plugin can invite any Google email
+to its own server, and that server then appears in that person's Soup app.
+
 ## Session refresh
 
 ```bash

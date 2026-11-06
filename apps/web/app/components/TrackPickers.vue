@@ -36,7 +36,7 @@ const quality = defineModel<number | null>('quality', { default: null })
     </SelectMenu>
     <span
       v-else-if="audioStreams.length"
-      class="flex h-11 min-w-0 items-center gap-2 rounded-full bg-surface px-4 text-sm font-bold text-ink"
+      class="flex h-11 min-w-0 items-center gap-2 px-4 text-sm font-bold text-ink"
     >
       <span class="sr-only">Audio:</span>
       <svg class="size-4 shrink-0 text-ink-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
@@ -58,7 +58,7 @@ const quality = defineModel<number | null>('quality', { default: null })
     </SelectMenu>
     <span
       v-else-if="audioStreams.length"
-      class="flex h-11 items-center gap-2 rounded-full bg-surface px-4 text-sm font-bold text-muted"
+      class="flex h-11 items-center gap-2 px-4 text-sm font-bold text-muted"
     >
       <span class="shrink-0 text-ink-2"><svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7 15h4M14 15h3M7 11h2M12 11h5" /></svg></span>
       No subtitles

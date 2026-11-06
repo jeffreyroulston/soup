@@ -105,7 +105,7 @@ void main() {
 
   testWidgets('search, collection and settings fit a phone', (tester) async {
     await _pump(tester, const SearchScreen());
-    expect(find.text('BROWSE'), findsOneWidget);
+    expect(find.text('Movies, shows, people'), findsOneWidget);
     await _pump(tester, const CollectionScreen(packId: 'missing'));
     expect(find.textContaining("isn't available"), findsOneWidget);
     await _pump(tester, const SettingsScreen());

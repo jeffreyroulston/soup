@@ -17,11 +17,18 @@ export function useSeerrQueries() {
       queryFn: () => api.search(term, page),
       retry: seerrRetry,
     }),
-    discover: (path: string, page = 1) => queryOptions({
-      queryKey: queryKeys.seerrDiscover(path, page),
-      queryFn: () => api.discover(path, page),
+    discover: (path: string, page = 1, params: Record<string, string> = {}) => queryOptions({
+      queryKey: queryKeys.seerrDiscover(path, page, params),
+      queryFn: () => api.discover(path, page, params),
       // TMDB charts move slowly; library status on them refreshes with the page.
       staleTime: 10 * 60_000,
+      retry: seerrRetry,
+    }),
+    genres: (mediaType: SeerrMediaType) => queryOptions({
+      queryKey: queryKeys.seerrGenres(mediaType),
+      queryFn: () => api.genres(mediaType),
+      // TMDB's genre list barely changes; the backdrops can stay a while.
+      staleTime: 60 * 60_000,
       retry: seerrRetry,
     }),
     details: (mediaType: SeerrMediaType, tmdbId: number) => queryOptions({

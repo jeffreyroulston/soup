@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import type { JellyfinSearchResults } from '~/types/jellyfin'
+import { SEERR_MEDIA_STATUS } from '~/types/seerr'
 
 definePageMeta({ middleware: 'auth', layout: 'app' })
 
@@ -12,13 +13,11 @@ const SCOPES: { value: Scope, label: string }[] = [
   { value: 'shows', label: 'Shows' },
   { value: 'people', label: 'People' },
 ]
-const TINTS = ['#2541C8', '#3A0F2A', '#16353A', '#5A3B22', '#1F1A2E', '#2E5E3B']
 
 const route = useRoute()
 const router = useRouter()
 const { personImageUrl } = useJellyfin()
 const queries = useJellyfinQueries()
-const { libraries } = useLibraries()
 
 const query = ref(typeof route.query.q === 'string' ? route.query.q : '')
 /** `query` after the debounce; this is what's actually searched. */
@@ -38,6 +37,26 @@ const results = computed(() => (searchTerm.value ? searchQuery.data.value ?? EMP
 const searching = computed(() => searchQuery.isFetching.value)
 /** Kept results stay visible (dimmed) when a later term fails; the banner covers that. */
 const loadError = computed(() => (searchTerm.value && !searchQuery.data.value ? searchQuery.error.value : null))
+
+/** TMDB matches via Seerr, for titles the library doesn't have yet. Quietly absent without Seerr. */
+const seerr = useSeerrStatus()
+const seerrQueries = useSeerrQueries()
+const seerrUsable = computed(() => seerr.status.value?.configured === true && seerr.status.value.reachable)
+const seerrQuery = useQuery(computed(() => ({
+  ...seerrQueries.search(searchTerm.value),
+  enabled: seerrUsable.value && searchTerm.value.length > 0,
+  placeholderData: keepPreviousData,
+})))
+/** Anything already (even partly) in the library shows up in the Jellyfin results instead. */
+const requestable = computed(() => (searchTerm.value && seerrUsable.value ? seerrQuery.data.value?.titles ?? [] : [])
+  .filter(title => title.mediaInfo?.status !== SEERR_MEDIA_STATUS.AVAILABLE
+    && title.mediaInfo?.status !== SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE))
+const seerrTitles = computed(() => {
+  if (scope.value === 'movies') return requestable.value.filter(title => title.mediaType === 'movie')
+  if (scope.value === 'shows') return requestable.value.filter(title => title.mediaType === 'tv')
+  if (scope.value === 'people') return []
+  return requestable.value
+})
 
 const personId = computed(() => (typeof route.query.person === 'string' ? route.query.person : null))
 const personQuery = useQuery(computed(() => ({
@@ -65,7 +84,8 @@ const hasQuery = computed(() => query.value.trim().length > 0)
 const nothingFound = computed(() =>
   hasQuery.value && !searching.value && !loadError.value
   && !results.value.items.length && !results.value.people.length
-  && !personItems.value.length && !loadingPerson.value,
+  && !personItems.value.length && !loadingPerson.value
+  && !requestable.value.length && !seerrQuery.isFetching.value,
 )
 
 function openPerson(id: string, name: string) {
@@ -139,31 +159,13 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Empty state: browse libraries -->
-    <section v-if="!hasQuery" aria-label="Browse" class="mx-auto mt-12 flex max-w-[1240px] flex-col gap-4 px-4 sm:px-8 lg:px-12">
-      <h2 class="text-xl font-extrabold tracking-[-0.5px] sm:text-2xl">
-        Browse
-      </h2>
-      <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-        <NuxtLink
-          v-for="(lib, i) in libraries"
-          :key="lib.id"
-          :to="`/library/${lib.id}`"
-          class="flex h-24 items-end rounded-card p-4 text-[22px] font-extrabold tracking-[-0.5px] text-white transition hover:scale-[1.02]"
-          :style="{ backgroundColor: TINTS[i % TINTS.length] }"
-        >
-          {{ lib.name }}
-        </NuxtLink>
-      </div>
-    </section>
-
-    <ErrorState v-else-if="loadError" compact class="mt-6" :error="loadError" :on-retry="searchQuery.refetch" />
+    <ErrorState v-if="hasQuery && loadError" compact class="mt-6" :error="loadError" :on-retry="searchQuery.refetch" />
     <p v-else-if="nothingFound" class="mt-12 text-center text-muted">
       Nothing matches “{{ query.trim() }}”.
     </p>
 
     <div
-      v-else
+      v-else-if="hasQuery"
       class="mt-11 flex flex-col gap-11 transition-opacity"
       :class="searching ? 'opacity-60' : 'opacity-100'"
     >
@@ -210,6 +212,14 @@ onBeforeUnmount(() => {
               variant="landscape"
               :caption="item.name"
             />
+          </div>
+        </template>
+      </MediaRow>
+
+      <MediaRow v-if="seerrTitles.length" title="Not in Your Library" :count="seerrTitles.length">
+        <template #default="{ slideClass }">
+          <div v-for="title in seerrTitles" :key="`${title.mediaType}-${title.tmdbId}`" :class="slideClass">
+            <SeerrCard :title="title" />
           </div>
         </template>
       </MediaRow>

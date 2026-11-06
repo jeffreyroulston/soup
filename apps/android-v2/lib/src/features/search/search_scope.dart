@@ -1,4 +1,5 @@
 import '../../data/models.dart';
+import '../../data/seerr_models.dart';
 
 /// What a search shows. Shared by the TV and touch screens so the two can't
 /// drift apart on which results each scope lists.
@@ -24,6 +25,18 @@ enum SearchScope {
         _ => i.type == 'Movie' || i.type == 'Series',
       })
         i,
+  ];
+
+  /// The Seerr titles this scope lists, in result order.
+  List<SeerrTitle> seerrTitles(List<SeerrTitle> titles) => [
+    for (final t in titles)
+      if (switch (this) {
+        movies => t.mediaType == SeerrMediaType.movie,
+        shows => t.mediaType == SeerrMediaType.tv,
+        people => false,
+        all => true,
+      })
+        t,
   ];
 
   static List<CatalogItem> episodes(List<CatalogItem> items) => [

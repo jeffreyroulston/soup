@@ -65,6 +65,9 @@ const CURATED_MATCH_FIELDS = 'ProviderIds,ProductionYear,SortName'
 /** The library grid only shows poster, title, year and watched state; filtering needs genres. */
 const LIBRARY_GRID_FIELDS = 'ProductionYear,Genres,SortName'
 
+/** History rows show a thumbnail, title, S/E code or year; MediaStreams alone cost ~1s here. */
+const HISTORY_FIELDS = 'ProductionYear'
+
 const TEXT_SUBTITLE_CODECS = new Set([
   'srt',
   'subrip',
@@ -753,6 +756,8 @@ export function createJellyfin(client: JellyfinClient) {
       SortBy: 'DatePlayed',
       SortOrder: 'Descending',
       Limit: '200',
+      Fields: HISTORY_FIELDS,
+      EnableTotalRecordCount: 'false',
     })))
   }
 

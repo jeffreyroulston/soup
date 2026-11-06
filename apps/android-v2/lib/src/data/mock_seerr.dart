@@ -241,6 +241,7 @@ class MockSeerr extends Seerr {
     'posterPath': 'assets/posters/${title.poster}.jpg',
     'backdropPath': 'assets/posters/${title.poster}.jpg',
     'voteAverage': title.vote,
+    'voteCount': 400 + title.id * 7,
     'mediaInfo': _mediaInfo(title),
   };
 
@@ -285,7 +286,11 @@ class MockSeerr extends Seerr {
   }
 
   @override
-  Future<SeerrSearchResults> discover(String path, {int page = 1}) async {
+  Future<SeerrSearchResults> discover(
+    String path, {
+    int page = 1,
+    Map<String, String> params = const {},
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 120));
     final list = switch (path) {
       'discover/movies' =>

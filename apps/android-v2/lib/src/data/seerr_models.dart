@@ -137,6 +137,7 @@ class SeerrTitle {
     this.posterPath,
     this.backdropPath,
     this.voteAverage,
+    this.voteCount,
     this.mediaInfo,
   });
 
@@ -151,6 +152,9 @@ class SeerrTitle {
 
   /// TMDB score out of 10.
   final double? voteAverage;
+
+  /// How many TMDB votes that score rests on.
+  final int? voteCount;
   final SeerrMediaInfo? mediaInfo;
 
   String get key => '${mediaType.apiValue}-$tmdbId';
@@ -228,6 +232,7 @@ class SeerrDetails extends SeerrTitle {
     super.posterPath,
     super.backdropPath,
     super.voteAverage,
+    super.voteCount,
     super.mediaInfo,
     this.tagline,
     this.runtime,
@@ -487,6 +492,7 @@ SeerrTitle? _title(Map<Object?, Object?> raw, SeerrMediaType mediaType) {
   if (tmdbId == null || title == null) return null;
   final releaseDate = _str(raw['releaseDate']) ?? _str(raw['firstAirDate']);
   final vote = _num(raw['voteAverage'])?.toDouble();
+  final votes = _num(raw['voteCount'])?.toInt();
   return SeerrTitle(
     tmdbId: tmdbId,
     mediaType: mediaType,
@@ -497,6 +503,7 @@ SeerrTitle? _title(Map<Object?, Object?> raw, SeerrMediaType mediaType) {
     posterPath: _str(raw['posterPath']),
     backdropPath: _str(raw['backdropPath']),
     voteAverage: vote == null || vote == 0 ? null : vote,
+    voteCount: votes == null || votes == 0 ? null : votes,
     mediaInfo: mapSeerrMediaInfo(raw['mediaInfo'], mediaType),
   );
 }
@@ -628,6 +635,7 @@ SeerrDetails? mapSeerrDetails(Object? raw, SeerrMediaType mediaType) {
     posterPath: title.posterPath,
     backdropPath: title.backdropPath,
     voteAverage: title.voteAverage,
+    voteCount: title.voteCount,
     mediaInfo: title.mediaInfo,
     tagline: _str(details['tagline']),
     runtime: runtime != null && runtime > 0 ? runtime : null,

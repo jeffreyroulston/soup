@@ -7,7 +7,6 @@ import '../../ui/touch/touch_widgets.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/tmdb_image.dart';
-import '../../utils/media.dart';
 
 /// A Seerr title as a poster card, in [MediaCard]'s clothes, with its
 /// library status in the corner (web `SeerrCard.vue`).
@@ -302,79 +301,4 @@ class TouchSeerrRow extends StatelessWidget {
       ),
     ],
   );
-}
-
-/// Round TMDB headshot with the name underneath; activating searches for
-/// the person, which is how Seerr lists their titles.
-class SeerrPersonCard extends StatelessWidget {
-  const SeerrPersonCard({
-    required this.person,
-    required this.onActivate,
-    this.size = 120,
-    super.key,
-  });
-
-  final SeerrPerson person;
-  final VoidCallback onActivate;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final knownFor = person.knownFor.take(2).map((t) => t.title).join(', ');
-    return SizedBox(
-      width: size + 10,
-      child: Column(
-        children: [
-          Focusable(
-            radius: size / 2,
-            onActivate: onActivate,
-            semanticsLabel: person.name,
-            builder: (context, _) => ClipOval(
-              child: SizedBox.square(
-                dimension: size,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(
-                      color: SoupColors.elevated,
-                      alignment: Alignment.center,
-                      child: Text(
-                        initials(person.name),
-                        style: SoupType.style(
-                          size: size * 0.27,
-                          weight: 800,
-                          color: SoupColors.muted,
-                        ),
-                      ),
-                    ),
-                    if (person.profilePath != null)
-                      TmdbImage(
-                        path: person.profilePath,
-                        kind: TmdbImageKind.profile,
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            person.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: SoupType.style(size: 15, weight: 700),
-          ),
-          if (knownFor.isNotEmpty)
-            Text(
-              knownFor,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: SoupType.style(size: 12, color: SoupColors.muted),
-            ),
-        ],
-      ),
-    );
-  }
 }

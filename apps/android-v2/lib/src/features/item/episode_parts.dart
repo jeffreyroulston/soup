@@ -181,7 +181,6 @@ class TrackPickers extends StatelessWidget {
             icon: Icons.volume_up_rounded,
             label: audioStreams.single.label,
             semanticsLabel: 'Audio: ${audioStreams.single.label}',
-            surface: surface,
           ),
         if (subs.isNotEmpty)
           SelectMenu<int?>(
@@ -198,7 +197,6 @@ class TrackPickers extends StatelessWidget {
           _StaticPill(
             icon: Icons.subtitles_outlined,
             label: 'No subtitles',
-            surface: surface,
             muted: true,
           ),
         if (qualities.isNotEmpty)
@@ -214,19 +212,18 @@ class TrackPickers extends StatelessWidget {
   }
 }
 
-/// Looks like a [SelectMenu] trigger without the chevron; not focusable.
+/// Lines up with a [SelectMenu] trigger but has no pill behind it, no
+/// chevron, and isn't focusable.
 class _StaticPill extends StatelessWidget {
   const _StaticPill({
     required this.icon,
     required this.label,
-    required this.surface,
     this.semanticsLabel,
     this.muted = false,
   });
   final IconData icon;
   final String label;
   final String? semanticsLabel;
-  final bool surface;
   final bool muted;
 
   @override
@@ -236,11 +233,6 @@ class _StaticPill extends StatelessWidget {
       child: Container(
         height: 46,
         padding: const EdgeInsets.symmetric(horizontal: 18),
-        decoration: BoxDecoration(
-          color: surface ? SoupColors.surface : SoupColors.glass,
-          borderRadius: BorderRadius.circular(23),
-          border: Border.all(color: SoupColors.faint),
-        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -3,31 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
-import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/touch/touch_scaffold.dart';
 import '../../ui/touch/touch_widgets.dart';
 import '../../ui/widgets/catalog_builder.dart';
-import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/glass_nav.dart' show NavSection;
 import '../../ui/widgets/media_card.dart';
 import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/soup_text_field.dart';
 import '../../ui/widgets/error_state.dart';
+import '../explore/seerr_card.dart';
 import 'search_scope.dart';
+import 'seerr_matches.dart';
 
-const _tints = [
-  Color(0xFF2541C8),
-  Color(0xFF3A0F2A),
-  Color(0xFF16353A),
-  Color(0xFF5A3B22),
-  Color(0xFF1F1A2E),
-  Color(0xFF2E5E3B),
-];
-
-/// Touch search: field and scope pills up top, library tiles until there is
-/// a query, then result rails.
+/// Touch search: field and scope pills up top, then result rails once there
+/// is a query.
 class TouchSearchScreen extends StatefulWidget {
   const TouchSearchScreen({this.initialQuery, this.initialPerson, super.key});
   final String? initialQuery;
@@ -107,7 +98,7 @@ class _TouchSearchScreenState extends State<TouchSearchScreen> {
           child: Padding(
             padding: const EdgeInsets.only(top: 24),
             child: _term.isEmpty && _person == null
-                ? const _Browse()
+                ? const SizedBox.shrink()
                 : _Results(
                     term: _term,
                     scope: _scope,
@@ -119,67 +110,6 @@ class _TouchSearchScreenState extends State<TouchSearchScreen> {
       ],
     );
   }
-}
-
-class _Browse extends StatelessWidget {
-  const _Browse();
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: TouchSpacing.gutter),
-    child: CatalogBuilder<List<CatalogItem>>(
-      load: (c) => c.libraries(),
-      builder: (context, libs, _) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'BROWSE',
-            style: SoupType.style(
-              size: 12,
-              weight: 800,
-              color: SoupColors.muted,
-              letterSpacing: 0.6,
-            ),
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth > 600 ? 3 : 2;
-              final width =
-                  (constraints.maxWidth - 12 * (columns - 1)) / columns;
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  for (var i = 0; i < (libs?.length ?? 0); i++)
-                    Focusable(
-                      radius: SoupRadii.card,
-                      onActivate: () => openLibrary(context, libs![i]),
-                      builder: (context, _) => Container(
-                        width: width,
-                        height: 84,
-                        padding: const EdgeInsets.all(14),
-                        alignment: Alignment.bottomLeft,
-                        decoration: BoxDecoration(
-                          color: _tints[i % _tints.length],
-                          borderRadius: BorderRadius.circular(SoupRadii.card),
-                        ),
-                        child: Text(
-                          libs![i].name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: SoupType.style(size: 18, weight: 800),
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 class _Results extends StatelessWidget {
@@ -203,8 +133,9 @@ class _Results extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) {
-    return CatalogBuilder<SearchResults>(
+  Widget build(BuildContext context) => SeerrMatches(
+    term: term,
+    builder: (context, seerrMatches) => CatalogBuilder<SearchResults>(
       load: (c) => c.search(term),
       keys: [term],
       builder: (context, results, error) {
@@ -212,6 +143,7 @@ class _Results extends StatelessWidget {
         final titles = scope.titles(items);
         final episodes = SearchScope.episodes(items);
         final people = results?.people ?? const <Person>[];
+        final requestable = scope.seerrTitles(seerrMatches ?? const []);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -255,6 +187,13 @@ class _Results extends StatelessWidget {
                     shape: CardShape.landscape,
                   ),
                 ),
+              if (requestable.isNotEmpty)
+                _gap(
+                  TouchSeerrRow(
+                    title: 'Not in Your Library',
+                    titles: requestable,
+                  ),
+                ),
               if (scope.showsPeople && people.isNotEmpty)
                 _gap(
                   Column(
@@ -281,12 +220,14 @@ class _Results extends StatelessWidget {
                     ],
                   ),
                 ),
-              if (items.isEmpty && people.isEmpty)
+              if (items.isEmpty &&
+                  people.isEmpty &&
+                  (seerrMatches?.isEmpty ?? false))
                 _message('No results for “$term”.'),
             ],
           ],
         );
       },
-    );
-  }
+    ),
+  );
 }

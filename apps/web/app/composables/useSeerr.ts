@@ -1,5 +1,6 @@
 import type {
   SeerrDetails,
+  SeerrGenre,
   SeerrMediaType,
   SeerrRequest,
   SeerrRequestFilter,
@@ -15,6 +16,7 @@ import {
   mockSeerrCreateRequest,
   mockSeerrDetails,
   mockSeerrDiscover,
+  mockSeerrGenres,
   mockSeerrRequests,
   mockSeerrSearch,
   mockSeerrStatus,
@@ -75,10 +77,18 @@ export function createSeerr(client: JellyfinClient) {
     return mapSeerrResults(await browse('search', { query: trimmed, page: String(page) }))
   }
 
-  /** `discover/trending`, `discover/movies`, `discover/tv`, `discover/movies/upcoming`… */
-  async function discover(path: string, page = 1): Promise<SeerrSearchResults> {
+  /**
+   * `discover/trending`, `discover/movies`, `discover/tv`, `discover/movies/upcoming`…; `params`
+   * are Seerr's discover filters (`sortBy`, `voteAverageGte`, `voteCountLte`…).
+   */
+  async function discover(path: string, page = 1, params: Record<string, string> = {}): Promise<SeerrSearchResults> {
     if (mock) return mapSeerrResults(mockSeerrDiscover(path))
-    return mapSeerrResults(await browse(path, { page: String(page) }))
+    return mapSeerrResults(await browse(path, { ...params, page: String(page) }))
+  }
+
+  /** Genres with a few backdrops each, for browsing by genre. */
+  async function genres(mediaType: SeerrMediaType): Promise<SeerrGenre[]> {
+    return mapSeerrGenres(mock ? mockSeerrGenres(mediaType) : await browse(`discover/genreslider/${mediaType}`))
   }
 
   async function details(mediaType: SeerrMediaType, tmdbId: number): Promise<SeerrDetails> {
@@ -114,7 +124,7 @@ export function createSeerr(client: JellyfinClient) {
     await call('DELETE', `Request/${id}`)
   }
 
-  return { status, search, discover, details, myRequests, createRequest, cancelRequest }
+  return { status, search, discover, genres, details, myRequests, createRequest, cancelRequest }
 }
 
 export type SeerrApi = ReturnType<typeof createSeerr>

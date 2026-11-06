@@ -10,11 +10,13 @@ import 'package:soup_v2/src/data/seerr_models.dart';
 import 'package:soup_v2/src/features/explore/explore_requests_screen.dart';
 import 'package:soup_v2/src/features/explore/explore_screen.dart';
 import 'package:soup_v2/src/features/explore/explore_title_screen.dart';
+import 'package:soup_v2/src/features/explore/hidden_gems.dart';
 import 'package:soup_v2/src/features/explore/request_flow.dart';
 import 'package:soup_v2/src/features/explore/seerr_card.dart';
 import 'package:soup_v2/src/features/explore/seerr_request_card.dart';
 import 'package:soup_v2/src/features/explore/seerr_unavailable.dart';
 import 'package:soup_v2/src/features/home/home_screen.dart';
+import 'package:soup_v2/src/features/search/search_screen.dart';
 import 'package:soup_v2/src/form_factor.dart';
 import 'package:soup_v2/src/ui/theme/soup_theme.dart';
 import 'package:soup_v2/src/ui/touch/touch_frame.dart';
@@ -203,9 +205,7 @@ void main() {
     expect(find.text('Explore'), findsNothing);
   });
 
-  testWidgets('Down from the nav lands on the section tab, not the field', (
-    tester,
-  ) async {
+  testWidgets('Down from the nav lands on the section tab', (tester) async {
     await _pump(tester, const ExploreScreen());
     Focus.of(tester.element(find.text('Home'))).requestFocus();
     await tester.pump();
@@ -250,15 +250,22 @@ void main() {
     expect(find.byType(SeerrNotLinkedNote), findsNothing);
   });
 
-  testWidgets('Explore search lists titles and people', (tester) async {
-    await _pump(tester, const ExploreScreen(initialQuery: 'the'));
-    expect(find.text('Movies & Shows'), findsOneWidget);
+  testWidgets('Search adds Seerr titles the library lacks', (tester) async {
+    await _pump(tester, const SearchScreen(initialQuery: 'the'));
+    expect(find.text('Not in Your Library'), findsOneWidget);
     expect(find.text('The Kid'), findsOneWidget);
-    expect(find.text('Trending'), findsNothing);
-    await tester.pumpWidget(const SizedBox());
-    await _pump(tester, const ExploreScreen(initialQuery: 'keaton'));
-    expect(find.text('People'), findsOneWidget);
-    expect(find.text('Buster Keaton'), findsOneWidget);
+    // In the library (fully or partly), so not offered again.
+    expect(find.text('The Phantom of the Opera'), findsNothing);
+  });
+
+  testWidgets('Search skips Seerr when it is down', (tester) async {
+    await _pump(
+      tester,
+      const SearchScreen(initialQuery: 'the'),
+      seerr: _DownSeerr(),
+    );
+    expect(find.text('Not in Your Library'), findsNothing);
+    expect(find.text("Can't reach Seerr"), findsNothing);
   });
 
   testWidgets('without a linked account Explore browses only', (tester) async {
@@ -371,6 +378,119 @@ void main() {
     await _pump(tester, const ExploreRequestsScreen(), touch: true);
     expect(find.byType(SeerrRequestCard), findsNWidgets(3));
     expect(find.text('Withdraw'), findsOneWidget);
+  });
+
+  group('hidden gems', () {
+    Future<void> openWall(WidgetTester tester, {bool touch = false}) async {
+      await _pump(tester, const ExploreScreen(), touch: touch);
+      expect(find.byType(HiddenGemsWall), findsOneWidget);
+      // Centred, clear of the phone's top bar.
+      await tester.runAsync(
+        () => Scrollable.ensureVisible(
+          tester.element(find.byType(HiddenGemsWall)),
+          alignment: 0.5,
+        ),
+      );
+      await _settle(tester);
+      await tester.tap(find.text('Surprise me'));
+      await _settle(tester);
+      expect(find.text('HIDDEN GEM'), findsOneWidget);
+      expect(find.text('Loved by few'), findsNothing);
+    }
+
+    String? focusName() => FocusManager.instance.primaryFocus?.debugLabel;
+
+    testWidgets('the remote reveals in place, skips, and Back puts it back', (
+      tester,
+    ) async {
+      await openWall(tester);
+      // Focus lands on Another, so OK skips straight to the next title.
+      expect(focusName(), 'gem another');
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await _settle(tester);
+      expect(find.text('HIDDEN GEM'), findsOneWidget);
+      expect(focusName(), 'gem another');
+
+      // Back closes the reveal, not the page, and refocuses the button.
+      await tester.binding.handlePopRoute();
+      await _settle(tester);
+      expect(find.text('Loved by few'), findsOneWidget);
+      expect(find.byType(ExploreScreen), findsOneWidget);
+      expect(focusName(), 'surprise me');
+    });
+
+    testWidgets('requesting from the reveal keeps it out, focus included', (
+      tester,
+    ) async {
+      await openWall(tester);
+      // Skip until a title that can still be requested comes up.
+      for (var i = 0; i < 12 && find.text('Request').evaluate().isEmpty; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await _settle(tester);
+      }
+      expect(find.text('Request'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await _settle(tester);
+      expect(focusName(), 'gem primary');
+      await tester.sendKeyEvent(LogicalKeyboardKey.select);
+      await _settle(tester);
+      expect(find.text('HIDDEN GEM'), findsOneWidget);
+      expect(find.text('Requested'), findsOneWidget);
+      expect(focusName(), 'gem primary');
+    });
+
+    testWidgets('Up/Down put the title back and stay on the wall', (
+      tester,
+    ) async {
+      await openWall(tester);
+      for (final key in [
+        LogicalKeyboardKey.arrowUp,
+        LogicalKeyboardKey.arrowDown,
+      ]) {
+        await tester.sendKeyEvent(key);
+        await _settle(tester);
+        expect(find.text('HIDDEN GEM'), findsNothing);
+        expect(find.text('Loved by few'), findsOneWidget);
+        expect(focusName(), 'surprise me');
+        await tester.sendKeyEvent(LogicalKeyboardKey.select);
+        await _settle(tester);
+      }
+      // With the title back, Up leaves the section for the row above.
+      await tester.binding.handlePopRoute();
+      await _settle(tester);
+      expect(focusName(), 'surprise me');
+      final from = FocusManager.instance.primaryFocus!.rect;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await _settle(tester);
+      final to = FocusManager.instance.primaryFocus!.rect;
+      expect(to.bottom, lessThanOrEqualTo(from.top));
+    });
+
+    testWidgets('focusing the wall centres it on screen', (tester) async {
+      await openWall(tester);
+      await tester.binding.handlePopRoute();
+      await _settle(tester);
+      expect(focusName(), 'surprise me');
+      final wall = tester.getRect(find.byType(HiddenGemsWall));
+      expect(wall.center.dy, moreOrLessEquals(810 / 2, epsilon: 2));
+    });
+
+    testWidgets('touch: tap to reveal, close, and Back closes first', (
+      tester,
+    ) async {
+      await openWall(tester, touch: true);
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await _settle(tester);
+      expect(find.text('Loved by few'), findsOneWidget);
+
+      await tester.tap(find.text('Surprise me'));
+      await _settle(tester);
+      expect(find.text('HIDDEN GEM'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await _settle(tester);
+      expect(find.text('Loved by few'), findsOneWidget);
+      expect(find.byType(ExploreScreen), findsOneWidget);
+    });
   });
 }
 

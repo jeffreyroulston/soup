@@ -5,6 +5,7 @@ import '../theme/soup_tokens.dart';
 import '../../navigation.dart';
 import 'error_state.dart';
 import 'glass_nav.dart';
+import 'in_page_back.dart';
 
 /// Page shell: scrolling content under the fixed [GlassNav]. The nav turns
 /// solid after a short scroll, like the web header.
@@ -170,7 +171,8 @@ class _PageScaffoldState extends State<PageScaffold> {
       // Home leaves the app. Detail pages (section none) just pop.
       canPop: !tab && (!home || _navFocused),
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop || !(home || tab)) return;
+        if (didPop || InPageBack.handle(route)) return;
+        if (!(home || tab)) return;
         if (!_navFocused && _navTarget.context != null) {
           _navTarget.requestFocus();
           _scrollToTop();

@@ -69,7 +69,13 @@ abstract class Seerr extends ChangeNotifier {
   Future<SeerrSearchResults> search(String term, {int page = 1});
 
   /// A `discover/...` catalogue row (trending, movies, tv, movies/upcoming).
-  Future<SeerrSearchResults> discover(String path, {int page = 1});
+  /// [params] are Seerr's discover filters (`sortBy`, `voteAverageGte`,
+  /// `voteCountLte`…).
+  Future<SeerrSearchResults> discover(
+    String path, {
+    int page = 1,
+    Map<String, String> params = const {},
+  });
 
   /// Null when Seerr/TMDB has no such title.
   Future<SeerrDetails?> details(SeerrMediaType type, int tmdbId);
@@ -230,11 +236,21 @@ class JellyfinSeerr extends Seerr {
   }
 
   @override
-  Future<SeerrSearchResults> discover(String path, {int page = 1}) => cached(
-    'discover:$path:$page',
-    () async => mapSeerrResults(await _browse(path, {'page': '$page'})),
-    ttl: const Duration(minutes: 10),
-  );
+  Future<SeerrSearchResults> discover(
+    String path, {
+    int page = 1,
+    Map<String, String> params = const {},
+  }) {
+    final query = {...params, 'page': '$page'};
+    final key = (query.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
+        .map((e) => '${e.key}=${e.value}')
+        .join('&');
+    return cached(
+      'discover:$path?$key',
+      () async => mapSeerrResults(await _browse(path, query)),
+      ttl: const Duration(minutes: 10),
+    );
+  }
 
   @override
   Future<SeerrDetails?> details(SeerrMediaType type, int tmdbId) =>

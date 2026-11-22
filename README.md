@@ -193,7 +193,6 @@ The TV app can't use Tailscale on webOS, so it connects to their server directly
    exists, commit so the working tree is clean, then:
 
    ```sh
-   npm login
    task release:build
    task release:publish
    ```
@@ -210,11 +209,14 @@ The TV app can't use Tailscale on webOS, so it connects to their server directly
 5. Save, then go to **Invites**, click **Register server**, and invite each person by
    Google email, including themselves.
 6. Install Soup on the TV by following the [TV install guide](tool/soup-install/README.md).
-   Once the TV is in Developer Mode, it comes down to one command, run on a computer
-   on the same network:
+   Once the TV is in Developer Mode, run this on a computer on the same network, with
+   Git and Node.js 20 or newer:
 
    ```sh
-   npx soup-install@latest
+   git clone --depth 1 https://github.com/jeffreyroulston/soup.git
+   cd soup/tool/soup-install
+   npm install
+   node soup-install.mjs
    ```
 
 7. On the TV, scan the QR code and continue with Google.

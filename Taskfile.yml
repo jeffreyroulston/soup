@@ -351,7 +351,7 @@ tasks:
         soup-flutter-webos bash
 
   release:build:
-    desc: Build the IPK, plugin zips, plugin manifest and TV installer into dist/release
+    desc: Build the IPK, plugin zips and plugin manifest into dist/release
     cmds:
       - tool/release/release.sh build
 

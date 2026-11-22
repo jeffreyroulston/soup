@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Friends release: a GitHub release with the webOS IPK and the Soup Auth plugin
-# and its Jellyfin repository manifest, plus the TV installer on npm. npm 12
-# refuses remote tarballs by default, so `npx <github-url>` can't serve it.
+# and its Jellyfin repository manifest. Friends run the TV installer from a clone
+# of this repo; it downloads the IPK from the latest release.
 #
 #   release.sh build     Build everything into dist/release/
-#   release.sh publish   Upload dist/release/ to GitHub and npm (needs npm login)
+#   release.sh publish   Upload dist/release/ as a GitHub release
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -57,9 +57,6 @@ build() {
   node "$ROOT/tool/release/plugin-manifest.mjs" "$REPO" "$tag" "$OUT/.plugins" >"$OUT/manifest.json"
   rm "$OUT/.plugins"
 
-  npm pack "$ROOT/tool/soup-install" --pack-destination "$OUT" --silent >/dev/null
-  mv "$OUT"/soup-install-*.tgz "$OUT/soup-install.tgz"
-
   (cd "$OUT" && sha256sum -- * >SHA256SUMS)
   git -C "$ROOT" rev-parse HEAD >"$OUT/.commit"
   git -C "$ROOT" status --porcelain >"$OUT/.dirty"
@@ -80,19 +77,9 @@ publish() {
     echo "$tag already exists. Bump version in $APPINFO, then rebuild." >&2
     exit 1
   fi
-  npm whoami >/dev/null 2>&1 || { echo "Not logged in to npm. Run: npm login" >&2; exit 1; }
   gh release create "$tag" --repo "$REPO" --target "$commit" --title "Soup $version" \
     --notes "Install on an LG TV: see tool/soup-install/README.md" \
     "$OUT"/soup-webos-arm.ipk "$OUT"/soup-auth-*.zip "$OUT"/manifest.json "$OUT"/SHA256SUMS
-
-  # The installer has its own version: only bump it when the installer changes.
-  local installer
-  installer="soup-install@$(node -p "require('$ROOT/tool/soup-install/package.json').version")"
-  if [[ -n "$(npm view "$installer" version 2>/dev/null)" ]]; then
-    echo "$installer is already on npm; leaving it as is."
-  else
-    npm publish "$OUT/soup-install.tgz" --access public
-  fi
 }
 
 case "${1:-}" in

@@ -100,6 +100,7 @@ function rawTitle(title: MockTitle) {
     posterPath: posterPath(title.poster),
     backdropPath: null,
     voteAverage: title.vote,
+    voteCount: 400 + title.id * 7,
     mediaInfo: mediaInfo(title),
   }
   return title.mediaType === 'movie'
@@ -131,7 +132,32 @@ export function mockSeerrSearch(term: string) {
   return result
 }
 
+/** TMDB ids for the mock catalogue's genre names (movie ids; TV uses the same for simplicity). */
+const GENRE_IDS: Record<string, number> = {
+  'Action': 28,
+  'Adventure': 12,
+  'Comedy': 35,
+  'Drama': 18,
+  'Horror': 27,
+  'Mystery': 9648,
+  'Romance': 10749,
+  'Science Fiction': 878,
+}
+
+export function mockSeerrGenres(mediaType: SeerrMediaType) {
+  return Object.entries(GENRE_IDS).flatMap(([name, id]) => {
+    const titles = TITLES.filter(title => title.mediaType === mediaType && title.genres.includes(name))
+    return titles.length ? [{ id, name, backdrops: titles.map(title => posterPath(title.poster)) }] : []
+  })
+}
+
 export function mockSeerrDiscover(path: string) {
+  const genre = /^discover\/(movies|tv)\/genre\/(\d+)/.exec(path)
+  if (genre) {
+    const mediaType = genre[1] === 'movies' ? 'movie' : 'tv'
+    const name = Object.keys(GENRE_IDS).find(key => GENRE_IDS[key] === Number(genre[2]))
+    return page(TITLES.filter(title => title.mediaType === mediaType && name != null && title.genres.includes(name)))
+  }
   if (path.startsWith('discover/trending')) return page([...TITLES].sort((a, b) => b.vote - a.vote))
   if (path.startsWith('discover/movies/upcoming')) return page(TITLES.filter(title => title.mediaType === 'movie').slice(3))
   if (path.startsWith('discover/movies')) return page(TITLES.filter(title => title.mediaType === 'movie'))

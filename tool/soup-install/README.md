@@ -1,7 +1,7 @@
 # Install Soup on an LG TV
 
 You need a computer on the same network as the TV, with
-[Node.js](https://nodejs.org) 20 or newer.
+[Git](https://git-scm.com) and [Node.js](https://nodejs.org) 20 or newer.
 
 ## 1. Put the TV in Developer Mode
 
@@ -14,19 +14,26 @@ You need a computer on the same network as the TV, with
 ## 2. Run the installer
 
 ```sh
-npx soup-install@latest
+git clone --depth 1 https://github.com/jeffreyroulston/soup.git
+cd soup/tool/soup-install
+npm install
+node soup-install.mjs
 ```
 
-It finds the TV, asks for the passphrase the first time, then installs and opens
-Soup. Run the same command to update.
+`npm install` may warn that it skipped install scripts. That's fine: the
+installer doesn't need them.
 
-To remove Soup, run `npx soup-install@latest uninstall`.
+It finds the TV, asks for the passphrase the first time, then installs and opens
+Soup.
+
+To update, run `git pull` and `npm install` in `soup/tool/soup-install`, then
+`node soup-install.mjs` again. To remove Soup, run `node soup-install.mjs uninstall`.
 
 ## Keeping it installed
 
 Developer Mode runs on a timer. Open the Developer Mode app and press **Extend**
 before it runs out, or the TV removes Soup. If that happens, extend it and run
-the installer again.
+`node soup-install.mjs` again.
 
 ## Problems
 

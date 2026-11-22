@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
 import '../../form_factor.dart';
-import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
 import '../../ui/widgets/catalog_builder.dart';
 import '../../ui/widgets/focusable.dart';
@@ -16,17 +15,10 @@ import '../../ui/widgets/person_card.dart';
 import '../../ui/widgets/pill_tabs.dart';
 import '../../ui/widgets/soup_text_field.dart';
 import '../../ui/widgets/error_state.dart';
+import '../explore/seerr_card.dart';
 import 'search_screen_touch.dart';
 import 'search_scope.dart';
-
-const _tints = [
-  Color(0xFF2541C8),
-  Color(0xFF3A0F2A),
-  Color(0xFF16353A),
-  Color(0xFF5A3B22),
-  Color(0xFF1F1A2E),
-  Color(0xFF2E5E3B),
-];
+import 'seerr_matches.dart';
 
 /// Web `pages/search.vue`.
 class SearchScreen extends StatefulWidget {
@@ -119,7 +111,7 @@ class _SearchScreenState extends State<SearchScreen> {
           child: Padding(
             padding: const EdgeInsets.only(top: 36),
             child: _term.isEmpty && _person == null
-                ? const _Browse()
+                ? const SizedBox.shrink()
                 : _Results(
                     term: _term,
                     scope: _scope,
@@ -131,66 +123,6 @@ class _SearchScreenState extends State<SearchScreen> {
       ],
     );
   }
-}
-
-class _Browse extends StatelessWidget {
-  const _Browse();
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 1000),
-      child: SizedBox(
-        width: 1000,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: SoupSpacing.gutter),
-          child: CatalogBuilder<List<CatalogItem>>(
-            load: (c) => c.libraries(),
-            builder: (context, libs, _) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'BROWSE',
-                  style: SoupType.style(
-                    size: 13,
-                    weight: 800,
-                    color: SoupColors.muted,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 16,
-                  children: [
-                    for (var i = 0; i < (libs?.length ?? 0); i++)
-                      Focusable(
-                        radius: SoupRadii.card,
-                        onActivate: () => openLibrary(context, libs![i]),
-                        builder: (context, focused) => Container(
-                          width: 296,
-                          height: 96,
-                          padding: const EdgeInsets.all(18),
-                          alignment: Alignment.bottomLeft,
-                          decoration: BoxDecoration(
-                            color: _tints[i % _tints.length],
-                            borderRadius: BorderRadius.circular(SoupRadii.card),
-                          ),
-                          child: Text(
-                            libs![i].name,
-                            style: SoupType.style(size: 22, weight: 800),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 class _Results extends StatelessWidget {
@@ -206,8 +138,9 @@ class _Results extends StatelessWidget {
   final VoidCallback onClearPerson;
 
   @override
-  Widget build(BuildContext context) {
-    return CatalogBuilder<SearchResults>(
+  Widget build(BuildContext context) => SeerrMatches(
+    term: term,
+    builder: (context, seerrMatches) => CatalogBuilder<SearchResults>(
       load: (c) => c.search(term),
       keys: [term],
       builder: (context, results, error) {
@@ -215,6 +148,7 @@ class _Results extends StatelessWidget {
         final titles = scope.titles(items);
         final episodes = SearchScope.episodes(items);
         final top = items.take(8).toList();
+        final requestable = scope.seerrTitles(seerrMatches ?? const []);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -288,10 +222,19 @@ class _Results extends StatelessWidget {
                     shape: CardShape.landscape,
                   ),
                 ),
+              if (requestable.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 40),
+                  child: SeerrRow(
+                    title: 'Not in Your Library',
+                    titles: requestable,
+                  ),
+                ),
               if (scope.showsPeople && (results?.people.isNotEmpty ?? false))
                 _People(people: results!.people),
               if ((results?.items.isEmpty ?? true) &&
-                  (results?.people.isEmpty ?? true))
+                  (results?.people.isEmpty ?? true) &&
+                  (seerrMatches?.isEmpty ?? false))
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: SoupSpacing.gutter,
@@ -305,8 +248,8 @@ class _Results extends StatelessWidget {
           ],
         );
       },
-    );
-  }
+    ),
+  );
 }
 
 class _People extends StatelessWidget {

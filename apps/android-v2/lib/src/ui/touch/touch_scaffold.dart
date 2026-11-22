@@ -11,6 +11,7 @@ import '../widgets/catalog_builder.dart';
 import '../widgets/glass_nav.dart' show NavSection;
 import '../widgets/soup_wordmark.dart';
 import '../widgets/error_state.dart';
+import '../widgets/in_page_back.dart';
 
 /// Touch page shell: a scrolling page with a frosted top bar and, on the
 /// top-level sections, a bottom navigation bar (Home, Library, Search,
@@ -82,7 +83,8 @@ class _TouchScaffoldState extends State<TouchScaffold> {
       // Back from a tab returns Home; Home and detail pages pop as usual.
       canPop: !tab,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && tab) openHome(context);
+        if (didPop || InPageBack.handle(ModalRoute.of(context))) return;
+        if (tab) openHome(context);
       },
       child: Scaffold(
         backgroundColor: SoupColors.canvas,

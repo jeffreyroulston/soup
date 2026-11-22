@@ -29,6 +29,7 @@ class SoupButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = style == SoupButtonStyle.primary;
+    final foreground = primary ? SoupColors.canvas : SoupColors.ink;
     return Focusable(
       autofocus: autofocus,
       focusNode: focusNode,
@@ -48,14 +49,16 @@ class SoupButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (icon != null) ...[icon!, const SizedBox(width: 10)],
+            if (icon != null) ...[
+              IconTheme.merge(
+                data: IconThemeData(color: foreground),
+                child: icon!,
+              ),
+              const SizedBox(width: 10),
+            ],
             Text(
               label,
-              style: SoupType.style(
-                size: 19,
-                weight: 800,
-                color: primary ? SoupColors.canvas : SoupColors.ink,
-              ),
+              style: SoupType.style(size: 19, weight: 800, color: foreground),
             ),
           ],
         ),

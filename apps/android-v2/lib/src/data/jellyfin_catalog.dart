@@ -14,6 +14,10 @@ const _listFields =
     'Overview,ProductionYear,RunTimeTicks,OfficialRating,CommunityRating,Genres,SortName,ChildCount,MediaStreams,DateCreated,DateLastMediaAdded';
 const _curatedFields = 'ProviderIds,ProductionYear,SortName';
 const _gridFields = 'ProductionYear,Genres,SortName';
+
+/// History rows show a thumbnail, title, S/E code or year; MediaStreams alone
+/// cost ~1s on a 200-item page.
+const _historyFields = 'ProductionYear';
 const _nonVideoLibraries = {
   'boxsets',
   'playlists',
@@ -655,6 +659,8 @@ class JellyfinCatalog extends Catalog {
           'SortBy': 'DatePlayed',
           'SortOrder': 'Descending',
           'Limit': '200',
+          'Fields': _historyFields,
+          'EnableTotalRecordCount': 'false',
         }),
       ),
     );

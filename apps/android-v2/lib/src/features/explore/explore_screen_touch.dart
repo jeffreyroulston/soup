@@ -1,8 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
-import '../../data/seerr.dart';
 import '../../data/seerr_models.dart';
 import '../../navigation.dart';
 import '../../ui/theme/soup_tokens.dart';
@@ -10,50 +7,19 @@ import '../../ui/touch/touch_scaffold.dart';
 import '../../ui/touch/touch_widgets.dart';
 import '../../ui/widgets/focusable.dart';
 import '../../ui/widgets/glass_nav.dart' show NavSection;
-import '../../ui/widgets/soup_text_field.dart';
 import 'explore_gate.dart';
 import 'explore_screen.dart' show exploreRows;
 import 'explore_tabs.dart';
+import 'hidden_gems.dart';
 import 'seerr_builder.dart';
 import 'seerr_card.dart';
 import 'seerr_request_card.dart';
 import 'seerr_unavailable.dart';
 
-/// Touch Explore: tabs and search field up top, then the viewer's requests
-/// and the Seerr discovery rails, or search results.
-class TouchExploreScreen extends StatefulWidget {
-  const TouchExploreScreen({this.initialQuery, super.key});
-  final String? initialQuery;
-
-  @override
-  State<TouchExploreScreen> createState() => _TouchExploreScreenState();
-}
-
-class _TouchExploreScreenState extends State<TouchExploreScreen> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initialQuery ?? '',
-  );
-  Timer? _debounce;
-  late String _term = (widget.initialQuery ?? '').trim();
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _changed(String value) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) setState(() => _term = value.trim());
-    });
-  }
-
-  void _setQuery(String value) {
-    _controller.text = value;
-    setState(() => _term = value.trim());
-  }
+/// Touch Explore: tabs up top, then the viewer's requests and the Seerr
+/// discovery rails.
+class TouchExploreScreen extends StatelessWidget {
+  const TouchExploreScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -96,15 +62,6 @@ class _TouchExploreScreenState extends State<TouchExploreScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const TouchExploreTabs(current: ExploreTab.discover),
-                      const SizedBox(height: 12),
-                      SoupTextField(
-                        controller: _controller,
-                        label: 'Search',
-                        hint: 'Find a movie or show',
-                        onChanged: _changed,
-                        onSubmitted: () =>
-                            setState(() => _term = _controller.text.trim()),
-                      ),
                       if (status.user == null) ...[
                         const SizedBox(height: 10),
                         const SeerrNotLinkedNote(),
@@ -113,10 +70,7 @@ class _TouchExploreScreenState extends State<TouchExploreScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                if (_term.isEmpty)
-                  _Discover(status: status)
-                else
-                  _Results(term: _term, onPerson: _setQuery),
+                _Discover(status: status),
               ],
             ),
           ),
@@ -177,7 +131,7 @@ class _Discover extends StatelessWidget {
             );
           },
         ),
-      for (final row in exploreRows)
+      for (final row in exploreRows) ...[
         SeerrBuilder<SeerrSearchResults>(
           load: (s) => s.discover(row.path),
           builder: (context, results, error) {
@@ -195,6 +149,14 @@ class _Discover extends StatelessWidget {
             );
           },
         ),
+        // The poster wall breaks up the rows, after Popular Shows.
+        if (row.path == 'discover/tv')
+          Padding(
+            key: const ValueKey('hidden gems'),
+            padding: const EdgeInsets.only(bottom: TouchSpacing.rowGap),
+            child: HiddenGemsWall(status: status, touch: true),
+          ),
+      ],
     ],
   );
 }
@@ -219,105 +181,5 @@ class _SeeAll extends StatelessWidget {
         ),
       ),
     ),
-  );
-}
-
-class _Results extends StatelessWidget {
-  const _Results({required this.term, required this.onPerson});
-  final String term;
-  final ValueChanged<String> onPerson;
-
-  static const _gap = 12.0;
-
-  @override
-  Widget build(BuildContext context) => SeerrBuilder<SeerrSearchResults>(
-    load: (s) => s.search(term),
-    keys: [term],
-    builder: (context, results, error) {
-      if (results == null && error == null) {
-        return const TouchSeerrRow(
-          title: 'Searching…',
-          titles: [],
-          loading: true,
-        );
-      }
-      if (results == null) {
-        return SeerrUnavailable(
-          status: null,
-          error: error,
-          onRetry: () => Seerr.of(context).loadStatus(force: true).ignore(),
-        );
-      }
-      if (results.isEmpty) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: TouchSpacing.gutter),
-          child: Text(
-            'Nothing matches “$term”.',
-            style: SoupType.style(size: 15, color: SoupColors.muted),
-          ),
-        );
-      }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (results.titles.isNotEmpty) ...[
-            const TouchSectionTitle('Movies & Shows'),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: TouchSpacing.gutter,
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final available = constraints.maxWidth;
-                  final columns =
-                      ((available + _gap) / (TouchSpacing.posterWidth + _gap))
-                          .floor()
-                          .clamp(3, 10);
-                  final width = (available - _gap * (columns - 1)) / columns;
-                  return Wrap(
-                    spacing: _gap,
-                    runSpacing: 18,
-                    children: [
-                      for (final title in results.titles)
-                        SeerrCard(
-                          key: ValueKey(title.key),
-                          title: title,
-                          width: width,
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-          if (results.people.isNotEmpty) ...[
-            const SizedBox(height: TouchSpacing.rowGap),
-            const TouchSectionTitle('People'),
-            const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(
-                horizontal: TouchSpacing.gutter,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final p in results.people)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 14),
-                      child: SeerrPersonCard(
-                        person: p,
-                        size: 84,
-                        onActivate: () => onPerson(p.name),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      );
-    },
   );
 }

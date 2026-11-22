@@ -76,8 +76,8 @@ void openSettings(BuildContext context) =>
     _goTop(context, const SettingsScreen());
 
 /// Explore opens on Discover; Requests is its other tab.
-void openExplore(BuildContext context, {String? query}) =>
-    _goTop(context, ExploreScreen(initialQuery: query));
+void openExplore(BuildContext context) =>
+    _goTop(context, const ExploreScreen());
 
 void openExploreRequests(BuildContext context) =>
     _goTop(context, const ExploreRequestsScreen());

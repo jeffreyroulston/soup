@@ -73,7 +73,16 @@ export type SeerrTitle = {
   backdropPath: string | null
   /** TMDB score out of 10. */
   voteAverage: number | null
+  /** How many TMDB votes that score rests on. */
+  voteCount: number | null
   mediaInfo: SeerrMediaInfo | null
+}
+
+/** A TMDB genre as Seerr's genre slider lists it: a few backdrops from its most popular titles. */
+export type SeerrGenre = {
+  id: number
+  name: string
+  backdrops: string[]
 }
 
 export type SeerrPerson = {

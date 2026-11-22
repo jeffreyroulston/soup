@@ -97,9 +97,9 @@ Dev Mode expires after a while; extend it in the Developer Mode app.
 Bump `version` in `webos/meta/appinfo.json`, commit, then:
 
 ```sh
-task release:build     # IPK, plugin zips and manifest, installer → dist/release/
-task release:publish   # GitHub release + npm (needs npm login)
+task release:build     # IPK, plugin zips and manifest → dist/release/
+task release:publish   # GitHub release
 ```
 
-Friends install with `npx soup-install@latest`; see
+Friends run the installer from a clone of this repo; see
 [`tool/soup-install/README.md`](../../tool/soup-install/README.md).

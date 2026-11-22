@@ -112,8 +112,8 @@ class SeerrUnavailable extends StatelessWidget {
   }
 }
 
-/// Small note under the search box for viewers without a linked Seerr
-/// account: they can browse, not request.
+/// Small note for viewers without a linked Seerr account: they can browse,
+/// not request.
 class SeerrNotLinkedNote extends StatelessWidget {
   const SeerrNotLinkedNote({this.size = 13, super.key});
   final double size;

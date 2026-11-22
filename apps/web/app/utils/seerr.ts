@@ -2,6 +2,7 @@
 import type {
   SeerrCastMember,
   SeerrDetails,
+  SeerrGenre,
   SeerrMediaInfo,
   SeerrMediaStatus,
   SeerrMediaType,
@@ -58,11 +59,12 @@ export function seerrCanRequest(user: SeerrUser | null, mediaType: SeerrMediaTyp
   return hasPermission(user, mediaType === 'movie' ? PERMISSION.REQUEST_MOVIE : PERMISSION.REQUEST_TV)
 }
 
-type TmdbImageKind = 'poster' | 'backdrop' | 'profile'
+type TmdbImageKind = 'poster' | 'backdrop' | 'thumb' | 'profile'
 
 const TMDB_SIZES: Record<TmdbImageKind, string> = {
   poster: 'w500',
   backdrop: 'w1280',
+  thumb: 'w780',
   profile: 'w185',
 }
 
@@ -189,6 +191,7 @@ function mapTitle(raw: Json, mediaType: SeerrMediaType): SeerrTitle | null {
     posterPath: str(raw.posterPath),
     backdropPath: str(raw.backdropPath),
     voteAverage: num(raw.voteAverage) || null,
+    voteCount: num(raw.voteCount) || null,
     mediaInfo: mapSeerrMediaInfo(raw.mediaInfo, mediaType),
   }
 }
@@ -308,6 +311,63 @@ export function mapSeerrDetails(raw: unknown, mediaType: SeerrMediaType): SeerrD
     networks: arr(details.networks).map(network => str(obj(network)?.name)).filter((name): name is string => name !== null),
     trailerUrl: trailerUrl(details),
   }
+}
+
+/** `discover/genreslider/{movie|tv}`: genres that have backdrops to show. */
+export function mapSeerrGenres(raw: unknown): SeerrGenre[] {
+  return arr(raw).flatMap((entry) => {
+    const genre = obj(entry)
+    const id = genre ? num(genre.id) : null
+    const name = genre ? str(genre.name) : null
+    if (!genre || id == null || !name) return []
+    const backdrops = arr(genre.backdrops).map(str).filter((path): path is string => path !== null)
+    return backdrops.length ? [{ id, name, backdrops }] : []
+  })
+}
+
+/** Per-genre colour for the genre tiles' wash, keyed by TMDB genre id (movie and TV ids don't collide). */
+const GENRE_TINTS: Record<number, string> = {
+  28: '#c2410c', // Action
+  12: '#b45309', // Adventure
+  16: '#0e7490', // Animation
+  35: '#ca8a04', // Comedy
+  80: '#475569', // Crime
+  99: '#4d7c0f', // Documentary
+  18: '#7c3aed', // Drama
+  10751: '#0891b2', // Family
+  14: '#6d28d9', // Fantasy
+  36: '#92400e', // History
+  27: '#991b1b', // Horror
+  10402: '#be185d', // Music
+  9648: '#3730a3', // Mystery
+  10749: '#be123c', // Romance
+  878: '#1d4ed8', // Science Fiction
+  10770: '#57534e', // TV Movie
+  53: '#334155', // Thriller
+  10752: '#3f6212', // War
+  37: '#a16207', // Western
+  10759: '#c2410c', // Action & Adventure
+  10762: '#0891b2', // Kids
+  10763: '#475569', // News
+  10764: '#db2777', // Reality
+  10765: '#1d4ed8', // Sci-Fi & Fantasy
+  10766: '#be123c', // Soap
+  10767: '#ca8a04', // Talk
+  10768: '#3f6212', // War & Politics
+}
+
+export function genreTint(id: number): string {
+  return GENRE_TINTS[id] ?? '#fc7814'
+}
+
+/** Where a genre's full listing lives. */
+export function seerrGenreRoute(mediaType: SeerrMediaType, id: number): string {
+  return `/explore/genre/${mediaType}/${id}`
+}
+
+/** The Seerr discover path listing a genre, most popular first. */
+export function seerrGenreDiscoverPath(mediaType: SeerrMediaType, id: number): string {
+  return `discover/${mediaType === 'movie' ? 'movies' : 'tv'}/genre/${id}`
 }
 
 export function mapSeerrStatus(raw: unknown): SeerrStatus {

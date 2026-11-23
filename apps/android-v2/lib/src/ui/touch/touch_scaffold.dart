@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../app_scope.dart';
 import '../../data/models.dart';
 import '../../data/seerr.dart';
 import '../../data/seerr_models.dart';
@@ -12,6 +13,7 @@ import '../widgets/glass_nav.dart' show NavSection;
 import '../widgets/soup_wordmark.dart';
 import '../widgets/error_state.dart';
 import '../widgets/in_page_back.dart';
+import '../widgets/user_avatar.dart';
 
 /// Touch page shell: a scrolling page with a frosted top bar and, on the
 /// top-level sections, a bottom navigation bar (Home, Library, Search,
@@ -318,9 +320,18 @@ class _BottomNav extends StatelessWidget {
                     icon: Icon(Icons.search_rounded),
                     label: 'Search',
                   ),
-                  const NavigationDestination(
-                    icon: Icon(Icons.person_outline_rounded),
-                    selectedIcon: Icon(Icons.person_rounded),
+                  NavigationDestination(
+                    icon: UserAvatar(
+                      label: SoupScope.maybeOf(context)?.userLabel ?? '',
+                      size: 24,
+                      fallback: const Icon(Icons.person_outline_rounded),
+                    ),
+                    selectedIcon: UserAvatar(
+                      label: SoupScope.maybeOf(context)?.userLabel ?? '',
+                      size: 24,
+                      border: Border.all(color: SoupColors.ink, width: 1.5),
+                      fallback: const Icon(Icons.person_rounded),
+                    ),
                     label: 'Account',
                   ),
                 ],

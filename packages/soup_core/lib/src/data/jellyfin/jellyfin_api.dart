@@ -1270,6 +1270,21 @@ class JellyfinApi
     }
   }
 
+  /// The signed-in user's profile picture bytes, or null when none is set.
+  Future<Uint8List?> getUserImage(
+    JellyfinSession session, {
+    int maxWidth = 256,
+    String? tag,
+  }) => getBytes(
+    session,
+    'Users/${session.userId}/Images/Primary',
+    query: {
+      'maxWidth': '$maxWidth',
+      'quality': '80',
+      if (tag != null && tag.isNotEmpty) 'tag': tag,
+    },
+  );
+
   /// Authenticated GET of raw bytes (artwork, subtitles). Null on 404.
   Future<Uint8List?> getBytes(
     JellyfinSession session,

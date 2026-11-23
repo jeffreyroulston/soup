@@ -13,8 +13,8 @@ export type DeviceUserEntry = {
   imageUrl: string | null
 }
 
-function avatarUrl(baseUrl?: string, userId?: string): string | null {
-  return baseUrl && userId ? `${baseUrl}/Users/${userId}/Images/Primary?maxHeight=360` : null
+function avatarUrl(baseUrl?: string, userId?: string, primaryImageTag?: string | null): string | null {
+  return isMockMode() ? null : userAvatarUrl(baseUrl, userId, primaryImageTag, 360)
 }
 
 /** The Multi-user switcher: who's on this device, and moving between them. */
@@ -34,7 +34,7 @@ export function useDeviceUsers() {
         name: user.email,
         shortName: user.email.split('@')[0] || user.email,
         detail: 'Soup account',
-        imageUrl: avatarUrl(user.baseUrl, user.userId),
+        imageUrl: avatarUrl(user.baseUrl, user.userId, user.primaryImageTag),
       }
     }
     const server = auth.savedServers.value.find(entry => entry.id === user.id)
@@ -44,7 +44,7 @@ export function useDeviceUsers() {
       name,
       shortName: name.split('@')[0] || name,
       detail: server?.name ?? '',
-      imageUrl: avatarUrl(server?.baseUrl, server?.userId),
+      imageUrl: avatarUrl(server?.baseUrl, server?.userId, server?.primaryImageTag),
     }
   }))
 

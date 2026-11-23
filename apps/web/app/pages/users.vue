@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { DeviceUserEntry } from '~/composables/useDeviceUsers'
-
 definePageMeta({ middleware: 'auth', layout: false })
 useHead({ title: 'Who\'s watching?' })
 
@@ -14,13 +12,6 @@ function tileColor(key: string): string {
   let hash = 0
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   return TILE_COLORS[hash % TILE_COLORS.length]!
-}
-
-/** Pictures that failed to load, since most Jellyfin users don't have one. */
-const noImage = ref(new Set<string>())
-
-function showsImage(user: DeviceUserEntry): boolean {
-  return Boolean(user.imageUrl) && !noImage.value.has(user.key)
 }
 
 async function pick(key: string) {
@@ -56,22 +47,16 @@ watch(() => users.value.length, (count) => {
           :class="switchingTo !== null && switchingTo !== user.key ? 'opacity-40' : ''"
           @click="pick(user.key)"
         >
-          <span
-            class="relative grid aspect-square w-full place-items-center overflow-hidden rounded-panel text-[56px] font-extrabold text-white ring-[3px] ring-transparent transition group-enabled:group-hover:scale-[1.04] group-enabled:group-hover:ring-ink sm:text-[72px]"
+          <UserAvatar
+            :src="user.imageUrl"
+            :label="user.shortName"
+            class="aspect-square w-full rounded-panel text-[56px] font-extrabold text-white ring-[3px] ring-transparent transition group-enabled:group-hover:scale-[1.04] group-enabled:group-hover:ring-ink sm:text-[72px]"
             :style="{ backgroundColor: tileColor(user.key) }"
           >
-            {{ user.shortName.charAt(0).toUpperCase() }}
-            <img
-              v-if="showsImage(user)"
-              :src="user.imageUrl!"
-              alt=""
-              class="absolute inset-0 size-full object-cover"
-              @error="noImage.add(user.key)"
-            >
             <span v-if="switchingTo === user.key" class="absolute inset-0 grid place-items-center bg-canvas/60">
               <span class="size-9 animate-spin rounded-full border-[3px] border-white/30 border-t-white" />
             </span>
-          </span>
+          </UserAvatar>
           <span class="flex w-full min-w-0 flex-col gap-0.5">
             <span class="truncate text-[17px] font-bold text-ink-2 transition-colors group-enabled:group-hover:text-ink sm:text-xl">
               {{ user.shortName }}

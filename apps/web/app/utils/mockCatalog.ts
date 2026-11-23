@@ -24,6 +24,7 @@ export const MOCK_SESSION: JellyfinSessionPayload = {
   accessToken: 'mock-token',
   serverId: 'mock-server',
   deviceId: 'mock-web-device',
+  primaryImageTag: null,
 }
 
 export const MOCK_EMAIL = 'mock@soup.dev'

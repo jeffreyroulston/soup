@@ -76,4 +76,39 @@ void main() {
     expect(await c.image(poster), isNotNull);
     expect(requested.where((p) => p.contains('/Images/')), hasLength(2));
   });
+
+  test(
+    'userAvatar caches hits and 404s, retries errors, and refetches on refresh',
+    () async {
+      var status = 500;
+      final avatarRequests = <String>[];
+      final client = MockClient((request) async {
+        avatarRequests.add(request.url.path);
+        if (status == 200) return http.Response.bytes([1, 2, 3], 200);
+        return http.Response('', status);
+      });
+      addTearDown(client.close);
+      final c = JellyfinCatalog(JellyfinApi(client, deviceId: 'd'), _session);
+      addTearDown(c.dispose);
+
+      // Transient 500 returns null and is not cached.
+      expect(await c.userAvatar(), isNull);
+      expect(avatarRequests, ['/Users/user/Images/Primary']);
+
+      // 404 returns null and is cached across calls and invalidate().
+      status = 404;
+      expect(await c.userAvatar(), isNull);
+      expect(await c.userAvatar(), isNull);
+      c.invalidate();
+      expect(await c.userAvatar(), isNull);
+      expect(avatarRequests, hasLength(2));
+
+      // Explicit refresh() drops the cached avatar and fetches the new picture.
+      status = 200;
+      c.refresh();
+      expect(await c.userAvatar(), [1, 2, 3]);
+      expect(await c.userAvatar(), [1, 2, 3]);
+      expect(avatarRequests, hasLength(3));
+    },
+  );
 }

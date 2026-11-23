@@ -353,6 +353,43 @@ void main() {
     expect(captured.headers['x-emby-token'], 'token');
   });
 
+  test('loads user profile picture and returns null on 404', () async {
+    final captured = <http.Request>[];
+    var status = 200;
+    final client = MockClient((request) async {
+      captured.add(request);
+      if (status == 404) return http.Response('', 404);
+      return http.Response.bytes(
+        [9, 8, 7],
+        200,
+        headers: {'content-type': 'image/jpeg'},
+      );
+    });
+    addTearDown(client.close);
+    final api = JellyfinApi(client, deviceId: 'device');
+    final session = JellyfinSession(
+      serverUrl: Uri.parse('http://jellyfin/jellyfin/'),
+      serverId: 'server',
+      userId: 'user-42',
+      userName: 'Alex',
+      accessToken: 'token',
+    );
+
+    final bytes = await api.getUserImage(session, maxWidth: 128, tag: 'v1');
+    expect(bytes, [9, 8, 7]);
+    expect(captured.single.url.path, '/jellyfin/Users/user-42/Images/Primary');
+    expect(captured.single.url.queryParameters, {
+      'maxWidth': '128',
+      'quality': '80',
+      'tag': 'v1',
+    });
+    expect(captured.single.headers['x-emby-token'], 'token');
+
+    status = 404;
+    expect(await api.getUserImage(session), isNull);
+    expect(captured.last.url.queryParameters.containsKey('tag'), isFalse);
+  });
+
   test('logout ends the session on the server', () async {
     late http.Request captured;
     final client = MockClient((request) async {

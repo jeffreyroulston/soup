@@ -15,6 +15,7 @@ import 'focusable.dart';
 import 'glass.dart';
 import 'page_scaffold.dart';
 import 'soup_wordmark.dart';
+import 'user_avatar.dart';
 
 enum NavSection { home, library, myStuff, explore, search, settings, none }
 
@@ -270,19 +271,7 @@ class _Avatar extends StatelessWidget {
     focusNode: focusNode,
     radius: 22,
     onActivate: () => _menu(context),
-    builder: (context, focused) => Container(
-      width: 44,
-      height: 44,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: SoupColors.accent,
-        shape: BoxShape.circle,
-      ),
-      child: Text(
-        label.isEmpty ? '·' : label[0].toUpperCase(),
-        style: SoupType.style(size: 18, weight: 800, color: SoupColors.canvas),
-      ),
-    ),
+    builder: (context, focused) => UserAvatar(label: label, size: 44),
   );
 
   Future<void> _menu(BuildContext context) {

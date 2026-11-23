@@ -630,6 +630,9 @@ class MockCatalog extends Catalog {
   ) async => null;
 
   @override
+  Future<Uint8List?> userAvatar({int maxWidth = 256}) => Future.value(null);
+
+  @override
   Future<Uint8List?> image(ImageRef ref, {int maxWidth = 480}) {
     if (ref.tag == null) return Future.value(null);
     final key = '${ref.itemId}/${ref.type}/$maxWidth';

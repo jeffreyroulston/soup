@@ -10,6 +10,8 @@ export type JellyfinSessionPayload = {
   soupServerId?: string
   /** Display name from the Soup roster. */
   serverName?: string
+  /** Jellyfin User.PrimaryImageTag; null when the user has no profile picture, undefined on older stored sessions. */
+  primaryImageTag?: string | null
 }
 
 export type AuthSessionResponse = {

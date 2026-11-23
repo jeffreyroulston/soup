@@ -46,6 +46,7 @@ export type SavedServer = {
   accessToken: string
   deviceId: string
   addedAt: number
+  primaryImageTag?: string | null
 }
 
 type SoupTokens = {
@@ -70,6 +71,7 @@ export type DeviceUser =
     /** Where they last signed in, so the user picker can show their Jellyfin picture. */
     baseUrl?: string
     userId?: string
+    primaryImageTag?: string | null
   }
 
 export function deviceUserKey(user: DeviceUser): string {
@@ -172,6 +174,7 @@ export function savedSession(server: SavedServer): JellyfinSessionPayload {
     deviceId: server.deviceId,
     direct: true,
     serverName: server.name,
+    primaryImageTag: server.primaryImageTag,
   }
 }
 
@@ -363,6 +366,7 @@ export function useAuthSession() {
           serverId: activeSoupServerId.value ?? undefined,
           baseUrl: session.baseUrl,
           userId: session.userId,
+          primaryImageTag: session.primaryImageTag,
         })
   }
 
@@ -533,6 +537,34 @@ export function useAuthSession() {
     await applySession({ email: MOCK_EMAIL, jellyfin: MOCK_SESSION })
   }
 
+  /** Refreshes `primaryImageTag` for a restored session so avatar edits in Jellyfin show up. */
+  async function refreshUserProfile() {
+    if (isMockMode()) return
+    const session = jellyfin.value
+    if (!session) return
+    try {
+      const response = await fetch(`${session.baseUrl}/Users/Me`, {
+        headers: { Accept: 'application/json', Authorization: mediaBrowserAuth(session.deviceId, session.accessToken) },
+      })
+      if (!response.ok) return
+      const user = await response.json() as { Id?: string, PrimaryImageTag?: string | null }
+      if (!user || typeof user !== 'object' || !('Id' in user)) return
+      const tag = typeof user.PrimaryImageTag === 'string' && user.PrimaryImageTag ? user.PrimaryImageTag : null
+      const current = jellyfin.value
+      if (!current || current.serverId !== session.serverId || current.userId !== session.userId) return
+      if (current.primaryImageTag === tag) return
+      persistJellyfin({ ...current, primaryImageTag: tag })
+      if (current.direct) {
+        const saved = savedServers.value.find(entry => entry.id === `${current.serverId}:${current.userId}`)
+        if (saved && saved.primaryImageTag !== tag) upsertSaved({ ...saved, primaryImageTag: tag })
+      }
+      listActiveUser()
+    }
+    catch {
+      // Avatar metadata is cosmetic; ignore network errors here.
+    }
+  }
+
   async function hydrate() {
     if (loading.value) return
     loading.value = true
@@ -541,10 +573,16 @@ export function useAuthSession() {
         if (!mockDismissed.value) await applyMockSession()
         return
       }
-      if (restoreDirect()) return
+      if (restoreDirect()) {
+        void refreshUserProfile()
+        return
+      }
       // A reload in the same tab reuses its token instead of minting a new one through
       // Identity (three round trips). If it has expired, the first 401 re-exchanges it.
-      if (restoreFromStorage()) return
+      if (restoreFromStorage()) {
+        void refreshUserProfile()
+        return
+      }
       const payload = await exchangeSoup()
       if (payload) {
         await applySoup(payload)
@@ -715,7 +753,13 @@ export function useAuthSession() {
       throw new Error(`Your session on ${server.name} ended. Add it again to sign back in.`)
     }
     if (!response.ok) throw new Error(`${server.name} returned an error (${response.status})`)
-    activateSaved(server)
+    const user = await response.json().catch(() => null) as { Id?: string, PrimaryImageTag?: string | null } | null
+    const primaryImageTag = user && typeof user === 'object' && 'Id' in user
+      ? (typeof user.PrimaryImageTag === 'string' && user.PrimaryImageTag ? user.PrimaryImageTag : null)
+      : server.primaryImageTag
+    const updated = primaryImageTag !== server.primaryImageTag ? { ...server, primaryImageTag } : server
+    if (updated !== server) upsertSaved(updated)
+    activateSaved(updated)
   }
 
   /**
@@ -795,7 +839,7 @@ export function useAuthSession() {
     const body = await response.json() as {
       AccessToken: string
       ServerId: string
-      User: { Id: string, Name: string }
+      User: { Id: string, Name: string, PrimaryImageTag?: string | null }
     }
     const server: SavedServer = {
       id: `${body.ServerId}:${body.User.Id}`,
@@ -807,6 +851,7 @@ export function useAuthSession() {
       accessToken: body.AccessToken,
       deviceId,
       addedAt: savedServers.value.find(entry => entry.id === `${body.ServerId}:${body.User.Id}`)?.addedAt ?? Date.now(),
+      primaryImageTag: body.User.PrimaryImageTag || null,
     }
     upsertSaved(server)
     // Signing in again ended the active session's token, so it needs the new one either way.

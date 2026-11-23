@@ -15,6 +15,7 @@ import '../../ui/widgets/page_scaffold.dart';
 import '../../ui/widgets/select_menu.dart';
 import '../../ui/widgets/soup_button.dart';
 import '../../ui/widgets/soup_text_field.dart';
+import '../../ui/widgets/user_avatar.dart';
 
 /// Web `pages/settings.vue`: account, playback preferences, sign out.
 class SettingsScreen extends StatelessWidget {
@@ -81,9 +82,19 @@ class SettingsScreen extends StatelessWidget {
           _Section(
             title: 'Account',
             children: [
-              Text(
-                scope.userLabel.isEmpty ? 'Signed in' : scope.userLabel,
-                style: SoupType.style(size: 17, color: SoupColors.ink2),
+              Row(
+                children: [
+                  UserAvatar(label: scope.userLabel, size: 48),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      scope.userLabel.isEmpty ? 'Signed in' : scope.userLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SoupType.style(size: 17, color: SoupColors.ink2),
+                    ),
+                  ),
+                ],
               ),
               // TV picks servers from the nav's account menu.
               if (touch) _Servers(scope: scope),

@@ -75,7 +75,7 @@ export async function exchangeForJellyfin(
 
   const body = (await response.json()) as {
     AccessToken?: string
-    User?: { Id?: string }
+    User?: { Id?: string, PrimaryImageTag?: string | null }
     ServerId?: string
   }
   if (!body.AccessToken || !body.User?.Id) {
@@ -90,5 +90,6 @@ export async function exchangeForJellyfin(
     deviceId,
     soupServerId: server.id,
     serverName: server.name,
+    primaryImageTag: body.User.PrimaryImageTag || null,
   }
 }

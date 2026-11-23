@@ -85,10 +85,12 @@ async function onSwitch(key: string) {
           :key="user.key"
           class="flex items-center gap-3 rounded-btn px-3 py-2.5 transition-colors hover:bg-white/[0.04]"
         >
-          <span
-            class="grid size-9 shrink-0 place-items-center rounded-full text-sm font-extrabold"
+          <UserAvatar
+            :src="user.imageUrl"
+            :label="user.name"
+            class="size-9 shrink-0 rounded-full text-sm font-extrabold"
             :class="user.key === currentKey ? 'bg-ok text-canvas' : 'bg-white/15 text-ink'"
-          >{{ user.name.charAt(0).toUpperCase() }}</span>
+          />
           <span class="flex min-w-0 flex-1 flex-col">
             <span class="truncate text-base font-bold">{{ user.name }}</span>
             <span class="truncate text-[13px] font-semibold text-muted">{{ user.detail }}</span>

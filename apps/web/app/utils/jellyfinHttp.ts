@@ -26,6 +26,23 @@ export function jellyfinUrl(baseUrl: string, path: string, query?: Record<string
   return search ? `${url}?${search}` : url
 }
 
+/**
+ * Jellyfin user profile picture URL. Returns null when `primaryImageTag` is explicitly `null`
+ * (the server confirmed no avatar is set); `undefined` omits `tag` so older stored sessions
+ * still attempt to load the image.
+ */
+export function userAvatarUrl(
+  baseUrl?: string | null,
+  userId?: string | null,
+  primaryImageTag?: string | null,
+  maxHeight = 256,
+): string | null {
+  if (!baseUrl || !userId || primaryImageTag === null) return null
+  const query: Record<string, string> = { maxHeight: String(maxHeight) }
+  if (primaryImageTag) query.tag = primaryImageTag
+  return jellyfinUrl(baseUrl, `Users/${userId}/Images/Primary`, query)
+}
+
 export function secondsToTicks(seconds: number): number {
   return Math.max(0, Math.round(seconds * TICKS_PER_SECOND))
 }

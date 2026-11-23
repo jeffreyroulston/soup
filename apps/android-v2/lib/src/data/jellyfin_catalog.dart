@@ -86,7 +86,8 @@ class JellyfinCatalog extends Catalog {
       key == 'libraries' ||
       key.startsWith('segments:') ||
       key.startsWith('libGenres:') ||
-      key.startsWith('libTotal:');
+      key.startsWith('libTotal:') ||
+      key.startsWith('userAvatar:');
 
   void invalidate() {
     _memo.removeWhere((key, _) => !_userIndependent(key));
@@ -95,7 +96,10 @@ class JellyfinCatalog extends Catalog {
   }
 
   @override
-  void refresh() => invalidate();
+  void refresh() {
+    _memo.removeWhere((key, _) => key.startsWith('userAvatar:'));
+    invalidate();
+  }
 
   // ── helpers ──────────────────────────────────────────────────────────────
   Future<Object?> _get(String path, [Map<String, String>? query]) =>
@@ -784,6 +788,13 @@ class JellyfinCatalog extends Catalog {
     _images.remove(key);
     _imageBytes -= _imageSizes.remove(key) ?? 0;
   }
+
+  @override
+  Future<Uint8List?> userAvatar({int maxWidth = 256}) => _cached(
+    'userAvatar:$maxWidth',
+    () => _api.getUserImage(_session, maxWidth: maxWidth),
+    ttl: const Duration(minutes: 10),
+  ).catchError((Object _) => null);
 
   @override
   Future<Uint8List?> trickplaySheet(

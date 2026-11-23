@@ -75,6 +75,10 @@ abstract class Catalog extends ChangeNotifier {
   /// Tailscale-aware HTTP client in live mode.
   Future<Uint8List?> image(ImageRef ref, {int maxWidth = 480});
 
+  /// The signed-in user's Jellyfin profile picture bytes, or null when none is
+  /// set.
+  Future<Uint8List?> userAvatar({int maxWidth = 256});
+
   /// One trickplay sprite sheet (see [Trickplay]), or null when it can't be
   /// loaded. Uncached; the player keeps the sheets it has fetched.
   Future<Uint8List?> trickplaySheet(

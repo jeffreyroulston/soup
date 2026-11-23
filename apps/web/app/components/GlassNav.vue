@@ -11,7 +11,11 @@ const menuRef = ref<HTMLElement | null>(null)
 
 const { available: exploreAvailable } = useSeerrStatus()
 
-const initial = computed(() => (auth.email.value || 'S').charAt(0).toUpperCase())
+const avatarSrc = computed(() => {
+  if (isMockMode()) return null
+  const session = auth.jellyfin.value
+  return userAvatarUrl(session?.baseUrl, session?.userId, session?.primaryImageTag, 128)
+})
 /** Phones have room for two library tabs, or one when Explore takes a slot. */
 const mobileLibraries = computed(() => libraries.value.slice(0, exploreAvailable.value ? 1 : 2))
 
@@ -153,13 +157,17 @@ async function onLogout() {
       <div ref="menuRef" class="relative">
         <button
           type="button"
-          class="grid size-11 place-items-center rounded-full bg-accent text-lg font-extrabold text-canvas"
+          class="block size-11 overflow-hidden rounded-full"
           aria-haspopup="menu"
           :aria-expanded="menuOpen"
           aria-label="Account menu"
           @click="menuOpen = !menuOpen"
         >
-          {{ initial }}
+          <UserAvatar
+            :src="avatarSrc"
+            :label="auth.email.value"
+            class="size-full bg-accent text-lg font-extrabold text-canvas"
+          />
         </button>
         <div
           v-if="menuOpen"

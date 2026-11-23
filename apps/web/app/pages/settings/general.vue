@@ -5,6 +5,11 @@ const signingOut = ref(false)
 
 /** While a direct server is active, the Soup account can be someone else's on a shared device. */
 const accountName = computed(() => (auth.jellyfin.value?.direct ? auth.email.value : auth.soupEmail.value || auth.email.value))
+const avatarSrc = computed(() => {
+  if (isMockMode()) return null
+  const session = auth.jellyfin.value
+  return userAvatarUrl(session?.baseUrl, session?.userId, session?.primaryImageTag, 160)
+})
 /** Devices belong to the Soup account, which a direct user on a shared device mustn't manage. */
 const soupUserActive = computed(() => Boolean(auth.soupEmail.value && auth.jellyfin.value && !auth.jellyfin.value.direct))
 
@@ -52,13 +57,20 @@ async function onLogout() {
       <h2 id="settings-account" class="text-[13px] font-extrabold uppercase tracking-[0.6px] text-muted">
         Account
       </h2>
-      <div class="flex flex-col gap-0.5">
-        <p class="text-lg font-bold">
-          {{ accountName || 'Signed in' }}
-        </p>
-        <p class="text-sm text-muted">
-          {{ auth.jellyfin.value?.direct || !auth.soupEmail.value ? 'Signed in directly to Jellyfin' : 'Soup account' }}
-        </p>
+      <div class="flex items-center gap-3.5">
+        <UserAvatar
+          :src="avatarSrc"
+          :label="accountName"
+          class="size-12 shrink-0 rounded-full bg-accent text-lg font-extrabold text-canvas"
+        />
+        <div class="flex min-w-0 flex-col gap-0.5">
+          <p class="truncate text-lg font-bold">
+            {{ accountName || 'Signed in' }}
+          </p>
+          <p class="text-sm text-muted">
+            {{ auth.jellyfin.value?.direct || !auth.soupEmail.value ? 'Signed in directly to Jellyfin' : 'Soup account' }}
+          </p>
+        </div>
       </div>
       <div class="flex flex-col gap-2 border-t border-white/10 pt-4">
         <button
